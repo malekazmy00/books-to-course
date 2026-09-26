@@ -1,0 +1,46 @@
+[project]
+name = "b2c-orchestration"
+version = "0.1.0"
+description = "Temporal workflows + thin activities. The only package that knows the order of layers."
+requires-python = ">=3.11"
+dependencies = [
+    "b2c-contracts",
+    "b2c-core",
+    "b2c-llm-gateway",
+    "b2c-ingest",
+    "b2c-outline",
+    "b2c-indexing",
+    "b2c-kg",
+    "b2c-synthesis",
+    "b2c-pedagogy",
+    "b2c-translation",
+    "b2c-speech",
+    "temporalio>=1.33,<2",
+    "opentelemetry-api>=1.27,<2",
+    "opentelemetry-sdk>=1.27,<2",
+    "opentelemetry-exporter-otlp-proto-http>=1.27,<2",
+]
+
+[project.scripts]
+b2c-worker = "b2c_orchestration.worker:main"
+b2c-hello = "b2c_orchestration.run_hello:main"
+
+[tool.uv.sources]
+b2c-contracts = { workspace = true }
+b2c-core = { workspace = true }
+b2c-llm-gateway = { workspace = true }
+b2c-ingest = { workspace = true }
+b2c-outline = { workspace = true }
+b2c-indexing = { workspace = true }
+b2c-kg = { workspace = true }
+b2c-synthesis = { workspace = true }
+b2c-pedagogy = { workspace = true }
+b2c-translation = { workspace = true }
+b2c-speech = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/b2c_orchestration"]

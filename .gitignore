@@ -3,3 +3,7 @@ __pycache__/
 *.pyc
 .venv/
 eval/reports/*.tmp
+models/*
+!models/.gitkeep
+.pytest_cache/
+docker/secrets/

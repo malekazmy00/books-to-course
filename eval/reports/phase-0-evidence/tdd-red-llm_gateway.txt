@@ -1,0 +1,21 @@
+
+==================================== ERRORS ====================================
+___________ ERROR collecting tests/unit/llm_gateway/test_gateway.py ____________
+ImportError while importing test module '/root/projects/book2course/tests/unit/llm_gateway/test_gateway.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+tests/unit/llm_gateway/test_gateway.py:15: in <module>
+    from b2c_llm_gateway import (
+E   ImportError: cannot import name 'CloudProviderNotAllowed' from 'b2c_llm_gateway' (/root/projects/book2course/packages/llm_gateway/src/b2c_llm_gateway/__init__.py)
+_________ ERROR collecting tests/unit/llm_gateway/test_mock_server.py __________
+ImportError while importing test module '/root/projects/book2course/tests/unit/llm_gateway/test_mock_server.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+tests/unit/llm_gateway/test_mock_server.py:7: in <module>
+    from b2c_llm_gateway import InvalidLLMOutput, LLMGateway
+E   ImportError: cannot import name 'InvalidLLMOutput' from 'b2c_llm_gateway' (/root/projects/book2course/packages/llm_gateway/src/b2c_llm_gateway/__init__.py)
+=========================== short test summary info ============================
+ERROR tests/unit/llm_gateway/test_gateway.py
+ERROR tests/unit/llm_gateway/test_mock_server.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 2 errors during collection !!!!!!!!!!!!!!!!!!!!
+2 errors in 0.85s

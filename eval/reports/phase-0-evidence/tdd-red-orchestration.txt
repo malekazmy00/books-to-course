@@ -1,0 +1,13 @@
+
+==================================== ERRORS ====================================
+______ ERROR collecting tests/unit/orchestration/test_hello_activities.py ______
+ImportError while importing test module '/root/projects/book2course/tests/unit/orchestration/test_hello_activities.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+tests/unit/orchestration/test_hello_activities.py:13: in <module>
+    from b2c_orchestration.hello import HelloActivities, HelloInput
+E   ModuleNotFoundError: No module named 'b2c_orchestration.hello'
+=========================== short test summary info ============================
+ERROR tests/unit/orchestration/test_hello_activities.py
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+1 error in 2.02s

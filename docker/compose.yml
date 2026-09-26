@@ -1,0 +1,53 @@
+# compose project: b2c  —  run ONLY from repo root with:
+#   docker compose -p b2c --env-file .env -f docker/compose.yml ...
+# (--env-file is required: variable interpolation otherwise reads docker/.env)
+# Phase 0 skeleton. Every service MUST keep mem_limit / cpus / cpu_shares (docs/04-OPERATIONS.md §2).
+# Images marked VERIFY must be pinned to tag+digest in Phase 0 and recorded in docs/04 §5.
+name: b2c
+
+networks:
+  b2c_internal:
+    internal: true
+  b2c_edge: {}
+
+volumes:
+  pgdata: {}
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16            # VERIFY tag + pin digest
+    env_file: ../.env
+    environment:
+      POSTGRES_DB: ${B2C_PG_DB}
+      POSTGRES_USER: ${B2C_PG_USER}
+      POSTGRES_PASSWORD: ${B2C_PG_PASSWORD}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    networks: [b2c_internal]
+    mem_limit: 4g
+    cpus: 2
+    cpu_shares: 1024
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${B2C_PG_USER} -d ${B2C_PG_DB}"]
+      interval: 10s
+      retries: 10
+    restart: unless-stopped
+
+  llm:
+    image: ghcr.io/ggml-org/llama.cpp:server  # VERIFY tag + pin digest
+    command: >
+      -m /models/${B2C_LLM_GGUF}
+      --host 0.0.0.0 --port 8080
+      -t ${B2C_LLM_THREADS} -c ${B2C_LLM_CTX} --parallel 2 --jinja
+    # VERIFY every flag against `--help` of the pinned version.
+    volumes:
+      - ${B2C_MODELS_DIR}:/models:ro          # read-only; never write into Ollama's store
+    networks: [b2c_internal]
+    mem_limit: 26g
+    cpus: 24
+    cpu_shares: 512
+    restart: unless-stopped
+
+  # Added in Phase 0 per docs/05-PHASES.md (keep limits from docs/04 §2):
+  #   temporal + temporal-ui  (official temporalio compose as reference; mem 2g, cpus 1)
+  #   otel-collector, prometheus, grafana, cadvisor
+  #   langfuse v4 stack in docker/compose.observability.yml (mem 8g total, cpus 3)

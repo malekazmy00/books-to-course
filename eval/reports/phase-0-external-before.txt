@@ -1,0 +1,12 @@
+1d2dccb4b1b0 infisical-server Up About an hour
+c0c391d97ce5 ai-company-router Up About an hour
+30bf2d4197a9 ai-company-memory-qdrant Up About an hour
+94f4afbbf803 ai-company-web-access-firecrawl-api Up About an hour
+9597d540b1d3 ai-company-web-access-firecrawl-redis Up About an hour
+004113411c99 ai-company-web-access-firecrawl-rabbitmq Up About an hour (healthy)
+76cd9de760fd ai-company-web-access-firecrawl-nuq-postgres Up About an hour
+35d8b5ef69ef ai-company-web-access-firecrawl-playwright Up About an hour
+310fea9601ac ai-company-web-access-searxng Up About an hour
+9e8bbb5eeb43 infisical-postgres Up About an hour
+a249a758125c infisical-redis Up About an hour
+# captured: 2026-09-26T16:04:02-07:00

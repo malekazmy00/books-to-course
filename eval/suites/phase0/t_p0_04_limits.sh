@@ -16,8 +16,8 @@ for line in sys.stdin:
     tm += m
     if not (m and c and s): bad.append(n)
     print(f"{n.lstrip(\"/\"):<28}{m:>14}{m/2**20:>8.0f}{c:>14}{c/1e9:>7.2f}{s:>11}  {st}")
-print(f"\nTOTAL Memory = {tm} bytes = {tm/2**30:.3f} GiB   (limit 60 GiB)")
+print(f"\nTOTAL Memory = {tm} bytes = {tm/2**30:.3f} GiB   (limit 61 GiB, D-007 as amended 2026-09-27)")
 print("containers missing Memory/NanoCpus/CpuShares:", bad or "none")
-print("RESULT:", "PASS" if not bad and tm <= 60*2**30 else "FAIL")
+print("RESULT:", "PASS" if not bad and tm <= 61*2**30 else "FAIL")
 '
 } 2>&1 | tee "$out"

@@ -20,11 +20,6 @@ networks:
     internal: true        # no egress, not reachable from the host
   b2c_edge: {}            # only for services that publish a 127.0.0.1 port
 
-volumes:
-  pgdata: {}
-  prometheus_data: {}
-  grafana_data: {}
-
 x-light: &light
   cpu_shares: 1024
   restart: unless-stopped
@@ -45,7 +40,10 @@ services:
       PGTZ: UTC
     command: ["postgres", "-c", "max_connections=200", "-c", "shared_buffers=512MB"]
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - type: bind
+        source: ${B2C_DATA_DIR}/postgres
+        target: /var/lib/postgresql/data
+        bind: {create_host_path: false}   # never start on an empty path (D-020)
       - ./postgres/init:/docker-entrypoint-initdb.d:ro
     mem_limit: 4g
     cpus: 2
@@ -198,7 +196,10 @@ services:
       - --storage.tsdb.retention.time=15d
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus_data:/prometheus
+      - type: bind
+        source: ${B2C_DATA_DIR}/prometheus
+        target: /prometheus
+        bind: {create_host_path: false}   # never start on an empty path (D-020)
     mem_limit: 384m
     cpus: 0.5
 
@@ -213,7 +214,10 @@ services:
       GF_PLUGINS_PREINSTALL_DISABLED: "true"
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
-      - grafana_data:/var/lib/grafana
+      - type: bind
+        source: ${B2C_DATA_DIR}/grafana
+        target: /var/lib/grafana
+        bind: {create_host_path: false}   # never start on an empty path (D-020)
     networks: [b2c_internal, b2c_edge]
     ports: ["127.0.0.1:3000:3000"]
     # measured: ~39 MiB anon + ~185 MiB mapped binary; 192m thrashed (11 GB of re-reads)

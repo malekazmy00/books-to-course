@@ -15,7 +15,8 @@
 | D-004 | **نماذج محلية فقط** في المرحلة الحالية | Accepted (الـ API مؤجل: Deferred) |
 | D-005 | مرشحو الـ LLM المحليين | Accepted (الاختيار النهائي لكل مهمة بعد Phase 1) |
 | D-006 | llama-server مخصص للمشروع، منفصل عن Ollama الموجود | Accepted |
-| D-007 | ميزانية الموارد: ≤ 60 GiB RAM و≤ 40 logical CPU | Accepted |
+| D-007 | ميزانية الموارد: ≤ 61 GiB RAM و≤ 40 logical CPU (عُدّلت من 60 في 2026-09-27) | Accepted |
+| D-020 | بيانات b2c على disk منفصل (VHDX على F:، قرص فعلي مستقل) | Accepted (2026-09-27) |
 | D-008 | بدون NUMA pinning | Accepted |
 | D-009 | ممنوع لمس أي مشروع تاني، ومنها RabbitMQ بتاع Firecrawl | Accepted |
 | D-010 | Parsing: Docling | Accepted |
@@ -75,6 +76,20 @@
 - تفاصيل كل خدمة في `04-OPERATIONS.md`.
 - الخدمات التقيلة (LLM وDocling والـ embeddings وTTS) ماتشتغلش مع بعض في نفس الوقت. بنحقق ده بـ task queue واحدة اسمها `heavy` بـ concurrency = 1.
 - الخدمات التقيلة بتاخد `cpu_shares: 512`، أقل من الافتراضي 1024. كده المشاريع التانية بتكسب وقت التنافس على المعالج، ودي آلية Docker CPU shares الرسمية.
+
+### تعديل D-007 (2026-09-27، بموافقة صاحب المشروع)
+- **السياق:** خدمات المراقبة (otel-collector وprometheus وgrafana وcadvisor) ماكانتش في جدول 04-OPERATIONS §2. استهلاكها المقاس فعليًا في Phase 0 خلّى المجموع النهائي ≈ 60.25 GiB.
+- **القرار:** الميزانية بقت ≤ 61 GiB RAM. حد الـ CPU زي ما هو (≤ 40).
+- **النتيجة:** T-P0-04 بيتحقق من ≤ 61 GiB، وجدول 04 §2 فيه بند مراقبة.
+
+## D-020: disk منفصل لبيانات b2c
+- **السياق:** في Phase 0 اتقاس إن الـ disk بتاع WSL بطيء في fsync (≈ 37ms/op)، وإن الـ ext4 journal مشترك مع كل المشاريع. b2c وهو idle رفع `/proc/pressure/io` من ≈ 3% لـ ≈ 12–19%. وأثناء عاصفة I/O سببها b2c، الـ healthcheck بتاع مشروع تاني أعاد إنشاء حاويتين بتوعه.
+- **القرار:** بيانات حاويات b2c (postgres وclickhouse وminio وredis وprometheus وgrafana) تتخزن على VHDX مستقل في `F:\wsl-b2c\b2c-data.vhdx`، على قرص فعلي مختلف عن C: (اللي عليه disk بتاع WSL) وعن E: (اللي عليه النماذج). الـ VHDX بيتركّب بـ `wsl --mount --vhd … --name b2cdata` على `/mnt/wsl/b2cdata`.
+- **النتائج:**
+  - الـ bind mounts بتاعة compose بتستخدم `create_host_path: false`، فالحاويات مابتشتغلش أبدًا على مسار فاضي لو الـ disk مش متركّب.
+  - `make up` بيتأكد من وجود marker file قبل التشغيل.
+  - بعد كل ريستارت لويندوز، لازم الـ disk يتركّب تاني (Scheduled Task).
+  - Docker data-root وimages بتاعة المشاريع التانية ماتغيّرتش.
 
 ## D-008: بدون NUMA pinning
 WSL2 بيعرض NUMA node واحد، مع إن الجهاز dual-socket. عدد الـ threads هيتحدد بالقياس على ثلاث قيم: 14 و20 و28.

@@ -11,7 +11,7 @@ define allow_empty
 	$(1) || { rc=$$?; [ $$rc -eq 5 ] && echo "(no tests yet)" || exit $$rc; }
 endef
 
-.PHONY: help env build up down ps logs limits lint-imports test test-unit test-contract \
+.PHONY: help env data-init build up down ps logs limits lint-imports test test-unit test-contract \
 	test-golden test-integration test-e2e eval bench-llm
 
 help:
@@ -23,7 +23,11 @@ env:                 ## create .env with random secrets (never overwrites)
 build:
 	$(COMPOSE) build worker
 
-up: env              ## start the b2c stack
+data-init:           ## once, after the data VHDX is mounted (D-020)
+	@bash scripts/data-disk.sh init
+
+up: env              ## start the b2c stack (refuses if the dedicated data disk is not mounted)
+	@bash scripts/data-disk.sh check
 	$(COMPOSE) up -d --build
 
 down:                ## stop the b2c stack (volumes kept; never -v here)

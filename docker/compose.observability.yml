@@ -95,8 +95,14 @@ services:
       CLICKHOUSE_USER: clickhouse
       CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD}
     volumes:
-      - langfuse_clickhouse_data:/var/lib/clickhouse
-      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+      - type: bind
+        source: ${B2C_DATA_DIR}/clickhouse/data
+        target: /var/lib/clickhouse
+        bind: {create_host_path: false}   # never start on an empty path (D-020)
+      - type: bind
+        source: ${B2C_DATA_DIR}/clickhouse/logs
+        target: /var/log/clickhouse-server
+        bind: {create_host_path: false}   # never start on an empty path (D-020)
     networks: [b2c_internal]
     restart: unless-stopped
     mem_limit: 3g
@@ -115,7 +121,11 @@ services:
     environment:
       MINIO_ROOT_USER: ${B2C_S3_ACCESS_KEY}
       MINIO_ROOT_PASSWORD: ${B2C_S3_SECRET_KEY}
-    volumes: [langfuse_minio_data:/data]
+    volumes:
+      - type: bind
+        source: ${B2C_DATA_DIR}/minio
+        target: /data
+        bind: {create_host_path: false}   # never start on an empty path (D-020)
     networks: [b2c_internal]
     restart: unless-stopped
     mem_limit: 1g
@@ -132,7 +142,11 @@ services:
       --requirepass ${LANGFUSE_REDIS_AUTH}
       --maxmemory 384mb
       --maxmemory-policy noeviction
-    volumes: [langfuse_redis_data:/data]
+    volumes:
+      - type: bind
+        source: ${B2C_DATA_DIR}/redis
+        target: /data
+        bind: {create_host_path: false}   # never start on an empty path (D-020)
     networks: [b2c_internal]
     restart: unless-stopped
     mem_limit: 512m
@@ -145,8 +159,3 @@ services:
     environment:
       REDIS_PASSWORD: ${LANGFUSE_REDIS_AUTH}
 
-volumes:
-  langfuse_clickhouse_data: {}
-  langfuse_clickhouse_logs: {}
-  langfuse_minio_data: {}
-  langfuse_redis_data: {}

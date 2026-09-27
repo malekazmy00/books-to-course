@@ -78,7 +78,10 @@ def main() -> None:
     provider = setup_tracing(f"{s.service_name}-cli", s.otel_endpoint)
     try:
         if a.cmd == "run":
-            res: Any = asyncio.run(run_pipeline(a.name, a.course_id, a.delay))
+            # one root span so the whole run (client + worker + LLM) is a single trace in Langfuse
+            with provider.get_tracer("b2c_orchestration").start_as_current_span("b2c-hello run") as sp:
+                res: Any = asyncio.run(run_pipeline(a.name, a.course_id, a.delay))
+                res["trace_id"] = format(sp.get_span_context().trace_id, "032x")
         elif a.cmd == "start":
             res = {"workflow_id": asyncio.run(start(a.name, a.course_id, a.delay))}
         elif a.cmd == "wait":

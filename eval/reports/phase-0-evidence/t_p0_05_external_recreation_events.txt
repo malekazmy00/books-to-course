@@ -1,0 +1,18 @@
+# docker events (read-only) for external containers, 2026-09-27T00:30Z..now
+
+# health of the recreated containers
+/ai-company-web-access-searxng created=2026-09-27T00:56:21.528846756Z started=2026-09-27T00:56:27.212099781Z restartCount=0
+/ai-company-web-access-firecrawl-api created=2026-09-27T00:56:42.98892615Z started=2026-09-27T00:56:48.888149317Z restartCount=0
+
+# processes that might run compose for web-access (read-only ps)
+# docker events --since 40m (raw, external containers, excluding exec/b2c)
+# journal lines mentioning web-access (last 40m, read-only)
+Sep 26 17:47:54 DESKTOP-3KHE91S healthcheck.sh[129694]: healthcheck mode=periodic duration=8s all_ok=0 repaired=[] still_starting=[] failed=[searxng]
+Sep 26 17:48:05 DESKTOP-3KHE91S healthcheck.sh[130844]: healthcheck mode=periodic duration=6s all_ok=0 repaired=[] still_starting=[] failed=[searxng]
+Sep 26 17:48:06 DESKTOP-3KHE91S healthcheck.sh[131425]: healthcheck mode=boot duration=1s all_ok=0 repaired=[] still_starting=[] failed=[searxng]
+Sep 26 17:49:59 DESKTOP-3KHE91S dockerd[908]: time="2026-09-26T17:49:59.709807093-07:00" level=info msg="sbJoin: gwep4 ''->'9a3b81b3dc41', gwep6 ''->''" eid=9a3b81b3dc41 ep=ai-company-web-access-searxng net=web-access_we
+Sep 26 17:53:59 DESKTOP-3KHE91S dockerd[908]: time="2026-09-26T17:53:59.453080857-07:00" level=info msg="sbJoin: gwep4 ''->'c24a8fd50dc5', gwep6 ''->''" eid=c24a8fd50dc5 ep=ai-company-web-access-searxng net=web-access_we
+Sep 26 17:54:59 DESKTOP-3KHE91S dockerd[908]: time="2026-09-26T17:54:59.536376582-07:00" level=info msg="sbJoin: gwep4 ''->'ec6ab2a045e5', gwep6 ''->''" eid=ec6ab2a045e5 ep=ai-company-web-access-searxng net=web-access_we
+Sep 26 17:55:14 DESKTOP-3KHE91S bash[159328]: healthcheck mode=periodic duration=25s all_ok=1 repaired=[searxng] still_starting=[] failed=[]
+Sep 26 17:56:27 DESKTOP-3KHE91S dockerd[908]: time="2026-09-26T17:56:27.645755883-07:00" level=info msg="sbJoin: gwep4 ''->'8e5c5087abe8', gwep6 ''->''" eid=8e5c5087abe8 ep=ai-company-web-access-searxng net=web-access_we
+Sep 26 17:56:49 DESKTOP-3KHE91S dockerd[908]: time="2026-09-26T17:56:49.347466416-07:00" level=info msg="sbJoin: gwep4 ''->'e83494466037', gwep6 ''->''" eid=e83494466037 ep=ai-company-web-access-firecrawl-api net=web-acc

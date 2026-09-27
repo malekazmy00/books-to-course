@@ -1,0 +1,152 @@
+# Langfuse v4 stack, adapted from the official compose
+#   https://github.com/langfuse/langfuse/blob/main/docker-compose.yml (blob 40293a8f, read 2026-09-26)
+# Changes vs upstream (all deliberate):
+#   - images pinned tag+digest (upstream uses floating :4 / latest)
+#   - Postgres: the shared b2c postgres (DB `langfuse`, role `langfuse`) instead of a second instance
+#   - MinIO is also the b2c artifact store (bucket `artifacts`; Langfuse uses bucket `langfuse`)
+#   - no host ports except langfuse-web on 127.0.0.1:3100 (upstream publishes 3000, 3030, 8123,
+#     9000, 9090, 9091, 6379, 5432); everything else stays on b2c_internal
+#   - mem_limit / cpus / cpu_shares on every service: budget line "langfuse…" = 8g / 3 CPU
+#   - TELEMETRY_ENABLED=false; experimental/AI/in-app-agent features left unset (no cloud keys, D-004)
+
+x-langfuse-env: &langfuse-env
+  NEXTAUTH_URL: http://localhost:3100
+  DATABASE_URL: postgresql://langfuse:${B2C_PG_LANGFUSE_PASSWORD}@postgres:5432/langfuse
+  SALT: ${LANGFUSE_SALT}
+  ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY}
+  TELEMETRY_ENABLED: "false"
+  LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: "false"
+  CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+  CLICKHOUSE_URL: http://clickhouse:8123
+  CLICKHOUSE_USER: clickhouse
+  CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD}
+  CLICKHOUSE_CLUSTER_ENABLED: "false"
+  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+  LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${B2C_S3_ACCESS_KEY}
+  LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${B2C_S3_SECRET_KEY}
+  LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+  LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+  LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${B2C_S3_ACCESS_KEY}
+  LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${B2C_S3_SECRET_KEY}
+  LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://minio:9000
+  LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+  LANGFUSE_S3_BATCH_EXPORT_ENABLED: "false"
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_AUTH: ${LANGFUSE_REDIS_AUTH}
+  REDIS_TLS_ENABLED: "false"
+
+x-langfuse-deps: &langfuse-deps
+  postgres: {condition: service_healthy}
+  minio: {condition: service_healthy}
+  redis: {condition: service_healthy}
+  clickhouse: {condition: service_healthy}
+
+services:
+  langfuse-worker:
+    image: langfuse/langfuse-worker:4.46.0@sha256:3568d2d1eb5dd570f4087b37972ddffa3f6ae4f872553e0b0e2eedf4896a29e9
+    depends_on: *langfuse-deps
+    environment: *langfuse-env
+    networks: [b2c_internal]
+    restart: unless-stopped
+    mem_limit: 1536m
+    cpus: 0.6
+    cpu_shares: 1024
+
+  langfuse-web:
+    image: langfuse/langfuse:4.46.0@sha256:755b821ba8f73a20d43d90e68f2b75d2f597dd164c55890f67a05f5a8d0f0e24
+    depends_on: *langfuse-deps
+    environment:
+      <<: *langfuse-env
+      NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET}
+      LANGFUSE_S3_MEDIA_UPLOAD_INTERNAL_ENDPOINT: http://minio:9000
+      # headless init (V-07): org, project, API keys, and a local admin user
+      LANGFUSE_INIT_ORG_ID: b2c
+      LANGFUSE_INIT_ORG_NAME: book2course
+      LANGFUSE_INIT_PROJECT_ID: b2c-dev
+      LANGFUSE_INIT_PROJECT_NAME: b2c-dev
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_SECRET_KEY}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL}
+      LANGFUSE_INIT_USER_NAME: admin
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD}
+    networks: [b2c_internal, b2c_edge]
+    ports: ["127.0.0.1:3100:3000"]
+    restart: unless-stopped
+    mem_limit: 2g
+    cpus: 1.0
+    cpu_shares: 1024
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://$(hostname -i | awk '{print $1}'):3000/api/public/health || exit 1"]
+      interval: 10s
+      start_period: 120s
+      retries: 30
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.12@sha256:8a790dd3468db22b1d4e7b18a176f378ff5ff6053b9c48dd4ea1fa71a24c5ba6
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: ${LANGFUSE_CLICKHOUSE_PASSWORD}
+    volumes:
+      - langfuse_clickhouse_data:/var/lib/clickhouse
+      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+    networks: [b2c_internal]
+    restart: unless-stopped
+    mem_limit: 3g
+    cpus: 0.8
+    cpu_shares: 1024
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 5s
+      retries: 20
+
+  minio:
+    image: cgr.dev/chainguard/minio:latest@sha256:bd014394a80898e68c149f2311fdf8d5a2c2f3bb2c33b9327ae6d02b4b065ae1
+    entrypoint: sh
+    # create buckets before starting: `langfuse` (Langfuse) and `artifacts` (b2c ArtifactStore)
+    command: -c 'mkdir -p /data/langfuse /data/artifacts && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: ${B2C_S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${B2C_S3_SECRET_KEY}
+    volumes: [langfuse_minio_data:/data]
+    networks: [b2c_internal]
+    restart: unless-stopped
+    mem_limit: 1g
+    cpus: 0.4
+    cpu_shares: 1024
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      retries: 30
+
+  redis:
+    image: redis:7.4@sha256:c6eabf748fc7a61dbb5a705c78bcf3d6377b1127a97d0ce965c11c44ba46896f
+    command: >
+      --requirepass ${LANGFUSE_REDIS_AUTH}
+      --maxmemory 384mb
+      --maxmemory-policy noeviction
+    volumes: [langfuse_redis_data:/data]
+    networks: [b2c_internal]
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 0.2
+    cpu_shares: 1024
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 3s
+      retries: 20
+    environment:
+      REDIS_PASSWORD: ${LANGFUSE_REDIS_AUTH}
+
+volumes:
+  langfuse_clickhouse_data: {}
+  langfuse_clickhouse_logs: {}
+  langfuse_minio_data: {}
+  langfuse_redis_data: {}

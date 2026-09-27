@@ -1,0 +1,7 @@
+# Same keys as temporalio/samples-server compose/dynamicconfig/development-sql.yaml
+limit.maxIDLength:
+  - value: 255
+    constraints: {}
+system.forceSearchAttributesCacheRefreshOnRead:
+  - value: true
+    constraints: {}

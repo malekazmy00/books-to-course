@@ -1,0 +1,14 @@
+# T-P0-05 after-snapshot. captured: 2026-09-27T01:00:38Z
+## docker ps --format '{{.ID}} {{.Names}} {{.Status}}'  (non-b2c only)
+## id name StartedAt
+e63cf448b44f /ai-company-web-access-firecrawl-api 2026-09-27T00:56:48.888149317Z
+c1068e85e3dc /ai-company-web-access-searxng 2026-09-27T00:56:27.212099781Z
+525a140ed7b0 /infisical-server 2026-09-27T00:46:29.542375485Z
+c0c391d97ce5 /ai-company-router 2026-09-26T23:51:47.151413393Z
+30bf2d4197a9 /ai-company-memory-qdrant 2026-09-26T23:51:45.509314161Z
+9597d540b1d3 /ai-company-web-access-firecrawl-redis 2026-09-26T23:51:47.284951096Z
+004113411c99 /ai-company-web-access-firecrawl-rabbitmq 2026-09-26T23:51:47.693198404Z
+76cd9de760fd /ai-company-web-access-firecrawl-nuq-postgres 2026-09-26T23:51:42.051641393Z
+35d8b5ef69ef /ai-company-web-access-firecrawl-playwright 2026-09-26T23:51:47.893450508Z
+9e8bbb5eeb43 /infisical-postgres 2026-09-26T23:51:45.801221167Z
+a249a758125c /infisical-redis 2026-09-26T23:51:43.151320614Z

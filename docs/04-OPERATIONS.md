@@ -85,7 +85,11 @@
 | vendored BookTrans | upstream commit `fefaf9962e48ab9286992e43c24a9e6d6c8755af` | 2026-10-24 | `vendor/booktrans/UPSTREAM-COMMIT.txt` |
 | Hy-MT2 1.8B (`tencent/Hy-MT2-1.8B`) + its prompt templates (D-028 `PlainMTEngine`, `b2c_translation/prompts.py` `hy-mt2.*@v1`) | revision `9a341cd1b679d3efd23b46e847b01745a71ed792`; `model.safetensors` LFS oid `sha256:29e9117a44c79f81857613601968ff482d8a23c2d6736a1710bba9e5ca4762e5` (from the HF download metadata on the data disk; local SHA-256 not yet recomputed) | 2026-10-24 | https://huggingface.co/tencent/Hy-MT2-1.8B (model card "Hy-MT2 Translation Task Instruction Examples": Default / Terminology / background-information templates; `chat_template.jinja`) — upstream README and template byte-identical to the data-disk copy; same table in https://github.com/Tencent-Hunyuan/Hy-MT2 @ `ff1903ecaa724e10951a23c16817a2413c752b35` |
 | Fasih-TTS v1 / CATT / Supertonic3 / Naqta / EmbeddingGemma | **not pinned** | — | VERIFY: record revision + SHA-256 of each weights dir on the data disk |
+| Gemma 4 (profile `gemma4`) | `gemma4:26b-a4b-it-qat`, weights blob `sha256:4c856523d61d77922dbc0b26753a6bf6208e5d69d80db0c04dcd776832d054c5` (14.4 GB), served as `gemma4-b2c:26b-a4b-it-qat-t18` (same weights, Modelfile `PARAMETER num_thread 18`) from `/mnt/wsl/b2cdata/models/ollama` | 2026-10-25 | ollama.com/library/gemma4; checksums verified after copy from E: |
 | fasih / supertonic build context | **not in git** (`${B2C_DATA_DIR}/build-context/*`) | — | open: move into `docker/` so images are reproducible |
+
+### 5.1 قاعدة الخيوط مقابل حد المعالج (2026-10-25)
+عدد خيوط الاستدلال (llama.cpp / Ollama / torch) يجب أن يكون **أقل من** قيمة `cpus` للخدمة. llama.cpp يختار افتراضيًا خيطًا لكل نواة فيزيائية (28). مع `cpus: 20` تعطّل الـ CFS quota الخيوط في 94% من الفترات، فانخفض توليد Gemma 4 إلى 0.14 token/s. بعد `num_thread 18` صار 12.3 token/s. وأوزان النماذج تُقرأ من القرص ext4 الخاص بالبيانات، لا من `/mnt/e` (9p بطيء).
 
 ## 6. المراقبة (Observability)
 

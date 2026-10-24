@@ -28,7 +28,7 @@ services:
       OLLAMA_KEEP_ALIVE: "24h"
     volumes:
       - type: bind
-        source: ${B2C_GEMMA4_MODELS_DIR:-/mnt/e/B2C-Model-Lab/ollama-models}
+        source: ${B2C_GEMMA4_MODELS_DIR:-${B2C_DATA_DIR}/models/ollama}   # ext4 data disk (D-020); /mnt/e is a slow 9p mount
         target: /models
         read_only: true
         bind: {create_host_path: false}

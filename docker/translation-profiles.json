@@ -5,14 +5,15 @@
       "kind": "chat",
       "provider": "ollama-local",
       "base_url": "http://gemma4-ollama:11434/v1",
-      "model_id": "gemma4:26b-a4b-it-qat",
+      "model_id": "gemma4-b2c:26b-a4b-it-qat-t18",
       "revision": null,
       "supports_terms": true,
       "supports_context": true,
       "supports_repair": true,
       "max_source_chars": 1200,
       "max_output_tokens": 2048,
-      "timeout_s": 900
+      "timeout_s": 900,
+      "reasoning_effort": "none"
     }
   ],
   "qe": [
@@ -21,13 +22,14 @@
       "kind": "llm_judge",
       "provider": "ollama-local",
       "base_url": "http://gemma4-ollama:11434/v1",
-      "model_id": "gemma4:26b-a4b-it-qat",
+      "model_id": "gemma4-b2c:26b-a4b-it-qat-t18",
       "revision": null,
       "prompt_version": "qe-mqm-v1",
       "max_critical": 0,
       "max_major": 0,
       "max_tokens": 1024,
-      "timeout_s": 900
+      "timeout_s": 900,
+      "reasoning_effort": "none"
     }
   ]
 }

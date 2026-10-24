@@ -31,8 +31,10 @@ from .engines import EngineRequest, RepairRequest, TranslationEngine
 from .qa import CheckContext, QEOutcome, QualityEstimator
 from .qa.checks import run_checks
 from .qa.leakage import fingerprints_from_templates
-from .qa.policy import Decision, decide
 from .prompts import ALL_TEMPLATES
+from .qa.policy import Decision, decide
+from .references import render_reference_unit
+from .units import split_sentences
 
 RULE_KINDS = frozenset({"reference", "index"})
 _LEAK_FINGERPRINTS = fingerprints_from_templates(t.text for t in ALL_TEMPLATES)
@@ -68,29 +70,6 @@ class UnitResult:
     drafts: tuple[Draft, ...] = ()
 
 
-# ------------------------------------------------------------------ sentences
-_ABBREVIATIONS = frozenset(
-    "mr mrs ms dr prof st jr sr vs etc e.g i.e cf al ed eds trans vol vols no nos p pp ch fig figs "
-    "a.m p.m u.s u.k ca approx dept inc ltd co op cit ibid".split())
-_SENTENCE_END = re.compile(r"(?<=[.!?…])[\"'”’)\]]*\s+(?=[\"'“‘(\[]?[A-Z0-9])")
-
-
-def split_sentences(text: str) -> list[str]:
-    """Rule-based sentence split that keeps common abbreviations attached."""
-    pieces, start = [], 0
-    for match in _SENTENCE_END.finditer(text):
-        before = text[start:match.start()].rstrip("\"'”’)]")
-        last_word = re.findall(r"([A-Za-z][A-Za-z.]*)\.$", before)
-        if last_word and last_word[-1].lower().rstrip(".") in _ABBREVIATIONS:
-            continue
-        if last_word and len(last_word[-1]) == 1:  # an initial such as "J. Smith"
-            continue
-        pieces.append(text[start:match.start()].strip())
-        start = match.end()
-    pieces.append(text[start:].strip())
-    return [p for p in pieces if p]
-
-
 # ------------------------------------------------------------------ helpers
 def terms_in(source: str, terms: Mapping[str, str]) -> dict[str, str]:
     """Locked terms whose source form occurs in ``source`` (case-insensitive, whole words)."""
@@ -120,7 +99,7 @@ class UnitTranslator:
         self.memory = memory
         self.terms = dict(terms or {})
         self.entities = dict(entities or {})
-        self.reference_renderer = reference_renderer or (lambda unit: unit.source_text)
+        self.reference_renderer = reference_renderer or render_reference_unit
         self.config = config
         self.clock = clock
 

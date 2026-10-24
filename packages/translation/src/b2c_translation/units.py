@@ -890,6 +890,11 @@ def _clause_split(text: str, a: int, b: int, limit: int) -> list[tuple[int, int,
 
 
 # ----------------------------------------------------------------------------- the builder
+def split_sentences(text: str) -> list[str]:
+    """Sentences of ``text`` with the same segmenter and abbreviation rules the unit builder uses."""
+    return [text[a:b].strip() for a, b in _sentence_spans(text, 0, len(text)) if text[a:b].strip()]
+
+
 def build_translation_units(book: ParsedBook, *, max_unit_chars: int = DEFAULT_MAX_UNIT_CHARS) -> list[TranslationUnit]:
     return build_units_with_provenance(book, max_unit_chars=max_unit_chars).units
 

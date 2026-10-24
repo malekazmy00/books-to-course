@@ -194,3 +194,10 @@ def test_assemble_blocks_keeps_only_accepted_text_and_reports_the_rest():
 ])
 def test_split_sentences(text, expected):
     assert len(split_sentences(text)) == expected
+
+
+def test_references_use_the_rule_renderer_by_default():
+    engine = FakeEngine([])
+    out = translator(engine).translate(unit("Ibid., 55.", kind="reference")).translation
+    assert "المرجع نفسه" in out.target_text and "55" in out.target_text
+    assert out.origin == "rule" and engine.requests == []

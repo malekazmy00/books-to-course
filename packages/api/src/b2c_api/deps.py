@@ -1,16 +1,110 @@
 """Shared request-path helpers for the API routers."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
+import os
 import re
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from fastapi import HTTPException
 from starlette.concurrency import run_in_threadpool
+from temporalio.common import WorkflowIDReusePolicy
 
 log = logging.getLogger("b2c.api")
 NOT_FOUND_CODES = frozenset({"NoSuchKey", "404", "NotFound"})
+CHUNK_BYTES = 1024 * 1024
+# Deterministic workflow IDs make a repeated POST idempotent only if Temporal
+# refuses to start a second run after a successful one. A failed, cancelled,
+# terminated or timed-out run may still be retried under the same ID. The QA
+# checkpoint resume and failed-stage retry flows mint their own derived IDs.
+REUSE_ONLY_AFTER_FAILURE = WorkflowIDReusePolicy.ALLOW_DUPLICATE_FAILED_ONLY
+TERMINAL_FAILURE_STATUSES = frozenset({"FAILED", "CANCELED", "TERMINATED", "TIMED_OUT"})
+
+
+class MissingObject(LookupError):
+    """A checkpoint object that has not been written yet."""
+
+
+class ApiContext:
+    """Per-app dependencies shared by the routers built in ``create_app``.
+
+    Routers register the functions other routers call (``provide``) and look
+    them up at request time (``late``), so router modules never import each
+    other and build order does not matter.
+    """
+
+    def __init__(self, app: Any, settings: Any, temporal_connect: Callable[[Any], Awaitable[Any]]) -> None:
+        self.app = app
+        self.settings = settings
+        self._temporal_connect = temporal_connect
+        self._temporal_lock = asyncio.Lock()
+        self._provided: dict[str, Callable[..., Any]] = {}
+
+    def get_store(self) -> Any:
+        """The app's artifact store, created from settings on first use."""
+        if self.app.state.artifact_store is None:
+            from b2c_core import ArtifactStore
+            self.app.state.artifact_store = ArtifactStore.from_settings(self.settings)
+        return self.app.state.artifact_store
+
+    async def get_temporal_client(self) -> Any:
+        # Concurrent first requests must share one connection, not race to
+        # open several and leak all but the last.
+        if self.app.state.temporal_client is None:
+            async with self._temporal_lock:
+                if self.app.state.temporal_client is None:
+                    self.app.state.temporal_client = await self._temporal_connect(self.settings)
+        return self.app.state.temporal_client
+
+    async def connected_temporal(self) -> Any:
+        try:
+            return await self.get_temporal_client()
+        except Exception as exc:
+            log.exception("could not connect to Temporal")
+            raise HTTPException(status_code=503, detail="Temporal is unavailable") from exc
+
+    def generation_profile(self, stage: str) -> tuple[str, str, str]:
+        from b2c_orchestration.queues import HEAVY
+
+        manager = self.app.state.model_lifecycle
+        provider_id = manager.defaults.get(stage, "")
+        provider = manager.providers.get(provider_id)
+        if provider_id:
+            if provider is None or not provider.task_queue:
+                raise HTTPException(status_code=503, detail="the saved model route is currently disabled")
+            return provider.model, provider.task_queue, provider.id
+        return (self.settings.llm_model_id, os.getenv("B2C_GENERATION_TASK_QUEUE", HEAVY),
+                "configured-llm")
+
+    def provide(self, **functions: Callable[..., Any]) -> None:
+        self._provided.update(functions)
+
+    def late(self, name: str) -> Callable[..., Any]:
+        """A function another router or service provides.
+
+        Already-provided functions are returned as-is; otherwise an async proxy
+        resolves the name at call time (routers may reference each other).
+        """
+        if name in self._provided:
+            return self._provided[name]
+
+        async def call(*args: Any, **kwargs: Any) -> Any:
+            return await self._provided[name](*args, **kwargs)
+        call.__name__ = call.__qualname__ = name
+        return call
+
+
+async def workflow_failure(handle: Any) -> dict[str, str] | None:
+    """Failure type of a terminal workflow, read from its result (None if it returned)."""
+    try:
+        await handle.result()
+    except Exception as exc:
+        cause = getattr(exc, "cause", None)
+        return {"type": getattr(cause, "type", type(cause or exc).__name__)}
+    return None
 
 # Every server-issued workflow ID is a fixed prefix plus a lowercase SHA-256
 # digest; selected-unit retranslation candidates use a 128-bit hex suffix.

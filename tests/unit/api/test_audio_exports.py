@@ -108,7 +108,7 @@ async def test_regenerate_rejects_multiple_lessons_before_queuing(environment):
 @pytest.mark.asyncio
 async def test_original_request_resolves_saved_input_without_operator_refs(environment, monkeypatch):
     from b2c_orchestration.audio import GenerateMP3Input
-    import b2c_api.app as module
+    import b2c_api.routers.audio as module
     store,record,app,_=environment
     ref=record['tracks'][0]['artifact_ref']
     inp=GenerateMP3Input(course_id='revolution',source_artifact_ref=ref,source_kind='course',language='ar')

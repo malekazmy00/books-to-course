@@ -118,14 +118,15 @@ async def test_completed_translation_result_failure_is_503():
 
 @pytest.mark.asyncio
 async def test_rejected_saved_revision_is_422(monkeypatch):
-    import b2c_api.app as module
-    monkeypatch.setattr(module, "translation_source_segments",
+    import b2c_api.routers.translations as router_module
+    import b2c_api.services.translation_units as units_module
+    monkeypatch.setattr(units_module, "translation_source_segments",
                         lambda *_: [SourceSegment(segment_id="s1", text="value 5")])
-    monkeypatch.setattr(module, "translation_manual_overrides", lambda *_: [])
+    monkeypatch.setattr(units_module, "translation_manual_overrides", lambda *_: [])
 
     def reject(*args, **kwargs):
         raise ValueError("numeric_token_mismatch")
-    monkeypatch.setattr(module, "validate_manual_translation", reject)
+    monkeypatch.setattr(router_module, "validate_manual_translation", reject)
     app = app_for(Handle("COMPLETED"))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
         response = await client.post(f"/v1/translations/{WF}/revision-selection", json={"segment_id": "s1"})

@@ -48,7 +48,7 @@ def payload(qa=None):
 
 
 async def start(store, body, monkeypatch):
-    import b2c_api.app as module
+    import b2c_api.routers.audio as module
     monkeypatch.setattr(module, "validate_mp3_input_lineage", lambda *args: None)
     temporal = Temporal()
 

@@ -42,7 +42,7 @@ class StartingTemporal:
 
 @pytest.mark.asyncio
 async def test_retranslation_candidate_id_is_deterministic_and_restart_safe(monkeypatch):
-    import b2c_api.app as module
+    import b2c_api.services.translation_units as module
     monkeypatch.setattr(module, "translation_source_segments",
                         lambda *_: [SourceSegment(segment_id="s1", text="value 5")])
     monkeypatch.setattr(module, "translation_manual_overrides", lambda *_: [])

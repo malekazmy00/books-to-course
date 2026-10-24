@@ -36,7 +36,7 @@ async def test_upload_storage_rejection_is_generic():
 
 @pytest.mark.asyncio
 async def test_audio_lineage_rejection_is_generic(monkeypatch):
-    import b2c_api.app as module
+    import b2c_api.routers.audio as module
 
     def reject(*args):
         raise ValueError(f"lineage mismatch for {SECRET}")
@@ -53,7 +53,7 @@ async def test_audio_lineage_rejection_is_generic(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_system_review_validation_error_keeps_locations_only(monkeypatch):
-    import b2c_api.app as module
+    import b2c_api.routers.ingestion as module
 
     try:
         CourseOutline.model_validate({"course_id": SECRET, "spine_book_id": 7})

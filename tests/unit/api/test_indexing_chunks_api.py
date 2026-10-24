@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
-from b2c_api import app as api_module
+from b2c_api.routers import indexing as api_module
 from b2c_api.app import create_app
 from b2c_core import Settings
 

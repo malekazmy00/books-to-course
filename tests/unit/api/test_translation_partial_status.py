@@ -51,7 +51,7 @@ class Temporal:
 @pytest.mark.asyncio
 async def test_completed_temporal_partial_result_exposes_gap_artifact_and_resume(monkeypatch):
     import importlib
-    mod = importlib.import_module("b2c_api.app")
+    mod = importlib.import_module("b2c_api.services.translation_units")
     monkeypatch.setattr(mod, "translation_source_segments", lambda *_:[
         SourceSegment(segment_id="s0", text="value 5"), SourceSegment(segment_id="s1", text="value 5")])
     monkeypatch.setattr(mod, "translation_manual_overrides", lambda *_:[])
@@ -79,7 +79,7 @@ async def test_completed_temporal_partial_result_exposes_gap_artifact_and_resume
 ])
 async def test_stale_resumed_progress_reconciles_checkpoint_only_when_activity_not_started(monkeypatch, activity_state, expected_count, expected_state, heartbeat):
     import importlib
-    mod = importlib.import_module("b2c_api.app")
+    mod = importlib.import_module("b2c_api.services.translation_units")
     parent = "b2c-translate-" + "2"*64
     class ResumedStore(Store):
         def get_object(self, **args):
@@ -117,7 +117,7 @@ async def test_stale_resumed_progress_reconciles_checkpoint_only_when_activity_n
 @pytest.mark.asyncio
 async def test_running_translation_counts_failed_units_waiting_for_retry_not_only_deferred_batches(monkeypatch):
     import importlib
-    mod = importlib.import_module("b2c_api.app")
+    mod = importlib.import_module("b2c_api.services.translation_units")
 
     class ActiveStore(Store):
         def get_object(self, **args):

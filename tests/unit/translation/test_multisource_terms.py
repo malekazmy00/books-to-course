@@ -1,6 +1,10 @@
+import hashlib
 from pathlib import Path
 
+import pytest
+
 from b2c_contracts import GlossaryTerm
+from b2c_translation import multisource_terms
 from b2c_translation.pipeline import (
     AgrovocIndex,
     WikidataConceptIndex,
@@ -8,14 +12,18 @@ from b2c_translation.pipeline import (
     term_injection_block,
 )
 
-ROOT = Path("/mnt/wsl/b2cdata/eval-datasets/termbases")
+ROOT = Path(__file__).resolve().parents[2] / "fixtures/termbases"
 WIKIDATA = ROOT / "wikidata-lexemes/wikidata_concept_en_ar_candidates.jsonl"
 AGROVOC = ROOT / "agrovoc/agrovoc_en_ar_candidates.jsonl"
 
 
+def _indexes():
+    return (AgrovocIndex.from_jsonl(AGROVOC, expected_sha256=None),
+            WikidataConceptIndex.from_jsonl(WIKIDATA, expected_sha256=None))
+
+
 def test_general_wikidata_layer_resolves_non_agriculture_probability():
-    agrovoc = AgrovocIndex.from_jsonl(AGROVOC)
-    wikidata = WikidataConceptIndex.from_jsonl(WIKIDATA)
+    agrovoc, wikidata = _indexes()
     assert not agrovoc.lookup("probability")
     glossary = [GlossaryTerm(
         term_en="probability",
@@ -29,12 +37,12 @@ def test_general_wikidata_layer_resolves_non_agriculture_probability():
     assert result.audit[0].source == "wikidata"
     assert result.audit[0].concept_uri.endswith("/Q9492")
     assert result.audit[0].license == "CC0 1.0 (Wikidata structured data)"
+    assert result.audit[0].source_hash == hashlib.sha256(WIKIDATA.read_bytes()).hexdigest()
     assert "probability => احتمال" in term_injection_block("Probability is measured by a number.", result.entries)
 
 
 def test_agrovoc_remains_specialist_layer_and_context_selects_it():
-    agrovoc = AgrovocIndex.from_jsonl(AGROVOC)
-    wikidata = WikidataConceptIndex.from_jsonl(WIKIDATA)
+    agrovoc, wikidata = _indexes()
     glossary = [GlossaryTerm(
         term_en="soil",
         definition_en="Loose and unconsolidated outer layer of the earth crust made up of small particles.",
@@ -48,13 +56,22 @@ def test_agrovoc_remains_specialist_layer_and_context_selects_it():
     assert result.entries[0].term_ar == "تربة"
     assert result.audit[0].source == "agrovoc"
     assert result.audit[0].concept_uri.endswith("/c_7156")
+    assert result.audit[0].source_hash == hashlib.sha256(AGROVOC.read_bytes()).hexdigest()
 
 
 def test_wikidata_candidate_requires_context_and_arabic_description():
-    wikidata = WikidataConceptIndex.from_jsonl(WIKIDATA)
+    _, wikidata = _indexes()
     item = GlossaryTerm(term_en="probability", definition_en="a type of wooden boat.",
                         first_sid="b1", lesson_id="l1")
     result = compile_multisource_termbase([item], wikidata)
     assert not result.entries
     assert result.audit[0].reason == "no_context_supported_candidate"
 
+
+def test_wikidata_pinned_hash_mismatch_fails_loudly(monkeypatch):
+    with pytest.raises(ValueError, match="SHA-256"):
+        WikidataConceptIndex.from_jsonl(WIKIDATA)
+    monkeypatch.setenv("B2C_TERMBASE_DIR", str(ROOT))
+    assert multisource_terms.default_wikidata_dataset() == WIKIDATA
+    with pytest.raises(ValueError, match="SHA-256"):
+        WikidataConceptIndex.from_jsonl()

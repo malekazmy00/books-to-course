@@ -22,7 +22,7 @@ from b2c_contracts import (
     StructuredChunk,
     SupplementCandidate,
 )
-from b2c_synthesis.validation import detect_explicit_polarity_conflicts, validate_citations
+from b2c_core.provenance_checks import detect_explicit_polarity_conflicts, validate_citations
 from .qa_generation import StructuredLLMGateway, _derive_scopes
 from .validation import lint_bloom_distribution, lint_mcq, validate_lesson_assets
 

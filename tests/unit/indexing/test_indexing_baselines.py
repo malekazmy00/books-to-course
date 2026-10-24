@@ -30,6 +30,22 @@ def test_chunk_ids_are_deterministic_and_overlap_is_bounded():
     assert [c.chunk_id for c in first] == [c.chunk_id for c in second]
 
 
+def test_overlap_never_carries_a_whole_previous_chunk():
+    refs = [PageRef(book_id="book-main", page_no=1)]
+    book = ParsedBook(book_id="book-main", title="Book", role="spine", page_count=1,
+        toc_source="headings", parser={"name": "fixture", "version": "1"}, blocks=[
+            Block(block_id="short", type="heading", text="Short heading", refs=refs, section_path=["S"], ocr=False),
+            Block(block_id="long", type="paragraph", text=" ".join(["word"] * 12), refs=refs,
+                  section_path=["S"], ocr=False),
+            Block(block_id="tail", type="paragraph", text="one two", refs=refs, section_path=["S"], ocr=False),
+        ])
+    chunks = chunk_book(book, target_tokens=8, overlap_ratio=0.4)  # overlap limit 3 tokens
+    groups = [chunk.block_ids for chunk in chunks]
+    # No chunk may be fully contained in its successor (a duplicated chunk).
+    assert all(not set(a) <= set(b) for a, b in zip(groups, groups[1:]))
+    assert groups == [["short"], ["long"], ["tail"]]
+
+
 def test_lexical_retrieval_filters_books_and_role():
     chunks = chunk_book(make_book(), target_tokens=100)
     result = lexical_search("weighted average expectation", chunks, allowed_roles={"spine"}, allowed_book_ids={"book-main"})

@@ -103,6 +103,10 @@ def chunk_book(book: ParsedBook, *, target_tokens: int = 500, overlap_ratio: flo
                         break
                     carry.insert(0, old)
                     carry_n += old_n
+                if len(carry) == len(pending):
+                    # Carrying every block would make the emitted chunk a strict
+                    # subset of the next one (a duplicated chunk), not an overlap.
+                    carry, carry_n = [], 0
                 pending, size = carry, carry_n
             pending.append(block)
             size += n

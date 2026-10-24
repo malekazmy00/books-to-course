@@ -1,5 +1,12 @@
-"""L6 Pedagogy: summary, glossary, questions, FSRS cards.
+"""Phase 5 pedagogy utilities; may import contracts, core and LLM gateway only."""
 
-Placeholder created in Phase 0 so layer boundaries are enforced from day one (import-linter).
-Implemented in Phase 5. May import only b2c_contracts, b2c_core, b2c_llm_gateway.
-"""
+from .qa_generation import (
+    CourseQAResult,
+    GroundedQA,
+    ScopeResult,
+    generate_course_qa,
+    persist_course_qa,
+)
+
+__all__ = ["CourseQAResult", "GroundedQA", "ScopeResult",
+           "generate_course_qa", "persist_course_qa"]

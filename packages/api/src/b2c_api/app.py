@@ -67,6 +67,7 @@ from temporalio.exceptions import WorkflowAlreadyStartedError
 from temporalio.service import RPCError, RPCStatusCode
 from b2c_translation.generation import validate_manual_translation
 from b2c_api.ingestion_recovery import recover_extraction, recover_index
+from b2c_api.upload_limits import UPLOAD_MULTIPART_ALLOWANCE, UploadSizeLimitMiddleware
 from b2c_api.deps import (
     STAGE_CONTROL_ID,
     is_course_id,
@@ -324,6 +325,10 @@ def create_app(
             await application.state.model_lifecycle.close()
 
     app = FastAPI(title="Book2Course API", version="0.1.0", lifespan=lifespan)
+    # Inner to the bearer-token middleware below: unauthenticated requests are
+    # refused first, then oversized PDF uploads are cut off before spooling.
+    app.add_middleware(UploadSizeLimitMiddleware, path="/v1/books",
+                       max_body_bytes=settings.max_upload_bytes + UPLOAD_MULTIPART_ALLOWANCE)
     api_auth_required = os.getenv("B2C_API_AUTH_REQUIRED", "false").strip().lower() in {"1", "true", "yes"}
     api_token = os.getenv("B2C_APP_API_TOKEN", "").strip()
     token_file = os.getenv("B2C_APP_API_TOKEN_FILE", "").strip()

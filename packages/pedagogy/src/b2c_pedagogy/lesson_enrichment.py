@@ -821,12 +821,13 @@ def generate_lesson_enrichments(
         proposal_candidate, reference_normalization = _normalize_proven_one_based_references(proposal_candidate)
         proposals = list(proposal_candidate.questions)
         assets = None
-        repair_limit = min(max(0, question_repair_limit), question_count)
+        # Numbered-procedure MCQs are built from the lesson sentences alone; model
+        # proposals do not influence them, so repairing a proposal cannot help.
+        procedure_questions = _build_numbered_procedure_mcqs(proposal_candidate.sentences, question_count)
+        repair_limit = 0 if procedure_questions else min(max(0, question_repair_limit), question_count)
         for repair_attempt in range(repair_limit + 1):
             try:
-                built_questions = _build_numbered_procedure_mcqs(
-                    proposal_candidate.sentences, question_count
-                ) or _build_source_grounded_mcqs(
+                built_questions = procedure_questions or _build_source_grounded_mcqs(
                     proposals, proposal_candidate.sentences, question_count
                 )
                 candidate = _AssetsCandidate(

@@ -528,3 +528,22 @@ def test_generation_prompt_is_coherent_and_versioned():
     assert "Every summary, Use primary" not in system
     assert LESSON_ENRICHMENT_PROMPT_VERSION == "phase5-lesson-enrichment-v4"
     assert gateway.calls[0][1] == "phase5-lesson-enrichment-v4:generate:attempt-1"
+
+
+def test_numbered_procedure_questions_never_trigger_proposal_repair_calls(monkeypatch):
+    import b2c_pedagogy.lesson_enrichment as mod
+
+    built = object()
+    monkeypatch.setattr(mod, "_build_numbered_procedure_mcqs", lambda sentences, count: [built] * count)
+    monkeypatch.setattr(mod, "_AssetsCandidate", lambda **kwargs: kwargs)
+
+    def failing_assets(scope_id, candidate, *args, **kwargs):
+        assert candidate["questions"] == [built] * 3
+        raise ValueError(f"{scope_id}:q001: stem exposes answer through the keyed option")
+
+    monkeypatch.setattr(mod, "_make_lesson_assets", failing_assets)
+    outline, book, chunks = _sources()
+    gateway = _Gateway()
+    with pytest.raises(ValueError, match="q001"):
+        generate_lesson_enrichments(outline, book, chunks, gateway, question_count=3, question_repair_limit=3)
+    assert [call[0] for call in gateway.calls] == ["ExactQuestions"]

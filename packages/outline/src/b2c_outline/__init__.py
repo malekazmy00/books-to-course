@@ -1,5 +1,11 @@
-"""L2 Outline: ParsedBook -> CourseOutline.
+"""B2C course outline construction."""
 
-Placeholder created in Phase 0 so layer boundaries are enforced from day one (import-linter).
-Implemented in Phase 2. May import only b2c_contracts, b2c_core, b2c_llm_gateway.
-"""
+from .from_book import (
+    InferredSection, OutlineCoverage, OutlineUnavailable, outline_from_book,
+    validate_outline_coverage,
+)
+
+__all__ = [
+    "InferredSection", "OutlineCoverage", "OutlineUnavailable",
+    "outline_from_book", "validate_outline_coverage",
+]

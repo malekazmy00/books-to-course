@@ -101,7 +101,7 @@ class IngestPDFActivities:
             surya_timeout_seconds = int(os.getenv("B2C_SURYA_TIMEOUT_SECONDS", "3600"))
         except ValueError as exc:
             raise ApplicationError(
-                "B2C_SURYA_MAX_TOKENS must be an integer",
+                "B2C_SURYA_MAX_TOKENS and B2C_SURYA_TIMEOUT_SECONDS must be integers",
                 type="InvalidSuryaConfig", non_retryable=True,
             ) from exc
         if surya_max_tokens < 8192 or surya_timeout_seconds < 1800:

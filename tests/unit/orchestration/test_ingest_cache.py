@@ -207,3 +207,11 @@ def test_parse_provenance_is_recorded_on_cache_hit(monkeypatch):
     record = prov.activities[0]
     out = record["generated"][0]
     assert record["used"] and record["derived"] == [(out, record["used"][0])]
+
+
+def test_invalid_surya_timeout_names_the_offending_setting(monkeypatch):
+    import pytest
+    from temporalio.exceptions import ApplicationError
+    monkeypatch.setenv("B2C_SURYA_TIMEOUT_SECONDS", "one-hour")
+    with pytest.raises(ApplicationError, match="B2C_SURYA_TIMEOUT_SECONDS"):
+        _run_parse(monkeypatch)

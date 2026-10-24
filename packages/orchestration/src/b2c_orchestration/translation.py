@@ -20,9 +20,9 @@ with workflow.unsafe.imports_passed_through():
     from b2c_contracts import ArtifactRef, ParsedBook, stage_key
     from b2c_core.source_identity import artifact_source_identity
     from b2c_translation.generation import validate_manual_translation, translation_completeness_issue
-    from b2c_translation import SourceSegment, TranslatedSegment, TranslationPack, plan_translation_batches, translate_segments
-from b2c_translation.arabic_correction import correct_pack, correction_identity
-from b2c_translation.glossary import ContextualGlossary, glossary_identity
+    from b2c_translation import SourceSegment, TranslatedSegment, plan_translation_batches, translate_segments
+    from b2c_translation.arabic_correction import correct_pack, correction_identity
+    from b2c_translation.glossary import ContextualGlossary, glossary_identity
 
 
 class TranslateContentInput(BaseModel):
@@ -200,7 +200,8 @@ def translation_manual_overrides(artifact_store: Any, inp: TranslateContentInput
                 or data.get("source_language") != inp.source_language or data.get("target_language") != inp.target_language
                 or data.get("segment_id") not in originals):
                 raise ValueError("translation override identity mismatch")
-            data["text"] = validate_manual_translation(originals[data["segment_id"]].text, data["text"])
+            data["text"] = validate_manual_translation(originals[data["segment_id"]].text, data["text"],
+                                                       target_language=inp.target_language)
             output.append(data)
     return sorted(output, key=lambda x:(x["created_at"], x["revision_id"]))
 
@@ -250,7 +251,8 @@ class TranslationActivities:
         else:
             if saved.get("parent_workflow_id") != inp.parent_workflow_id or saved.get("segment_id") != inp.segment_id or saved.get("source_text_sha256") != inp.source_text_sha256:
                 raise ApplicationError("candidate identity mismatch", non_retryable=True)
-            saved["text"] = validate_manual_translation(segment.text, saved["text"])
+            saved["text"] = validate_manual_translation(segment.text, saved["text"],
+                                                        target_language=original.target_language)
             return saved
         if original.selected_translation_engine == "booktrans-pro":
             from .booktrans_route import run_booktrans_pro
@@ -285,7 +287,9 @@ class TranslationActivities:
             "segment_id":segment.segment_id, "source_text_sha256":inp.source_text_sha256,
             "source_sha256":ref.sha256, "source_artifact_ref":original.source_artifact_ref,
             "source_language":original.source_language, "target_language":original.target_language,
-            "text":validate_manual_translation(segment.text, pack.segments[0].text), "citations":segment.citations,
+            "text":validate_manual_translation(segment.text, pack.segments[0].text,
+                                               target_language=original.target_language),
+            "citations":segment.citations,
             "raw_text": raw_pack.segments[0].text, "arabic_editing": edit_audit,
             "glossary_sha256": glossary_identity(original.contextual_glossary),
             "model_id":self.gateway.model_id, "created_at":datetime.now(UTC).isoformat(),

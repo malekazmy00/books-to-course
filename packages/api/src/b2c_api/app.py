@@ -1391,9 +1391,16 @@ def create_app(
                 raise HTTPException(status_code=503, detail="index course is missing")
             # The workflow's result is versioned and may not include an artifact
             # reference (older workers returned only chunk IDs/counts). Read the
-            # already-persisted, course-scoped chunks from the indexing store.
+            # already-persisted chunks, scoped to exactly this run's books and
+            # chunk IDs: the course table also holds other runs' chunks.
+            run_books = result.get("books") or {}
+            run_chunk_ids = {chunk_id for item in run_books.values() if isinstance(item, dict)
+                             for chunk_id in item.get("chunk_ids") or []}
+            if not run_books or not run_chunk_ids:
+                raise HTTPException(status_code=503, detail="index run does not record its chunk identities")
             store = PostgresChunkStore(lambda: psycopg.connect(settings.pg_dsn))
-            chunks = await run_in_threadpool(store.list_chunks, course_id)
+            chunks = await run_in_threadpool(lambda: store.list_chunks(course_id, book_ids=set(run_books)))
+            chunks = [chunk for chunk in chunks if chunk.chunk_id in run_chunk_ids]
             if not chunks:
                 raise ValueError("no persisted index chunks found")
             return {"workflow_id": workflow_id, "course_id": course_id,

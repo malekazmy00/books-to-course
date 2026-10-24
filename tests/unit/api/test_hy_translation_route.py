@@ -169,7 +169,6 @@ async def test_catalog_hy_readiness_requires_workflow_poller(workflow_poller,act
 
 @pytest.mark.asyncio
 async def test_contextual_glossary_is_persisted_and_changes_workflow_identity():
-    from b2c_translation.glossary import ContextualGlossary
     temporal = Temporal()
     store = Store()
     async def connect(_): return temporal

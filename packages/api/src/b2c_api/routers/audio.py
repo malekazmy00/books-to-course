@@ -125,7 +125,8 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
                                             id_reuse_policy=REUSE_ONLY_AFTER_FAILURE)
             except WorkflowAlreadyStartedError:
                 pass
-        except HTTPException: raise
+        except HTTPException:
+            raise
         except Exception as exc:
             log.exception("failed to queue MP3 generation")
             raise HTTPException(status_code=503, detail="MP3 generation could not be queued") from exc
@@ -175,7 +176,9 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
     async def audio_status(workflow_id: str) -> dict[str, Any]:
         require_workflow_id("mp3", workflow_id, "audio workflow not found")
         try:
-            client = await get_temporal_client(); handle = client.get_workflow_handle(workflow_id); desc = await handle.describe()
+            client = await get_temporal_client()
+            handle = client.get_workflow_handle(workflow_id)
+            desc = await handle.describe()
         except Exception as exc:
             try:
                 partial = await partial_audio_manifest(workflow_id)
@@ -190,23 +193,30 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
                 out["manifest"] = partial
                 out["progress"] = audio_progress(partial, status)
             except HTTPException as exc:
-                if exc.status_code != 409: raise
+                if exc.status_code != 409:
+                    raise
                 out["progress"] = {"completed_tracks": 0, "status": "RUNNING", "checkpointing": False}
         if status == "COMPLETED":
-            result = await handle.result(); out["result"] = result; ref = ArtifactRef.model_validate(result["artifact"])
-            if ref.stage != "generate-mp3" or not ref.uri.startswith(f"s3://{settings.s3_bucket}/{result.get('course_id')}/"): raise HTTPException(status_code=503, detail="MP3 artifact failed scope validation")
+            result = await handle.result()
+            out["result"] = result
+            ref = ArtifactRef.model_validate(result["artifact"])
+            if ref.stage != "generate-mp3" or not ref.uri.startswith(f"s3://{settings.s3_bucket}/{result.get('course_id')}/"):
+                raise HTTPException(status_code=503, detail="MP3 artifact failed scope validation")
             out["manifest_url"] = f"/v1/audio/{workflow_id}/manifest"
             if result.get("kind") in {"course", "book_lessons"}:
                 out["manifest"] = result.get("manifest")
-                if out["manifest"]: out["progress"] = audio_progress(out["manifest"], status)
-            else: out["file_url"] = f"/v1/audio/{workflow_id}/file"
+                if out["manifest"]:
+                    out["progress"] = audio_progress(out["manifest"], status)
+            else:
+                out["file_url"] = f"/v1/audio/{workflow_id}/file"
         elif status in TERMINAL_FAILURE_STATUSES:
             try:
                 partial = await partial_audio_manifest(workflow_id)
                 out["manifest"] = partial
                 out["progress"] = audio_progress(partial, status)
             except HTTPException as exc:
-                if exc.status_code != 409: raise
+                if exc.status_code != 409:
+                    raise
             if failure := await workflow_failure(handle):
                 out["failure"] = failure
         return out
@@ -215,27 +225,34 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
     async def audio_manifest(workflow_id: str) -> dict[str, Any]:
         require_workflow_id("mp3", workflow_id, "audio workflow not found")
         try:
-            client = await get_temporal_client(); handle = client.get_workflow_handle(workflow_id)
+            client = await get_temporal_client()
+            handle = client.get_workflow_handle(workflow_id)
             status = getattr(getattr(await handle.describe(), "status", None), "name", "")
         except Exception:
             return await partial_audio_manifest(workflow_id)
-        if status != "COMPLETED": return await partial_audio_manifest(workflow_id)
-        result = await handle.result(); ref = ArtifactRef.model_validate(result["artifact"])
-        if ref.stage != "generate-mp3" or not ref.uri.startswith(f"s3://{settings.s3_bucket}/{result.get('course_id')}/"): raise HTTPException(status_code=503, detail="audio manifest reference is invalid")
+        if status != "COMPLETED":
+            return await partial_audio_manifest(workflow_id)
+        result = await handle.result()
+        ref = ArtifactRef.model_validate(result["artifact"])
+        if ref.stage != "generate-mp3" or not ref.uri.startswith(f"s3://{settings.s3_bucket}/{result.get('course_id')}/"):
+            raise HTTPException(status_code=503, detail="audio manifest reference is invalid")
         store = get_store()
         try:
             value = json.loads(await run_in_threadpool(store.read, ref, "audio-manifest.json"))
             validate_audio_manifest(value, settings.s3_bucket, result.get("course_id"))
             return await add_audio_lesson_order(value, workflow_id)
-        except Exception as exc: raise HTTPException(status_code=503, detail="audio manifest is unavailable") from exc
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="audio manifest is unavailable") from exc
 
     @router.get("/v1/audio/{workflow_id}/tracks/{track_id}")
     async def download_audio_track(workflow_id: str, track_id: str) -> StreamingResponse:
         manifest = await audio_manifest(workflow_id)
         entry = next((x for x in manifest.get("tracks", []) if x.get("track_id") == track_id), None)
-        if entry is None: raise HTTPException(status_code=404, detail="audio track not found")
+        if entry is None:
+            raise HTTPException(status_code=404, detail="audio track not found")
         ref = ArtifactRef.model_validate(entry.get("artifact_ref"))
-        if ref.stage != "generate-mp3-track" or not ref.uri.startswith(f"s3://{settings.s3_bucket}/{manifest.get('course_id')}/"): raise HTTPException(status_code=503, detail="audio track reference is invalid")
+        if ref.stage != "generate-mp3-track" or not ref.uri.startswith(f"s3://{settings.s3_bucket}/{manifest.get('course_id')}/"):
+            raise HTTPException(status_code=503, detail="audio track reference is invalid")
         name = await audio_course_name(str(manifest["course_id"]))
         filename = next(t["filename"] for t in ordered_audio_tracks(manifest, name) if t["track_id"] == track_id)
         try:
@@ -253,7 +270,8 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
             if display.get("course_id") != value.get("course_id") or display.get("workflow_id") != workflow_id:
                 raise HTTPException(503, "audio display identity is invalid")
             return {**value, "lesson_order": display.get("lesson_order", [])}
-        except HTTPException: raise
+        except HTTPException:
+            raise
         except Exception as exc:
             code = getattr(exc, "response", {}).get("Error", {}).get("Code")
             if isinstance(exc, KeyError) or code in {"NoSuchKey", "404", "NotFound"}:
@@ -371,12 +389,16 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
     async def download_audio(workflow_id: str) -> StreamingResponse:
         require_workflow_id("mp3", workflow_id, "audio workflow not found")
         try:
-            client = await get_temporal_client(); handle = client.get_workflow_handle(workflow_id)
-            if getattr(getattr(await handle.describe(), "status", None), "name", "") != "COMPLETED": raise HTTPException(status_code=409, detail="MP3 is not ready")
+            client = await get_temporal_client()
+            handle = client.get_workflow_handle(workflow_id)
+            if getattr(getattr(await handle.describe(), "status", None), "name", "") != "COMPLETED":
+                raise HTTPException(status_code=409, detail="MP3 is not ready")
             result = await handle.result()
-            if result.get("kind") != "book": raise HTTPException(status_code=409, detail="this audio is split into separate tracks; use the manifest")
+            if result.get("kind") != "book":
+                raise HTTPException(status_code=409, detail="this audio is split into separate tracks; use the manifest")
             ref = ArtifactRef.model_validate(result["artifact"])
-            if ref.stage != "generate-mp3" or not ref.uri.startswith(f"s3://{settings.s3_bucket}/{result.get('course_id')}/"): raise HTTPException(status_code=503, detail="MP3 artifact failed scope validation")
+            if ref.stage != "generate-mp3" or not ref.uri.startswith(f"s3://{settings.s3_bucket}/{result.get('course_id')}/"):
+                raise HTTPException(status_code=503, detail="MP3 artifact failed scope validation")
             return await stream_artifact_file(get_store(), ref, "course.mp3", media_type="audio/mpeg",
                 headers={"Content-Disposition": 'attachment; filename="course.mp3"'})
         except HTTPException:

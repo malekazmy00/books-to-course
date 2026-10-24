@@ -66,7 +66,7 @@ def qa_router(ctx: ApiContext, router: Any = None) -> Any:
             provider = manager.providers.get(retrieval_provider_id)
             if provider is None or provider.adapter == "unsupported":
                 raise HTTPException(status_code=503, detail="the selected retrieval route is not configured on this server")
-            if requested_retrieval_provider and (state := await manager.status(retrieval_provider_id))["state"] != "ready":
+            if requested_retrieval_provider and (await manager.status(retrieval_provider_id))["state"] != "ready":
                 raise HTTPException(status_code=503, detail="the selected retrieval route is not ready")
             if not requested_retrieval_provider and retrieval_mode == "hybrid" and not settings.embedding_base_url:
                 raise HTTPException(status_code=503, detail="hybrid retrieval endpoint is not configured")
@@ -352,24 +352,33 @@ def qa_router(ctx: ApiContext, router: Any = None) -> Any:
         store = get_store()
         prefix=f"_system/qa-checkpoints/{workflow_id}/"
         def read_scopes() -> list[dict[str,Any]]:
-            output=[]; token=None
+            output=[]
+            token=None
             while True:
                 args={"Bucket":settings.s3_bucket,"Prefix":prefix}
-                if token: args["ContinuationToken"]=token
+                if token:
+                    args["ContinuationToken"]=token
                 page=store.s3.list_objects_v2(**args)
                 for entry in page.get("Contents",[]):
-                    key=entry["Key"]; relative=key[len(prefix):]; parts=relative.split("/")
-                    if len(parts)!=2 or not parts[0] or not parts[1].endswith(".json"): continue
+                    key=entry["Key"]
+                    relative=key[len(prefix):]
+                    parts=relative.split("/")
+                    if len(parts)!=2 or not parts[0] or not parts[1].endswith(".json"):
+                        continue
                     try:
                         payload=json.loads(store.s3.get_object(Bucket=settings.s3_bucket,Key=key)["Body"].read())
                         scope=ScopeResult.model_validate(payload.get("scope_result"))
-                    except Exception: continue
-                    if not scope.items: continue
+                    except Exception:
+                        continue
+                    if not scope.items:
+                        continue
                     output.append({"checkpoint_fingerprint":parts[0],"identity":payload.get("identity",{}),
                         "saved_at":payload.get("saved_at"),"scope_result":scope.model_dump(mode="json")})
-                if not page.get("IsTruncated"): break
+                if not page.get("IsTruncated"):
+                    break
                 token=page.get("NextContinuationToken")
-                if not token: raise ValueError("truncated scope checkpoint listing has no continuation token")
+                if not token:
+                    raise ValueError("truncated scope checkpoint listing has no continuation token")
             return output
         def read_lesson_assets() -> list[dict[str, Any]]:
             output: dict[str, tuple[str, dict[str, Any]]] = {}

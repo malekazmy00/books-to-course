@@ -7,7 +7,7 @@ import httpx
 import pytest
 from moto import mock_aws
 from b2c_api.app import create_app
-from b2c_api.audio_exports import audio_progress, ordered_audio_tracks, audio_zip, validate_audio_manifest
+from b2c_api.audio_exports import ordered_audio_tracks, validate_audio_manifest
 from b2c_core import ArtifactStore, Settings
 
 WID = 'b2c-mp3-'+'a'*64
@@ -21,7 +21,8 @@ class Temporal:
 @pytest.fixture
 def environment():
     with mock_aws():
-        store=ArtifactStore(boto3.client('s3', region_name='us-east-1')); store.ensure_bucket()
+        store=ArtifactStore(boto3.client('s3', region_name='us-east-1'))
+        store.ensure_bucket()
         tracks=[]
         for number,(lesson,kind) in enumerate([('lesson2','lesson_attachment'),('lesson1','lesson_source_text'),('lesson2','lesson_source_text')]):
             ref=store.put('revolution','generate-mp3-track',str(number+1)*64,{'track.mp3':b'ID3-audio-'+str(number).encode()})

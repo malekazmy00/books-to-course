@@ -75,7 +75,8 @@ def ingestion_router(ctx: ApiContext, router: Any = None) -> Any:
             raise HTTPException(status_code=409, detail="OCR extraction is not complete")
         result = status["result"]
         parsed = result.get("parsed_book", {}).get("ref")
-        if not parsed: raise HTTPException(status_code=404, detail="parsed text artifact not found")
+        if not parsed:
+            raise HTTPException(status_code=404, detail="parsed text artifact not found")
         ref = ArtifactRef.model_validate(parsed)
         if ref.stage != "ingest-parse-pdf" or not ref.uri.startswith(f"s3://{settings.s3_bucket}/") or (course_id and not ref.uri.startswith(f"s3://{settings.s3_bucket}/{course_id}/")):
             raise HTTPException(status_code=503, detail="parsed artifact reference is invalid")

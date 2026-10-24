@@ -97,7 +97,8 @@ def indexing_router(ctx: ApiContext, router: Any = None) -> Any:
             return {"workflow_id": workflow_id, "course_id": course_id,
                     "chunk_count": len(chunks),
                     "chunks": [chunk.model_dump(mode="json") for chunk in chunks]}
-        except HTTPException: raise
+        except HTTPException:
+            raise
         except Exception as exc:
             log.exception("failed to read completed index chunks")
             raise HTTPException(status_code=503,detail="index chunks are unavailable") from exc

@@ -320,8 +320,11 @@ def books_router(ctx: ApiContext, router: Any = None) -> Any:
                         ).hexdigest()
                         try:
                             await temporal.get_workflow_handle(candidate_id).describe()
-                            workflow_id = candidate_id; engine = candidate; break
-                        except Exception: continue
+                            workflow_id = candidate_id
+                            engine = candidate
+                            break
+                        except Exception:
+                            continue
                 except Exception:
                     pass
                 books.append({"course_id": course_id, **meta, "ocr_engine": engine,
@@ -493,7 +496,8 @@ def books_router(ctx: ApiContext, router: Any = None) -> Any:
     async def download_uploaded_book(course_id: str, book_id: str) -> StreamingResponse:
         catalog = await list_course_books(course_id)
         item = next((x for x in catalog["books"] if x.get("book_id") == book_id), None)
-        if item is None: raise HTTPException(status_code=404, detail="uploaded book not found")
+        if item is None:
+            raise HTTPException(status_code=404, detail="uploaded book not found")
         ref = ArtifactRef.model_validate(item["source_artifact_ref"])
         if ref.stage != "book-upload" or not ref.uri.startswith(f"s3://{settings.s3_bucket}/{course_id}/"):
             raise HTTPException(status_code=503, detail="uploaded book reference is invalid")

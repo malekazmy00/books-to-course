@@ -56,28 +56,39 @@ def bind_translation_units(ctx: ApiContext) -> None:
         store = get_store()
         prefix=f"_system/translation-checkpoints/{workflow_id}/"
         def read_batches() -> list[dict[str,Any]]:
-            output=[]; token=None
+            output=[]
+            token=None
             while True:
                 args={"Bucket":settings.s3_bucket,"Prefix":prefix}
-                if token: args["ContinuationToken"]=token
+                if token:
+                    args["ContinuationToken"]=token
                 page=store.s3.list_objects_v2(**args)
                 for entry in page.get("Contents",[]):
-                    key=entry["Key"]; relative=key[len(prefix):]; parts=relative.split("/")
-                    if len(parts)!=2 or not parts[0] or not parts[1].startswith("batch-") or not parts[1].endswith(".json"): continue
+                    key=entry["Key"]
+                    relative=key[len(prefix):]
+                    parts=relative.split("/")
+                    if len(parts)!=2 or not parts[0] or not parts[1].startswith("batch-") or not parts[1].endswith(".json"):
+                        continue
                     try:
                         payload=json.loads(store.s3.get_object(Bucket=settings.s3_bucket,Key=key)["Body"].read())
-                        if payload.get("run_fingerprint")!=parts[0] or int(payload.get("batch_index",0))<1: continue
+                        if payload.get("run_fingerprint")!=parts[0] or int(payload.get("batch_index",0))<1:
+                            continue
                         segments=payload.get("segments")
-                        if not isinstance(segments,list) or not segments: continue
-                        if any(not isinstance(x,dict) or not x.get("segment_id") or not x.get("text") for x in segments): continue
-                    except Exception: continue
+                        if not isinstance(segments,list) or not segments:
+                            continue
+                        if any(not isinstance(x,dict) or not x.get("segment_id") or not x.get("text") for x in segments):
+                            continue
+                    except Exception:
+                        continue
                     output.append({"run_fingerprint":parts[0],"batch_index":payload["batch_index"],
                         "source_sha256":payload.get("source_sha256"),"model_id":payload.get("model_id"),"source_language":payload.get("source_language"),
                         "target_language":payload.get("target_language"),"completed_at":payload.get("completed_at"),
                         "segments":segments})
-                if not page.get("IsTruncated"): break
+                if not page.get("IsTruncated"):
+                    break
                 token=page.get("NextContinuationToken")
-                if not token: raise ValueError("truncated translation checkpoint listing has no continuation token")
+                if not token:
+                    raise ValueError("truncated translation checkpoint listing has no continuation token")
             return output
         try:
             batches=await run_in_threadpool(read_batches)

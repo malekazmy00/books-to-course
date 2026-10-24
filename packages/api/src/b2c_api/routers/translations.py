@@ -458,7 +458,7 @@ def translations_router(ctx: ApiContext, router: Any = None) -> Any:
 
     @router.post("/v1/translations/{workflow_id}/retranslations/{candidate_id}/accept", status_code=201)
     async def accept_retranslation(workflow_id: str, candidate_id: str, request: TranslationCandidateAcceptRequest) -> dict[str, Any]:
-        original = await terminal_translation(workflow_id)
+        await terminal_translation(workflow_id)
         record = await selected_candidate(workflow_id, candidate_id, request.revision_id)
         # Candidate-derived revision ID makes repeated acceptance idempotent.
         revision_id = hashlib.sha256((candidate_id + (request.revision_id or "")).encode()).hexdigest()

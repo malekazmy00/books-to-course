@@ -116,8 +116,6 @@ async def test_stale_resumed_progress_reconciles_checkpoint_only_when_activity_n
 
 @pytest.mark.asyncio
 async def test_running_translation_counts_failed_units_waiting_for_retry_not_only_deferred_batches(monkeypatch):
-    import importlib
-    mod = importlib.import_module("b2c_api.services.translation_units")
 
     class ActiveStore(Store):
         def get_object(self, **args):

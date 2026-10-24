@@ -1,0 +1,40 @@
+"""Shared types for translation QA (D-028).
+
+A check is a pure function from a ``CheckContext`` to MQM-aligned ``QAIssue``s. Checks never
+call models; semantic judgement belongs to a ``QualityEstimator``.
+"""
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
+from typing import Protocol
+
+from b2c_contracts import QAIssue, QEResult, TranslationUnit
+
+
+@dataclass(frozen=True)
+class CheckContext:
+    unit: TranslationUnit
+    target: str  # final text after footnote restoration
+    source_language: str = "en"
+    target_language: str = "ar"
+    terms: Mapping[str, str] = field(default_factory=dict)     # locked termbase (source -> target)
+    entities: Mapping[str, str] = field(default_factory=dict)  # named-entity table (source -> target)
+    leak_fingerprints: frozenset[str] = frozenset()            # derived from every prompt template version
+
+
+Check = Callable[[CheckContext], list[QAIssue]]
+
+
+@dataclass(frozen=True)
+class QEOutcome:
+    passed: bool
+    result: QEResult
+    issues: list[QAIssue] = field(default_factory=list)
+
+
+class QualityEstimator(Protocol):
+    @property
+    def name(self) -> str: ...
+
+    def estimate(self, unit: TranslationUnit, target: str) -> QEOutcome: ...

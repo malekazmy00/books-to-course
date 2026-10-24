@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from datetime import datetime, timezone
 from typing import Any
 
@@ -42,15 +43,28 @@ class PostgresSRSStore:
 
     def __init__(self, dsn: str) -> None:
         self.dsn = dsn
+        self._schema_ready = False
+        self._schema_lock = threading.Lock()
 
     def _connect(self):
         import psycopg
         return psycopg.connect(self.dsn)
 
-    @staticmethod
-    def _ensure_schema(conn: Any) -> None:
-        for statement in _SRS_DDL:
-            conn.execute(statement)
+    def _ensure_schema(self) -> None:
+        """Create the tables once per store, in a transaction of their own.
+
+        The flag is set only after that transaction commits, so a rolled-back
+        request transaction can never leave the store believing DDL ran.
+        """
+        if self._schema_ready:
+            return
+        with self._schema_lock:
+            if self._schema_ready:
+                return
+            with self._connect() as conn:
+                for statement in _SRS_DDL:
+                    conn.execute(statement)
+            self._schema_ready = True
 
     def review(
         self, *, user_id: str, course_id: str, question_id: str,
@@ -58,8 +72,8 @@ class PostgresSRSStore:
     ) -> tuple[ReviewLogEntry, datetime]:
         if reviewed_at.tzinfo is None or reviewed_at.utcoffset() != timezone.utc.utcoffset(reviewed_at):
             raise ValueError("reviewed_at must be timezone-aware UTC")
+        self._ensure_schema()
         with self._connect() as conn:
-            self._ensure_schema(conn)
             lock_name = json.dumps([user_id, course_id, question_id], ensure_ascii=True, separators=(",", ":"))
             conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (lock_name,))
             row = conn.execute(
@@ -91,8 +105,8 @@ class PostgresSRSStore:
     def due(self, *, user_id: str, course_id: str, now: datetime, limit: int = 50) -> list[dict[str, Any]]:
         if now.tzinfo is None or now.utcoffset() != timezone.utc.utcoffset(now):
             raise ValueError("now must be timezone-aware UTC")
+        self._ensure_schema()
         with self._connect() as conn:
-            self._ensure_schema(conn)
             rows = conn.execute(
                 "SELECT question_id,due_at FROM learner_srs_cards "
                 "WHERE user_id=%s AND course_id=%s AND due_at<=%s "
@@ -102,8 +116,8 @@ class PostgresSRSStore:
         return [{"question_id": row[0], "due_at": row[1].astimezone(timezone.utc)} for row in rows]
 
     def history(self, *, user_id: str, course_id: str, limit: int = 100) -> list[ReviewLogEntry]:
+        self._ensure_schema()
         with self._connect() as conn:
-            self._ensure_schema(conn)
             rows = conn.execute(
                 "SELECT entry_json FROM learner_review_history "
                 "WHERE user_id=%s AND course_id=%s ORDER BY reviewed_at DESC,review_id DESC LIMIT %s",

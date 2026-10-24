@@ -77,6 +77,7 @@ from b2c_api.deps import (
     require_course_id,
     require_workflow_id,
     describe_or_404,
+    validation_locations,
     s3_bytes,
     s3_json,
     stream_artifact_file,
@@ -611,7 +612,8 @@ def create_app(
                 {"source.pdf": digest, "book-upload.json": sha256(metadata_bytes).hexdigest()},
             )
         except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+            log.warning("rejected book upload storage request: %s", exc)
+            raise HTTPException(status_code=422, detail="uploaded book could not be stored under this course") from exc
         finally:
             await file.close()
 
@@ -1200,8 +1202,14 @@ def create_app(
                 outline = include_leading_blocks_in_first_lesson(parsed, outline)
                 system_review = review_outline(parsed, outline)
                 outline = CourseOutline.model_validate({**outline.model_dump(mode="python"), "requires_review": False, "schema_version": SCHEMA_VERSION})
-            except (OutlineReviewRejected, ValidationError) as exc:
+            except OutlineReviewRejected as exc:
+                # Fixed policy reasons from b2c_outline.review; no input values.
                 raise HTTPException(status_code=422, detail=f"system structural review rejected: {exc}") from exc
+            except ValidationError as exc:
+                log.warning("system structural review produced an invalid outline: %s", exc)
+                raise HTTPException(status_code=422, detail={
+                    "message": "system structural review rejected",
+                    "errors": validation_locations(exc)}) from exc
         block_positions = {block.block_id: index for index, block in enumerate(parsed.blocks)}
         known_lessons: set[str] = set()
         for module in outline.modules:
@@ -1245,7 +1253,7 @@ def create_app(
             try:
                 _validate_course_supplementary_identity(supplement_parsed, book_id)
             except ValueError as exc:
-                raise HTTPException(status_code=422, detail=str(exc)) from exc
+                raise HTTPException(status_code=422, detail="supplementary book identity mismatch") from exc
             supplementary_parsed_refs[book_id] = supplement_ref.model_dump(mode="json")
 
         provenance = (OutlineApprovalProvenance(
@@ -2105,7 +2113,9 @@ def create_app(
             try:
                 await run_in_threadpool(validate_mp3_input_lineage, store, inp)
             except (ValueError, KeyError, TypeError) as exc:
-                raise HTTPException(status_code=422, detail=str(exc)) from exc
+                log.warning("audio request failed source lineage validation: %s", exc)
+                raise HTTPException(status_code=422,
+                                    detail="audio sources do not share one validated book lineage") from exc
             except Exception as exc:
                 log.exception("could not verify audio source lineage")
                 raise HTTPException(status_code=503, detail="audio source lineage could not be verified") from exc

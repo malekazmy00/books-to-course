@@ -101,6 +101,12 @@ async def verified_ref(store: Any, course_id: str, ref: Any, stage: str, label: 
     return ref
 
 
+def validation_locations(exc: Any) -> list[dict[str, Any]]:
+    """Pydantic error locations and types only; never the offending input values."""
+    return [{"loc": list(error.get("loc", ())), "type": error.get("type", "value_error")}
+            for error in exc.errors(include_input=False, include_context=False, include_url=False)]
+
+
 def is_workflow_id(kind: str, workflow_id: str) -> bool:
     return WORKFLOW_ID_PATTERNS[kind].fullmatch(workflow_id) is not None
 

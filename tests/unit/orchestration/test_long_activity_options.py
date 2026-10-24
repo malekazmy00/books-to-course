@@ -56,6 +56,24 @@ def test_ingest_parse_heartbeat_is_patched(monkeypatch, patched):
 
 
 @pytest.mark.parametrize("patched", [True, False])
+def test_outline_runs_on_heavy_queue_with_heartbeat_when_patched(monkeypatch, patched):
+    calls, seen = [], []
+    _capture_checkpointed(monkeypatch, ingest_mod, calls)
+    _patched(monkeypatch, patched, seen)
+    asyncio.run(ingest_mod.IngestPDFWorkflow().run(_ingest_input()))
+    outline = dict(calls)["outline_from_parsed_book"]
+    assert "outline-heavy-queue-v1" in seen
+    if patched:
+        assert outline["task_queue"] == "heavy"
+        assert outline["start_to_close_timeout"] == timedelta(hours=12)
+        assert outline["heartbeat_timeout"] == timedelta(minutes=5)
+    else:
+        assert outline["task_queue"] == "light"
+        assert outline["start_to_close_timeout"] == timedelta(minutes=5)
+        assert "heartbeat_timeout" not in outline
+
+
+@pytest.mark.parametrize("patched", [True, False])
 def test_qa_heartbeat_timeout_is_patched(monkeypatch, patched):
     captured, seen = {}, []
 

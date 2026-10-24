@@ -374,10 +374,19 @@ class IngestPDFWorkflow:
         )
         if inp.upload.get("role") != "spine":
             return {"parsed_book": parsed, "outline": None}
-        outline = await execute_checkpointed(self, 
-            "outline_from_parsed_book",
+        # No-TOC outlines call the LLM once per page group: that is heavy work
+        # (docs/04 §2) and can exceed minutes. Old histories keep the LIGHT
+        # queue and 5 minute timeout they were scheduled with.
+        if workflow.patched("outline-heavy-queue-v1"):
+            outline_options: dict[str, Any] = {
+                "task_queue": HEAVY, "start_to_close_timeout": timedelta(hours=12),
+                "heartbeat_timeout": LONG_ACTIVITY_HEARTBEAT_TIMEOUT,
+            }
+        else:
+            outline_options = {"task_queue": LIGHT, "start_to_close_timeout": timedelta(minutes=5)}
+        outline = await execute_checkpointed(
+            self, "outline_from_parsed_book",
             BuildOutlineInput(inp.course_id, parsed["ref"], inp.supplementary_book_ids, inp.cache_bust),
-            task_queue=LIGHT, retry_policy=DEFAULT_RETRY,
-            start_to_close_timeout=timedelta(minutes=5),
+            retry_policy=DEFAULT_RETRY, **outline_options,
         )
         return {"parsed_book": parsed, "outline": outline}

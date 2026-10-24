@@ -435,6 +435,7 @@ async def test_qa_workflow_uses_bounded_retry_and_long_external_timeout(monkeypa
         captured.update(kwargs)
         return {"status": "failed"}
     monkeypatch.setattr(qa.workflow, "execute_activity", execute)
+    monkeypatch.setattr(qa.workflow, "patched", lambda _: True)
     inp = GenerateCourseQAInput(course_id="course", approved_outline_ref={}, index_result={})
     await qa.GenerateCourseQAWorkflow().run(inp)
     assert captured["retry_policy"].maximum_attempts == 3

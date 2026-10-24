@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextvars
 import hashlib
 import json
 import os
@@ -17,6 +16,7 @@ from temporalio.common import RetryPolicy
 
 with workflow.unsafe.imports_passed_through():
     from .controls import wait_for_activity_checkpoint, execute_checkpointed
+    from .heartbeat import start_activity_heartbeat_pump
     from b2c_contracts import ArtifactRef, ParsedBook, stage_key
     from b2c_core.source_identity import artifact_source_identity
     from b2c_translation.generation import validate_manual_translation, translation_completeness_issue
@@ -42,37 +42,9 @@ class TranslateContentInput(BaseModel):
 
 
 def _start_activity_heartbeat_pump(workflow_id: str, *, interval_seconds: float = 30.0) -> tuple[threading.Event, threading.Thread]:
-    """Keep long synchronous provider calls alive in Temporal.
-
-    Translation activities make blocking HTTP calls. Progress callbacks cannot
-    heartbeat while one of those calls is waiting, so an otherwise healthy
-    activity can time out and continue writing checkpoints after Temporal has
-    already marked its attempt failed. Copy the activity context into a small
-    helper thread and heartbeat liveness independently; durable progress still
-    comes from the S3 checkpoints written by the main activity thread.
-    """
-    stop = threading.Event()
-    activity_context = contextvars.copy_context()
-
-    def pump() -> None:
-        while not stop.wait(interval_seconds):
-            try:
-                activity_context.run(
-                    activity.heartbeat,
-                    {"workflow_id": workflow_id, "kind": "translation_liveness"},
-                )
-            except RuntimeError:
-                # The activity context is gone or the worker has already
-                # completed this task. The pump must never outlive the activity.
-                return
-            except Exception:
-                # A transient heartbeat transport failure is retried on the
-                # next tick; it must not mask or replace translation errors.
-                continue
-
-    thread = threading.Thread(target=pump, name="b2c-translation-heartbeat", daemon=True)
-    thread.start()
-    return stop, thread
+    """Keep long synchronous provider calls alive in Temporal (see heartbeat.py)."""
+    return start_activity_heartbeat_pump(workflow_id, interval_seconds=interval_seconds,
+                                         kind="translation_liveness")
 
 
 def translation_source_segments(artifact_store: Any, inp: TranslateContentInput) -> list[SourceSegment]:

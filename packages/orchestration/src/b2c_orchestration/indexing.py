@@ -10,6 +10,7 @@ from temporalio.exceptions import ApplicationError
 
 with workflow.unsafe.imports_passed_through():
     from .controls import wait_for_activity_checkpoint, execute_checkpointed
+    from .heartbeat import LONG_ACTIVITY_HEARTBEAT_TIMEOUT, activity_heartbeats
     from b2c_contracts import ArtifactRef, CourseOutline, ParsedBook, stage_key
     from b2c_contracts.models import StructuredChunk
     from b2c_indexing import PostgresChunkStore, chunk_book
@@ -33,6 +34,10 @@ class IndexActivities:
 
     @activity.defn(name="index_approved_book")
     def index_approved_book(self, inp: IndexApprovedBookInput) -> dict[str, Any]:
+        with activity_heartbeats("index_liveness"):
+            return self._index_approved_book(inp)
+
+    def _index_approved_book(self, inp: IndexApprovedBookInput) -> dict[str, Any]:
         parsed_ref = ArtifactRef.model_validate(inp.parsed_ref)
         approved_ref = ArtifactRef.model_validate(inp.approved_outline_ref)
         if parsed_ref.stage != "ingest-parse-pdf" or approved_ref.stage != "approve-outline":
@@ -133,7 +138,11 @@ class IndexApprovedBookWorkflow:
 
     @workflow.run
     async def run(self, inp: IndexApprovedBookInput) -> dict[str, Any]:
-        return await execute_checkpointed(self, 
-            "index_approved_book", inp, task_queue=inp.activity_task_queue,
-            start_to_close_timeout=timedelta(minutes=30),
+        options: dict[str, Any] = {}
+        # Pre-existing histories scheduled indexing without a heartbeat timeout.
+        if workflow.patched("index-heartbeat-timeout-v1"):
+            options["heartbeat_timeout"] = LONG_ACTIVITY_HEARTBEAT_TIMEOUT
+        return await execute_checkpointed(
+            self, "index_approved_book", inp, task_queue=inp.activity_task_queue,
+            start_to_close_timeout=timedelta(minutes=30), **options,
         )

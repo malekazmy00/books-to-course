@@ -25,6 +25,7 @@ with workflow.unsafe.imports_passed_through():
     )
     from b2c_outline import InferredSection, OutlineUnavailable, outline_from_book
 
+    from .heartbeat import LONG_ACTIVITY_HEARTBEAT_TIMEOUT, activity_heartbeats
     from .queues import HEAVY, LIGHT
     from .retry import DEFAULT_RETRY
 
@@ -66,6 +67,11 @@ class IngestPDFActivities:
 
     @activity.defn(name="ingest_parse_pdf")
     def parse_pdf(self, inp: IngestPDFInput) -> dict[str, Any]:
+        # OCR/Docling calls block for minutes; keep the attempt visibly alive.
+        with activity_heartbeats("ingest_parse_liveness"):
+            return self._parse_pdf(inp)
+
+    def _parse_pdf(self, inp: IngestPDFInput) -> dict[str, Any]:
         upload = BookUpload.model_validate(inp.upload)
         source = ArtifactRef.model_validate(inp.source_ref)
         input_sha = upload.file_sha256
@@ -308,6 +314,10 @@ class OutlineActivities:
 
     @activity.defn(name="outline_from_parsed_book")
     def build(self, inp: BuildOutlineInput) -> dict[str, Any]:
+        with activity_heartbeats("outline_liveness"):
+            return self._build(inp)
+
+    def _build(self, inp: BuildOutlineInput) -> dict[str, Any]:
         parsed_ref = ArtifactRef.model_validate(inp.parsed_ref)
         parsed = ParsedBook.model_validate_json(self.store.read(parsed_ref, "parsed-book.json"))
         has_headings = any(block.type == "heading" for block in parsed.blocks)
@@ -354,9 +364,13 @@ class IngestPDFWorkflow:
     @workflow.run
     async def run(self, inp: IngestPDFInput) -> dict[str, Any]:
         activity_timeout = timedelta(hours=24)
-        parsed = await execute_checkpointed(self, 
-            "ingest_parse_pdf", inp, task_queue=HEAVY, retry_policy=DEFAULT_RETRY,
-            start_to_close_timeout=activity_timeout,
+        parse_options: dict[str, Any] = {}
+        # Pre-existing histories scheduled the parse without a heartbeat timeout.
+        if workflow.patched("ingest-parse-heartbeat-v1"):
+            parse_options["heartbeat_timeout"] = LONG_ACTIVITY_HEARTBEAT_TIMEOUT
+        parsed = await execute_checkpointed(
+            self, "ingest_parse_pdf", inp, task_queue=HEAVY, retry_policy=DEFAULT_RETRY,
+            start_to_close_timeout=activity_timeout, **parse_options,
         )
         if inp.upload.get("role") != "spine":
             return {"parsed_book": parsed, "outline": None}

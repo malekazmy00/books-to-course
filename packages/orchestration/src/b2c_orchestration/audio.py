@@ -14,6 +14,7 @@ def renderer_status_retryable(status: int) -> bool:
     return status in {408, 425, 429} or status >= 500
 with workflow.unsafe.imports_passed_through():
     from .controls import wait_for_activity_checkpoint, execute_checkpointed
+    from .heartbeat import LONG_ACTIVITY_HEARTBEAT_TIMEOUT, activity_heartbeats
     from b2c_contracts import ArtifactRef, ParsedBook, CourseOutline, stage_key
     from b2c_core.processing_plan import detect_source_language
     from b2c_core.source_identity import artifact_source_identity, source_identity_file
@@ -291,6 +292,11 @@ class MP3Activities:
         return mp3
     @activity.defn(name="generate_mp3")
     def generate(self, inp: GenerateMP3Input) -> dict[str, Any]:
+        # One renderer request can block for hours; heartbeat independently.
+        with activity_heartbeats("mp3_liveness"):
+            return self._generate(inp)
+
+    def _generate(self, inp: GenerateMP3Input) -> dict[str, Any]:
         try:
             workflow_id = activity.info().workflow_id
         except RuntimeError:  # Direct activity tests do not have Temporal context.
@@ -554,5 +560,10 @@ class GenerateMP3Workflow:
 
     @workflow.run
     async def run(self,inp:GenerateMP3Input)->dict[str,Any]:
-        return await execute_checkpointed(self, "generate_mp3",inp,task_queue=inp.activity_task_queue,start_to_close_timeout=timedelta(hours=24))
+        options: dict[str, Any] = {}
+        # Pre-existing histories scheduled MP3 generation without a heartbeat timeout.
+        if workflow.patched("mp3-heartbeat-timeout-v1"):
+            options["heartbeat_timeout"] = LONG_ACTIVITY_HEARTBEAT_TIMEOUT
+        return await execute_checkpointed(self, "generate_mp3", inp, task_queue=inp.activity_task_queue,
+                                          start_to_close_timeout=timedelta(hours=24), **options)
 

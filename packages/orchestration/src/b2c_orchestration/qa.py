@@ -22,6 +22,7 @@ with workflow.unsafe.imports_passed_through():
         stage_key,
     )
     from b2c_core.source_identity import parsed_source_identity, source_identity_file
+    from .heartbeat import LONG_ACTIVITY_HEARTBEAT_TIMEOUT, activity_heartbeats
     from b2c_llm_gateway import LLMRequestRejected, OpenRouterQuotaExceeded, FreeTokenQuotaExceeded, OpenRouterRateLimited
     from b2c_indexing import PostgresChunkStore, QueryRetrievalService
     from b2c_pedagogy.lesson_enrichment import LessonEnrichment, generate_lesson_enrichments
@@ -126,6 +127,12 @@ class CourseQAActivities:
 
     @activity.defn(name="generate_course_qa")
     def generate(self, inp: GenerateCourseQAInput) -> dict[str, Any]:
+        # Progress heartbeats arrive only at scope boundaries; one scope can
+        # block on a slow model call for longer than the heartbeat timeout.
+        with activity_heartbeats("qa_liveness"):
+            return self._generate(inp)
+
+    def _generate(self, inp: GenerateCourseQAInput) -> dict[str, Any]:
         approved_ref = ArtifactRef.model_validate(inp.approved_outline_ref)
         if approved_ref.stage != "approve-outline":
             raise ApplicationError("question generation requires approved-outline artifact",
@@ -551,9 +558,13 @@ class CourseQAActivities:
 class GenerateCourseQAWorkflow:
     @workflow.run
     async def run(self, inp: GenerateCourseQAInput) -> dict[str, Any]:
+        options: dict[str, Any] = {}
+        # Pre-existing histories scheduled QA without a heartbeat timeout.
+        if workflow.patched("qa-heartbeat-timeout-v1"):
+            options["heartbeat_timeout"] = LONG_ACTIVITY_HEARTBEAT_TIMEOUT
         return await workflow.execute_activity(
             "generate_course_qa", inp, task_queue=inp.activity_task_queue,
             start_to_close_timeout=timedelta(hours=24),
             schedule_to_close_timeout=timedelta(hours=48),
-            retry_policy=RetryPolicy(maximum_attempts=3),
+            retry_policy=RetryPolicy(maximum_attempts=3), **options,
         )

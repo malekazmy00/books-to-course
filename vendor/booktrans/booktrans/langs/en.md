@@ -1,0 +1,81 @@
+# English: typography and grammar rules
+
+name: английский
+name_en: English
+code: en
+
+## Typography
+
+- Quotation marks: “curly double quotes”, with ‘single quotes’ nested inside.
+- Dialogue is set in quotation marks, not dashes.
+- Em dash (—) without surrounding spaces; en dash (–) for ranges.
+- Serial (Oxford) comma in lists of three or more.
+
+- **Latin and other foreign set phrases stay as they are**, in italics:
+  *de facto*, *post factum*, *curriculum vitae*, *sic*. A reader knows them,
+  and translating flattens the register. A rare one gets a footnote, but
+  stays itself in the text.
+
+## Grammar and register
+
+- English has no T–V distinction: formality is carried by word choice,
+  contractions and sentence length, not by pronouns. Where the source
+  distinguishes formal and informal address, render the difference through
+  register instead.
+- Gender is marked only in pronouns. Where the source language marks gender
+  in verbs or adjectives and the referent is unknown or non-binary, prefer
+  singular *they* over inventing a gender.
+- Keep tense sequences natural: English backshifts in reported speech where
+  many languages do not.
+
+## Names
+
+Transliterate consistently, following the most widely used English form for
+real people and places. Do not translate personal names unless the source
+itself does so.
+
+## Traces of translation to avoid
+
+- Calques: word-by-word renderings that are individually correct but do not
+  collocate in English.
+- Overlong sentences: languages with rich case systems tolerate longer
+  periods than English does; break them.
+- Nominalisation: prefer verbs where the source piles up abstract nouns.
+- Redundant pronouns and possessives.
+
+## Strings the reader sees
+
+str.about_title: About this translation
+str.about_made: Machine translation produced by the {pipeline} pipeline.
+str.about_version: version {version} of {date}
+str.about_release: version {version}
+str.about_date: Translated: {date}.
+str.about_quality: Terminology and names are kept consistent throughout, the text went through a separate editing pass, and the translator's footnotes are marked explicitly.
+str.about_caveat: Long dialogue, wordplay and the author's rhythm may suffer.
+str.note_prefix: Translator's note:
+str.editor_note: Ed. note
+str.date_fmt: {month} {d}, {y}
+str.months: January,February,March,April,May,June,July,August,September,October,November,December
+str.notes_title: Notes
+str.toc_title: Contents
+str.part: Part {n}
+str.illustration: illustration: {alt}
+str.untitled: Book
+str.translator: machine translation
+str.about_notes: The footnotes and explanations are machine-made as well. They may contain inaccuracies and occasionally outright errors: dates, names and source references are worth checking yourself.
+str.about_disclaimer: This translation is provided as is, without warranty of any kind. Neither the author of the pipeline nor whoever ran it accepts liability for any consequences of using this text, including decisions taken on the basis of a meaning conveyed inaccurately.
+str.about_community: The project's Telegram community: https://t.me/BookTransPL. There you can request a translation of a book you need and get technical support.
+str.source_caveat: The translator is named from the machine's memory and has not been checked against the edition.
+str.details_sources: Quotations are given from published translations. The translators are named from the machine's memory and none was checked against an edition — verify if it matters:
+str.details_title: Translation details
+str.details_scout: Reconnaissance pass: {models}.
+str.details_translate: Translation: {models}.
+str.details_edit: Literary editing: {models}.
+str.details_verify: Verification against the original: {models}.
+str.details_all: the whole book
+str.details_chapters: chapters {chapters}
+str.details_partly: in part {chapters}
+str.details_caveat: Changes made by hand are not shown here; where a chunk was edited twice, the later editor is the one named.
+str.details_reader: The source file was read with: {reader}.
+str.details_format: Split into chapters and paragraphs: {models}.
+str.details_fix: Correcting recognition damage: {models}.

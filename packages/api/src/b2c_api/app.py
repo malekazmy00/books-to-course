@@ -56,7 +56,7 @@ from b2c_outline.review import (
     include_leading_blocks_in_first_lesson,
 )
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from starlette.background import BackgroundTask
 from b2c_api.audio_exports import audio_progress, ordered_audio_tracks, validate_audio_manifest, course_audio_checkpoints, audio_zip
@@ -67,6 +67,13 @@ from temporalio.exceptions import WorkflowAlreadyStartedError
 from temporalio.service import RPCError, RPCStatusCode
 from b2c_translation.generation import validate_manual_translation
 from b2c_api.ingestion_recovery import recover_extraction, recover_index
+from b2c_api.workflow_resume import (
+    FAILED as RETRY_STATUSES,
+    ResumeStageRequest,
+    retry_failed_stage,
+    retryable_kind,
+    workflow_resume_router,
+)
 
 log = logging.getLogger("b2c.api")
 _CHUNK_BYTES = 1024 * 1024
@@ -2587,13 +2594,29 @@ def create_app(
                 "message": "Pauses after the current durable checkpoint; it does not interrupt unfinished output."}
 
     @app.post("/v1/workflows/{workflow_id}/resume")
-    async def resume_stage_workflow(workflow_id: str) -> dict[str, Any]:
+    async def resume_stage_workflow(workflow_id: str, response: Response,
+                                    request: ResumeStageRequest | None = None) -> dict[str, Any]:
+        """One path, dispatched by status: QA checkpoint resume, failed-stage
+        retry (FAILED/TIMED_OUT/CANCELED/TERMINATED), or live paused resume."""
         kind = stage_control_kind(workflow_id)
         if kind == "qa":
             return await resume_course_qa(workflow_id)
         client = await get_temporal_client()
         description = await client.get_workflow_handle(workflow_id).describe()
-        if description.status.name != "RUNNING":
+        status_name = description.status.name
+        if status_name in RETRY_STATUSES and retryable_kind(workflow_id):
+            if request is None:
+                raise HTTPException(status_code=422, detail="book_id is required to retry a failed stage")
+            try:
+                result = await retry_failed_stage(client, workflow_id, request.book_id,
+                                                  verify_resume_owner, remember_book_progress, status_name)
+            except HTTPException:
+                raise
+            except Exception as exc:
+                raise HTTPException(status_code=503, detail="stage could not resume safely") from exc
+            response.status_code = 202
+            return result
+        if status_name != "RUNNING":
             raise HTTPException(status_code=409, detail="this endpoint resumes a paused live workflow; use the stage retry endpoint for a finished workflow")
         record = await read_stage_control(workflow_id)
         if record.get("action") not in {"pause_after_checkpoint", "resume"}:
@@ -2792,7 +2815,9 @@ def create_app(
                 questions[question.qid] = question
         return questions
 
-    @app.get("/v1/courses")
+    # GET /v1/courses belongs to the operator course library (Android client);
+    # the learner release catalog has its own path so neither shadows the other.
+    @app.get("/v1/released-courses")
     async def list_released_courses() -> dict[str, Any]:
         try:
             catalog = get_serving_catalog()
@@ -2996,8 +3021,10 @@ def create_app(
                 or (old_workflow not in recorded_ids and not legacy_index_binding)):
             raise HTTPException(409, detail="stage does not match the selected book")
 
-    from b2c_api.workflow_resume import workflow_resume_router
-    app.include_router(workflow_resume_router(get_temporal_client, verify_resume_owner, remember_book_progress))
+    # The resume POST is served above (status dispatch); only the capability
+    # probe comes from this router so the two can never shadow each other.
+    app.include_router(workflow_resume_router(get_temporal_client, verify_resume_owner,
+                                              remember_book_progress, include_resume=False))
 
     return app
 

@@ -75,33 +75,37 @@ def test_qa_heartbeat_timeout_is_patched(monkeypatch, patched):
 
 
 @pytest.mark.parametrize("patched", [True, False])
-def test_index_heartbeat_is_patched(monkeypatch, patched):
+def test_index_heartbeat_and_retry_are_patched(monkeypatch, patched):
     calls, seen = [], []
     _capture_checkpointed(monkeypatch, indexing_mod, calls)
     _patched(monkeypatch, patched, seen)
     inp = IndexApprovedBookInput(course_id="c", parsed_ref={}, approved_outline_ref={})
     asyncio.run(indexing_mod.IndexApprovedBookWorkflow().run(inp))
     options = dict(calls)["index_approved_book"]
-    assert "index-heartbeat-timeout-v1" in seen
+    assert {"index-heartbeat-timeout-v1", "index-bounded-retry-v1"} <= set(seen)
     if patched:
         assert options["heartbeat_timeout"] == timedelta(minutes=5)
+        assert 1 < options["retry_policy"].maximum_attempts <= 5
     else:
         assert "heartbeat_timeout" not in options
+        assert "retry_policy" not in options
 
 
 @pytest.mark.parametrize("patched", [True, False])
-def test_mp3_heartbeat_is_patched(monkeypatch, patched):
+def test_mp3_heartbeat_and_retry_are_patched(monkeypatch, patched):
     calls, seen = [], []
     _capture_checkpointed(monkeypatch, audio_mod, calls)
     _patched(monkeypatch, patched, seen)
     inp = GenerateMP3Input(course_id="c", source_artifact_ref={}, source_kind="book", language="ar")
     asyncio.run(audio_mod.GenerateMP3Workflow().run(inp))
     options = dict(calls)["generate_mp3"]
-    assert "mp3-heartbeat-timeout-v1" in seen
+    assert {"mp3-heartbeat-timeout-v1", "mp3-bounded-retry-v1"} <= set(seen)
     if patched:
         assert options["heartbeat_timeout"] == timedelta(minutes=5)
+        assert 1 < options["retry_policy"].maximum_attempts <= 3
     else:
         assert "heartbeat_timeout" not in options
+        assert "retry_policy" not in options
 
 
 def _fake_activity_context(monkeypatch):

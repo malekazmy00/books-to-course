@@ -11,6 +11,7 @@ from temporalio.exceptions import ApplicationError
 with workflow.unsafe.imports_passed_through():
     from .controls import wait_for_activity_checkpoint, execute_checkpointed
     from .heartbeat import LONG_ACTIVITY_HEARTBEAT_TIMEOUT, activity_heartbeats
+    from .retry import DEFAULT_RETRY
     from b2c_contracts import ArtifactRef, CourseOutline, ParsedBook, stage_key
     from b2c_contracts.models import StructuredChunk
     from b2c_indexing import PostgresChunkStore, chunk_book
@@ -142,6 +143,9 @@ class IndexApprovedBookWorkflow:
         # Pre-existing histories scheduled indexing without a heartbeat timeout.
         if workflow.patched("index-heartbeat-timeout-v1"):
             options["heartbeat_timeout"] = LONG_ACTIVITY_HEARTBEAT_TIMEOUT
+        # Pre-existing histories used the server default (unlimited attempts).
+        if workflow.patched("index-bounded-retry-v1"):
+            options["retry_policy"] = DEFAULT_RETRY
         return await execute_checkpointed(
             self, "index_approved_book", inp, task_queue=inp.activity_task_queue,
             start_to_close_timeout=timedelta(minutes=30), **options,

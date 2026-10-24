@@ -6,6 +6,7 @@ from datetime import timedelta
 from typing import Any, Literal
 from pydantic import BaseModel, Field
 from temporalio import activity, workflow
+from temporalio.common import RetryPolicy
 from temporalio.exceptions import ApplicationError
 
 AUDIO_RENDER_POLICY = "sentence-aware-boundaries-v4-short-arabic-terminal"
@@ -552,6 +553,10 @@ class MP3Activities:
                 message += f": {detail}"
             raise ApplicationError(message, type="MP3GenerationFailed",
                                    non_retryable=permanent) from None
+MP3_RETRY = RetryPolicy(initial_interval=timedelta(seconds=30), backoff_coefficient=2.0,
+                        maximum_interval=timedelta(minutes=10), maximum_attempts=3)
+
+
 @workflow.defn
 class GenerateMP3Workflow:
     @workflow.signal(name="resume_stage")
@@ -564,6 +569,10 @@ class GenerateMP3Workflow:
         # Pre-existing histories scheduled MP3 generation without a heartbeat timeout.
         if workflow.patched("mp3-heartbeat-timeout-v1"):
             options["heartbeat_timeout"] = LONG_ACTIVITY_HEARTBEAT_TIMEOUT
+        # Pre-existing histories used the server default (unlimited attempts).
+        # Each attempt can render for hours; the renderer reuses completed WAVs.
+        if workflow.patched("mp3-bounded-retry-v1"):
+            options["retry_policy"] = MP3_RETRY
         return await execute_checkpointed(self, "generate_mp3", inp, task_queue=inp.activity_task_queue,
                                           start_to_close_timeout=timedelta(hours=24), **options)
 

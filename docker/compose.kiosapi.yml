@@ -1,0 +1,19 @@
+# Optional Kiosapi OpenAI-compatible runtime profile. Keep the key in a local secret file.
+# Usage: include with the standard B2C compose files and set B2C_KIOSAPI_KEY_HOST_FILE
+# and B2C_KIOSAPI_MODEL_ID in the invoking environment (never store the key in .env).
+services:
+  llm:
+    profiles: [local-llm]
+  worker:
+    environment:
+      B2C_LLM_BASE_URL: https://api.kiosapi.id/v1
+      B2C_LLM_MODEL_ID: ${B2C_KIOSAPI_MODEL_ID:?Set B2C_KIOSAPI_MODEL_ID to a model supported by Kiosapi}
+      B2C_LLM_ALLOW_REMOTE: "true"
+      B2C_LLM_API_KEY_FILE: /run/secrets/kiosapi_api_key
+    networks: [b2c_internal, b2c_edge]
+    volumes:
+      - type: bind
+        source: ${B2C_KIOSAPI_KEY_HOST_FILE:?Set B2C_KIOSAPI_KEY_HOST_FILE to a local key file}
+        target: /run/secrets/kiosapi_api_key
+        read_only: true
+        bind: {create_host_path: false}

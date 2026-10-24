@@ -1,0 +1,7 @@
+# Local QA source overlay; preserves the existing worker dependency environment.
+services:
+  worker:
+    build: {context: .., dockerfile: docker/worker/Dockerfile.recovery}
+    image: b2c-worker:fixes-20261012
+  audio-worker:
+    image: b2c-audio-worker:fixes-20261012

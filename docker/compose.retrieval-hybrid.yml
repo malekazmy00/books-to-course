@@ -1,0 +1,76 @@
+# Optional B2C-only local BGE-M3 runtime for QueryRetrievalService hybrid RRF.
+# Include this overlay only when hybrid retrieval is desired.
+services:
+  bge-embed:
+    image: b2c-worker:dev
+    container_name: b2c-bge-embed
+    entrypoint: ["/app/.venv/bin/uvicorn"]
+    command: ["b2c_indexing.embedding_api:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+    environment:
+      B2C_EMBEDDING_API_KEY_FILE: /run/secrets/b2c_embedding_api_key
+      B2C_EMBED_MODEL_PATH: /models/bge-m3
+      B2C_EMBED_MAX_LENGTH: "8192"
+      B2C_EMBED_MAX_BATCH: "32"
+      OMP_NUM_THREADS: "4"
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      TOKENIZERS_PARALLELISM: "false"
+    volumes:
+      - type: bind
+        source: ${B2C_DATA_DIR}/models/phase3-rag/bge-m3
+        target: /models/bge-m3
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ../packages/indexing/src/b2c_indexing/embedding_api.py
+        target: /app/packages/indexing/src/b2c_indexing/embedding_api.py
+        read_only: true
+        bind: {create_host_path: false}
+    secrets: [b2c_embedding_api_key]
+    networks: [b2c_internal]
+    restart: unless-stopped
+    mem_limit: 8g
+    cpus: 4
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5).read()"]
+      interval: 15s
+      timeout: 8s
+      retries: 20
+      start_period: 180s
+
+  api:
+    depends_on:
+      bge-embed: {condition: service_healthy}
+    environment:
+      B2C_RETRIEVAL_TOP_K: ${B2C_RETRIEVAL_TOP_K:-20}
+      B2C_EMBEDDING_BASE_URL: http://bge-embed:8000/v1
+      B2C_BGE_EMBEDDING_BASE_URL: http://bge-embed:8000/v1
+      B2C_BGE_EMBEDDING_API_KEY_FILE: /run/secrets/b2c_embedding_api_key
+    secrets: [b2c_embedding_api_key]
+
+  worker:
+    depends_on:
+      bge-embed: {condition: service_healthy}
+    environment:
+      B2C_RETRIEVAL_TOP_K: ${B2C_RETRIEVAL_TOP_K:-20}
+      B2C_EMBEDDING_BASE_URL: http://bge-embed:8000/v1
+      B2C_EMBEDDING_MODEL_ID: ${B2C_EMBEDDING_MODEL_ID:-BAAI/bge-m3}
+      B2C_EMBEDDING_API_KEY_FILE: /run/secrets/b2c_embedding_api_key
+      B2C_EMBEDDING_TIMEOUT_S: ${B2C_EMBEDDING_TIMEOUT_S:-30}
+    secrets: [b2c_embedding_api_key]
+
+  generation-worker:
+    depends_on:
+      bge-embed: {condition: service_healthy}
+    environment:
+      B2C_RETRIEVAL_TOP_K: ${B2C_RETRIEVAL_TOP_K:-20}
+      B2C_EMBEDDING_BASE_URL: http://bge-embed:8000/v1
+      B2C_EMBEDDING_MODEL_ID: ${B2C_EMBEDDING_MODEL_ID:-BAAI/bge-m3}
+      B2C_EMBEDDING_API_KEY_FILE: /run/secrets/b2c_embedding_api_key
+      B2C_EMBEDDING_TIMEOUT_S: ${B2C_EMBEDDING_TIMEOUT_S:-30}
+      B2C_BGE_EMBEDDING_BASE_URL: http://bge-embed:8000/v1
+    secrets: [b2c_embedding_api_key]
+
+secrets:
+  b2c_embedding_api_key:
+    file: ${B2C_EMBEDDING_API_KEY_HOST_FILE:?Set B2C_EMBEDDING_API_KEY_HOST_FILE to a B2C-only key file}

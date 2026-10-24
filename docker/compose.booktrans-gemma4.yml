@@ -1,0 +1,17 @@
+# Include with compose.yml, compose.gemma4.yml, and compose.booktrans.yml
+# to expose BookTrans Pro on the local Gemma 4 worker as a separate choice.
+services:
+  api:
+    environment:
+      B2C_BOOKTRANS_PRO_ENABLED: "true"
+      B2C_GEMMA4_OPENAI_BASE_URL: http://gemma4-ollama:11434/v1
+      B2C_GEMMA4_MODEL_ID: gemma4:e4b
+
+  gemma4-generation-worker:
+    environment:
+      B2C_BOOKTRANS_WORK_DIR: /var/lib/booktrans
+    volumes:
+      - type: bind
+        source: ${B2C_DATA_DIR}/state/booktrans-work
+        target: /var/lib/booktrans
+        bind: {create_host_path: false}

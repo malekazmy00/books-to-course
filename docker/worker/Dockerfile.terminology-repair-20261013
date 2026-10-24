@@ -1,0 +1,2 @@
+FROM b2c-hy-worker:appendix-repair-20261013
+COPY packages/translation/src/b2c_translation/generation.py /app/packages/translation/src/b2c_translation/generation.py

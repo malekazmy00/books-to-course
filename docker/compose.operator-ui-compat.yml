@@ -1,0 +1,3 @@
+services:
+  api:
+    image: b2c-api:operator-compat-20261014

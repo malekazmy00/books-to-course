@@ -2,7 +2,7 @@
 SHELL := /bin/bash
 export PATH := $(HOME)/.local/bin:$(PATH)
 
-COMPOSE := docker compose -p b2c --env-file .env -f docker/compose.yml -f docker/compose.observability.yml
+COMPOSE := docker compose -p b2c --env-file .env --profile speech --profile hy-translation -f docker/compose.yml -f docker/compose.observability.yml -f docker/compose.qa-local.yml -f docker/compose.speech.yml -f docker/compose.hy-translation.yml
 PYTEST  := uv run pytest
 PHASE   ?= 0
 
@@ -21,7 +21,7 @@ env:                 ## create .env with random secrets (never overwrites)
 	@bash scripts/gen-env.sh
 
 build:
-	$(COMPOSE) build worker
+	$(COMPOSE) build worker api generation-worker hy-translation hy-translation-worker
 
 data-init:           ## once, after the data VHDX is mounted (D-020)
 	@bash scripts/data-disk.sh init

@@ -1,0 +1,84 @@
+services:
+  lightrag-embed:
+    image: b2c-worker:dev
+    container_name: b2c-lightrag-embed
+    entrypoint: ["/app/.venv/bin/uvicorn"]
+    command: ["b2c_indexing.embedding_api:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]
+    environment:
+      B2C_LIGHTRAG_EMBED_KEY: ${B2C_LIGHTRAG_EMBED_KEY:?Set B2C_LIGHTRAG_EMBED_KEY in .env}
+      B2C_EMBED_MODEL_PATH: /models/bge-m3
+      B2C_EMBED_MAX_LENGTH: "8192"
+      B2C_EMBED_MAX_BATCH: "64"
+      OMP_NUM_THREADS: "4"
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+      TOKENIZERS_PARALLELISM: "false"
+    volumes:
+      - type: bind
+        source: ${B2C_DATA_DIR}/models/phase3-rag/bge-m3
+        target: /models/bge-m3
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ../packages/indexing/src/b2c_indexing/embedding_api.py
+        target: /app/packages/indexing/src/b2c_indexing/embedding_api.py
+        read_only: true
+        bind: {create_host_path: false}
+    networks: [b2c_internal]
+    restart: unless-stopped
+    mem_limit: 8g
+    cpus: 4
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=5).read()"]
+      interval: 15s
+      timeout: 8s
+      retries: 20
+      start_period: 180s
+
+  lightrag:
+    image: ghcr.io/hkuds/lightrag:v1.5.7@sha256:5bdbd524931b011df246fe20888d110cef691e6804c12cde636a2b746d7de27e
+    container_name: b2c-lightrag
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "9621"
+      LIGHTRAG_API_KEY: ${B2C_LIGHTRAG_API_KEY:?Set B2C_LIGHTRAG_API_KEY in .env}
+      TOKEN_SECRET: ${B2C_LIGHTRAG_TOKEN_SECRET:?Set B2C_LIGHTRAG_TOKEN_SECRET in .env}
+      WHITELIST_PATHS: "/health"
+      WORKING_DIR: "/app/data/rag_storage"
+      INPUT_DIR: "/app/data/inputs"
+      PROMPT_DIR: "/app/data/prompts"
+      TIKTOKEN_CACHE_DIR: "/app/data/tiktoken_cache"
+      LLM_BINDING: openai
+      LLM_MODEL: qwen3-coder-30b
+      LLM_BINDING_HOST: "http://llm:8080/v1"
+      LLM_BINDING_API_KEY: "b2c-local"
+      LLM_TIMEOUT: "900"
+      EMBEDDING_BINDING: openai
+      EMBEDDING_MODEL: "BAAI/bge-m3"
+      EMBEDDING_DIM: "1024"
+      EMBEDDING_TOKEN_LIMIT: "8192"
+      EMBEDDING_BINDING_HOST: "http://b2c-lightrag-embed:8000/v1"
+      EMBEDDING_BINDING_API_KEY: ${B2C_LIGHTRAG_EMBED_KEY:?Set B2C_LIGHTRAG_EMBED_KEY in .env}
+      MAX_GLEANING: "0"
+      MAX_ASYNC: "1"
+    volumes:
+      - type: bind
+        source: ${B2C_DATA_DIR}/lightrag
+        target: /app/data
+        bind: {create_host_path: false}
+    networks: [b2c_internal]
+    depends_on:
+      llm: {condition: service_healthy}
+      lightrag-embed: {condition: service_healthy}
+    restart: unless-stopped
+    mem_limit: 10g
+    cpus: 4
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9621/health', timeout=5).read()"]
+      interval: 15s
+      timeout: 8s
+      retries: 20
+      start_period: 90s
+
+
+

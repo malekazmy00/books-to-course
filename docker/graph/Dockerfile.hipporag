@@ -1,0 +1,19 @@
+# Use the existing isolated patched runtime, never the default B2C worker.
+ARG HIPPORAG_BASE_IMAGE=b2c-phase6-hipporag-runtime:patched-20261004
+FROM ${HIPPORAG_BASE_IMAGE}
+USER root
+RUN python -m pip install --no-cache-dir fastapi==0.142.2 uvicorn==0.54.0 pydantic==2.13.5 \
+    && python -m pip check \
+    && groupadd --gid 10001 b2cgraph && useradd --uid 10001 --gid 10001 --create-home b2cgraph
+# Copy only reviewed source, not graph.pickle or evaluation state.
+COPY --from=hipporag_src /src/hipporag /opt/b2c/hipporag
+COPY packages/contracts/src /opt/b2c/contracts
+COPY packages/indexing/src /opt/b2c/indexing
+ENV PYTHONPATH=/opt/b2c:/opt/b2c/contracts:/opt/b2c/indexing \
+    PYTHONUNBUFFERED=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+    XDG_CACHE_HOME=/tmp/b2c-cache
+RUN python -c "from importlib.metadata import version; assert version('hipporag') == '2.0.0a5'; import hipporag; import b2c_indexing.graph_api"
+USER 10001:10001
+WORKDIR /tmp
+ENTRYPOINT ["python", "-m", "uvicorn"]
+CMD ["b2c_indexing.graph_api:create_app", "--factory", "--host", "0.0.0.0", "--port", "9630", "--workers", "1"]

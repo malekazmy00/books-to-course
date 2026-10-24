@@ -1,0 +1,22 @@
+# Temporary Top Tools AI runtime overlay. Requires an external key file.
+# Use only with the normal B2C compose stack; no provider fallback is configured.
+services:
+  api:
+    environment:
+      # Keep API-generated workflow IDs aligned with the worker model selection.
+      B2C_LLM_MODEL_ID: Top-Tools-Ai
+  worker:
+    environment:
+      B2C_LLM_BASE_URL: https://top-tools-ai.com/api/v1
+      B2C_LLM_MODEL_ID: Top-Tools-Ai
+      B2C_LLM_ALLOW_REMOTE: "true"
+      B2C_LLM_API_KEY_FILE: /run/secrets/top_tools_ai_api_key
+      B2C_LLM_TIMEOUT_S: "240"
+      B2C_LLM_REASONING_EFFORT: ""
+    networks: [b2c_internal, b2c_edge]
+    volumes:
+      - type: bind
+        source: /root/.config/book2course/top-tools-ai-api-key
+        target: /run/secrets/top_tools_ai_api_key
+        read_only: true
+        bind: {create_host_path: false}

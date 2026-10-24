@@ -1,0 +1,16 @@
+# Opt-in BookTrans Pro translation route. It shares the configured external
+# generation model, but runs BookTrans' whole-book passes in an isolated,
+# persistent work directory. Include with compose.yml.
+services:
+  api:
+    environment:
+      B2C_BOOKTRANS_PRO_ENABLED: "true"
+
+  generation-worker:
+    environment:
+      B2C_BOOKTRANS_WORK_DIR: /var/lib/booktrans
+    volumes:
+      - type: bind
+        source: ${B2C_DATA_DIR}/state/booktrans-work
+        target: /var/lib/booktrans
+        bind: {create_host_path: false}

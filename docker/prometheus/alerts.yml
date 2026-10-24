@@ -1,0 +1,22 @@
+groups:
+  - name: b2c-operations
+    interval: 30s
+    rules:
+      - alert: B2CScrapeTargetDown
+        expr: up{job=~"prometheus|otel-collector|temporal|cadvisor"} == 0
+        for: 2m
+        labels:
+          severity: warning
+          project: b2c
+        annotations:
+          summary: "B2C monitoring target is unavailable"
+          description: "Scrape target {{ $labels.job }} at {{ $labels.instance }} has been down for 2 minutes."
+      - alert: B2CContainerMemoryBudgetHigh
+        expr: sum(container_memory_working_set_bytes{container_label_com_docker_compose_project="b2c"}) > 83751862272
+        for: 5m
+        labels:
+          severity: warning
+          project: b2c
+        annotations:
+          summary: "B2C container memory exceeds the 78 GiB budget"
+          description: "B2C working-set memory has exceeded 78 GiB for 5 minutes."

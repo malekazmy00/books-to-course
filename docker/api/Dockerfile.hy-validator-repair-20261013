@@ -1,0 +1,2 @@
+FROM b2c-api:dev
+COPY packages/translation/src/b2c_translation/generation.py /app/packages/translation/src/b2c_translation/generation.py

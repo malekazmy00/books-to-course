@@ -1,0 +1,223 @@
+# Opt-in Hy translation using existing safetensors only. No model download.
+# Use with compose.yml and --profile hy-translation; service readiness and
+# both Temporal pollers are checked before accepting explicit provider selection.
+services:
+  api:
+    environment:
+      B2C_HY_TRANSLATION_ENABLED: "true"
+      B2C_HY_TRANSLATION_BASE_URL: http://hy-translation:3007/v1
+    depends_on:
+      hy-translation: {condition: service_healthy}
+      hy-translation-worker: {condition: service_started}
+
+  hy-translation:
+    profiles: [hy-translation]
+    build: {context: .., dockerfile: docker/hy-translation/Dockerfile}
+    image: b2c-hy-translation:cpu
+    environment:
+      HY_MODEL_DIR: /model
+      HY_CPU_THREADS: "4"
+    volumes:
+      - type: bind
+        source: /mnt/wsl/b2cdata/models/phase7-translation/hy-mt2-1.8b
+        target: /model
+        read_only: true
+        bind: {create_host_path: false}
+    networks: [b2c_internal]
+    mem_limit: 16g
+    cpus: 8
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3007/health',timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 900s
+
+  hy-translation-2:
+    profiles: [hy-translation]
+    build: {context: .., dockerfile: docker/hy-translation/Dockerfile}
+    image: b2c-hy-translation:cpu
+    environment:
+      HY_MODEL_DIR: /model
+      HY_CPU_THREADS: "4"
+    volumes:
+      - type: bind
+        source: /mnt/wsl/b2cdata/models/phase7-translation/hy-mt2-1.8b
+        target: /model
+        read_only: true
+        bind: {create_host_path: false}
+    networks: [b2c_internal]
+    mem_limit: 16g
+    cpus: 4
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3007/health',timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 900s
+
+  hy-translation-proxy:
+    profiles: [hy-translation]
+    image: haproxy:3.2-alpine
+    volumes:
+      - ./hy-translation/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
+    networks: [b2c_internal]
+    mem_limit: 256m
+    cpus: 0.5
+    restart: unless-stopped
+    depends_on:
+      hy-translation: {condition: service_healthy}
+      hy-translation-2: {condition: service_healthy}
+
+  hy-translation-worker:
+    profiles: [hy-translation]
+    build: {context: .., dockerfile: docker/worker/Dockerfile.audio}
+    image: b2c-hy-worker:dev
+    command: ["b2c-worker"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      temporal: {condition: service_healthy}
+      temporal-namespace: {condition: service_completed_successfully}
+      minio: {condition: service_healthy}
+      hy-translation: {condition: service_healthy}
+      hy-translation-2: {condition: service_healthy}
+      hy-translation-proxy: {condition: service_started}
+    environment:
+      B2C_PG_HOST: postgres
+      B2C_PG_DB: ${B2C_PG_DB}
+      B2C_PG_USER: ${B2C_PG_USER}
+      B2C_PG_PASSWORD: ${B2C_PG_PASSWORD}
+      B2C_S3_ENDPOINT: http://minio:9000
+      B2C_S3_ACCESS_KEY: ${B2C_S3_ACCESS_KEY}
+      B2C_S3_SECRET_KEY: ${B2C_S3_SECRET_KEY}
+      B2C_LLM_BASE_URL: http://hy-translation-proxy:3007/v1
+      B2C_LLM_MODEL_ID: tencent/Hy-MT2-1.8B
+      B2C_LLM_ALLOW_REMOTE: "false"
+      B2C_LLM_API_KEY_FILE: ""
+      B2C_LLM_REASONING_EFFORT: "none"
+      B2C_LLM_TIMEOUT_S: "900"
+      B2C_WORKER_MODE: generation
+      B2C_GENERATION_TASK_QUEUE: hy-translation
+      B2C_RETRIEVAL_MODE: ${B2C_RETRIEVAL_MODE:-lexical}
+      B2C_RETRIEVAL_TOP_K: ${B2C_RETRIEVAL_TOP_K:-20}
+      B2C_EMBEDDING_BASE_URL: ${B2C_EMBEDDING_BASE_URL:-}
+      B2C_EMBEDDING_MODEL_ID: ${B2C_EMBEDDING_MODEL_ID:-BAAI/bge-m3}
+      B2C_EMBEDDING_API_KEY_FILE: ${B2C_EMBEDDING_API_KEY_FILE:-}
+      B2C_EMBEDDING_TIMEOUT_S: ${B2C_EMBEDDING_TIMEOUT_S:-30}
+      B2C_GEMINI_API_KEY_FILE: ${B2C_GEMINI_API_KEY_FILE:-}
+      B2C_OCR_ENGINE: ${B2C_OCR_ENGINE:-rapidocr}
+      B2C_SURYA_INFERENCE_URL: ${B2C_SURYA_INFERENCE_URL:-http://surya-ocr:8080/v1}
+      B2C_SURYA_MODEL: ${B2C_SURYA_MODEL:-/data/models/phase2-ocr-candidates/surya-ocr-2-gguf/surya-2.gguf}
+      B2C_SURYA_MAX_TOKENS: ${B2C_SURYA_MAX_TOKENS:-16384}
+      B2C_SURYA_TIMEOUT_SECONDS: ${B2C_SURYA_TIMEOUT_SECONDS:-3600}
+      # Apply the validated Arabic post-editor after HY translation. Keep raw and corrected outputs separately.
+      B2C_ARABIC_GEC_ENABLED: "true"
+      B2C_ARABIC_GEC_MODEL_DIR: /data/models/arabic-gec
+      B2C_ARABIC_GEC_SOURCE_DIR: /opt/text-editing
+      B2C_ARABIC_GEC_DEVICE: cpu
+      B2C_ARABIC_GEC_MANIFEST_SHA256: f54a31228d619948b16de93db568882643126b70209bfeb0a98549831c32d1ef
+      B2C_TEMPORAL_ADDRESS: temporal:7233
+      B2C_OTEL_ENDPOINT: http://otel-collector:4318
+      OTEL_SEMCONV_STABILITY_OPT_IN: gen_ai_latest_experimental
+    volumes:
+      - type: bind
+        source: ${B2C_DATA_DIR}/models/arabic-gec
+        target: /data/models/arabic-gec
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${B2C_DATA_DIR}/build-context/text-editing
+        target: /opt/text-editing
+        read_only: true
+        bind: {create_host_path: false}
+    networks: [b2c_internal]
+    mem_limit: 2g
+    cpus: 2
+    cpu_shares: 512
+    restart: unless-stopped
+
+  # Second poller enables two independent durable translation activities.
+  # It uses the least-connections proxy so each model copy handles one request.
+  hy-translation-worker-2:
+    profiles: [hy-translation]
+    extends:
+      service: hy-translation-worker
+    environment:
+      B2C_LLM_BASE_URL: http://hy-translation-proxy:3007/v1
+
+
+  # Additive third and fourth independent translation lanes. These services
+  # reuse the already-present model file and worker image; they do not alter or
+  # recreate the original two lanes.
+  hy-translation-3:
+    profiles: [hy-translation]
+    build: {context: .., dockerfile: docker/hy-translation/Dockerfile}
+    image: b2c-hy-translation:cpu
+    environment:
+      HY_MODEL_DIR: /model
+      HY_CPU_THREADS: "8"
+    volumes:
+      - type: bind
+        source: /mnt/wsl/b2cdata/models/phase7-translation/hy-mt2-1.8b
+        target: /model
+        read_only: true
+        bind: {create_host_path: false}
+    networks: [b2c_internal]
+    mem_limit: 12g
+    cpus: 8
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3007/health',timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 900s
+
+  hy-translation-4:
+    profiles: [hy-translation]
+    build: {context: .., dockerfile: docker/hy-translation/Dockerfile}
+    image: b2c-hy-translation:cpu
+    environment:
+      HY_MODEL_DIR: /model
+      HY_CPU_THREADS: "4"
+    volumes:
+      - type: bind
+        source: /mnt/wsl/b2cdata/models/phase7-translation/hy-mt2-1.8b
+        target: /model
+        read_only: true
+        bind: {create_host_path: false}
+    networks: [b2c_internal]
+    mem_limit: 12g
+    cpus: 4
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3007/health',timeout=5)"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 900s
+
+  # Each extra worker is pinned to its own model server so it cannot overload a
+  # serialized inference process. Saved checkpoints remain source-of-truth.
+  hy-translation-worker-3:
+    profiles: [hy-translation]
+    extends:
+      service: hy-translation-worker
+    image: b2c-hy-worker:terminology-repair-20261013
+    environment:
+      B2C_LLM_BASE_URL: http://hy-translation-3:3007/v1
+    depends_on:
+      hy-translation-3: {condition: service_healthy}
+
+  hy-translation-worker-4:
+    profiles: [hy-translation]
+    extends:
+      service: hy-translation-worker
+    image: b2c-hy-worker:terminology-repair-20261013
+    environment:
+      B2C_LLM_BASE_URL: http://hy-translation-4:3007/v1
+    depends_on:
+      hy-translation-4: {condition: service_healthy}
+

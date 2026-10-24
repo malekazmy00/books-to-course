@@ -1,0 +1,11 @@
+# Separate audio queue, reusing the installed worker runtime and its dependency layers.
+FROM b2c-worker:fixes-20261012
+USER root
+COPY packages/ /app/packages/
+COPY vendor/booktrans/booktrans /opt/booktrans/booktrans
+COPY vendor/booktrans/LICENSE /opt/booktrans/BOOKTRANS-LICENSE
+ENV PYTHONPATH=/opt/booktrans
+RUN uv pip install --python /app/.venv/bin/python \
+    "charset-normalizer>=2.0" "pypdfium2>=4.0" "pillow>=9.0" "pyuca>=1.2"
+USER 10001:10001
+CMD ["b2c-worker"]

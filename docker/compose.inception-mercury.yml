@@ -1,0 +1,22 @@
+# Temporary Inception Mercury-2 free-tier profile.
+# Conservative local lifetime cap; a reached cap fails closed without provider/model fallback.
+services:
+  api:
+    environment:
+      B2C_LLM_MODEL_ID: mercury-2
+  worker:
+    environment:
+      B2C_LLM_BASE_URL: https://api.inceptionlabs.ai/v1
+      B2C_LLM_MODEL_ID: mercury-2
+      B2C_LLM_ALLOW_REMOTE: "true"
+      B2C_LLM_API_KEY_FILE: /run/secrets/inception_api_key
+      B2C_LLM_TIMEOUT_S: "240"
+      B2C_LLM_REASONING_EFFORT: ""
+      B2C_INCEPTION_FREE_TOKEN_LIMIT: "10000000"
+    networks: [b2c_internal, b2c_edge]
+    volumes:
+      - type: bind
+        source: /root/.config/book2course/inception-labs-api-key
+        target: /run/secrets/inception_api_key
+        read_only: true
+        bind: {create_host_path: false}

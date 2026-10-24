@@ -1,0 +1,11 @@
+# Rollout override for durable per-segment translation diagnostics and safer retries.
+# Apply only after active HY translation workflows reach PAUSED checkpoints.
+services:
+  hy-translation-worker:
+    image: b2c-hy-worker:deferred-recovery-20261016
+  hy-translation-worker-2:
+    image: b2c-hy-worker:deferred-recovery-20261016
+  hy-translation-worker-3:
+    image: b2c-hy-worker:deferred-recovery-20261016
+  hy-translation-worker-4:
+    image: b2c-hy-worker:deferred-recovery-20261016

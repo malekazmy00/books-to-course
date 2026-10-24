@@ -1,0 +1,25 @@
+# Explicit temporary OpenRouter runtime profile. Requires a key file outside the repository.
+# Usage: include this overlay with the normal B2C compose files only.
+# Qwen is free but limited: B2C reserves <=40/day and <=10/min, and never silently switches to paid.
+services:
+  llm:
+    profiles: [local-llm]
+  worker:
+    environment:
+      B2C_LLM_BASE_URL: https://openrouter.ai/api/v1
+      B2C_OCR_ENGINE: ${B2C_OCR_ENGINE:-openrouter}
+      B2C_LLM_MODEL_ID: qwen/qwen3.8-27b:free
+      B2C_LLM_ALLOW_REMOTE: "true"
+      B2C_LLM_API_KEY_FILE: /run/secrets/openrouter_api_key
+      B2C_OPENROUTER_FREE_DAILY_LIMIT: ${B2C_OPENROUTER_FREE_DAILY_LIMIT:-40}
+      B2C_OPENROUTER_FREE_MIN_INTERVAL_SECONDS: ${B2C_OPENROUTER_FREE_MIN_INTERVAL_SECONDS:-6}
+      B2C_OPENROUTER_MAX_PAGES_PER_REQUEST: ${B2C_OPENROUTER_MAX_PAGES_PER_REQUEST:-10}
+      B2C_OPENROUTER_MAX_INPUT_CHARS: ${B2C_OPENROUTER_MAX_INPUT_CHARS:-24000}
+      B2C_OPENROUTER_OCR_MAX_TOKENS: ${B2C_OPENROUTER_OCR_MAX_TOKENS:-12000}
+    networks: [b2c_internal, b2c_edge]
+    volumes:
+      - type: bind
+        source: ${B2C_OPENROUTER_KEY_HOST_FILE:?Set B2C_OPENROUTER_KEY_HOST_FILE to a local key file}
+        target: /run/secrets/openrouter_api_key
+        read_only: true
+        bind: {create_host_path: false}

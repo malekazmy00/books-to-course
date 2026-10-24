@@ -1,0 +1,7 @@
+FROM b2c-fasih-tts:cpu
+COPY docker/supertonic/audio_renderer.py /app/audio_renderer.py
+COPY docker/supertonic/arabic_punctuation.py /app/arabic_punctuation.py
+USER fasih
+WORKDIR /app
+EXPOSE 3008
+CMD ["uvicorn", "audio_renderer:app", "--host", "0.0.0.0", "--port", "3008"]

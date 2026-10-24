@@ -1,0 +1,113 @@
+services:
+  worker:
+    environment:
+      B2C_AUDIO_RENDERER_URL: http://audio-renderer:3008
+      B2C_SPEECH_PUNCTUATION: ${B2C_SPEECH_PUNCTUATION:-off}
+
+  fasih-tts:
+    profiles: [speech]
+    build:
+      context: ${B2C_DATA_DIR}/build-context/fasih
+      dockerfile: Dockerfile
+    image: b2c-fasih-tts:cpu
+    environment:
+      MODEL_DIR: /app/model
+      CATT_CKPT: /app/models/catt/best_ed_mlm_ns_epoch_178.pt
+      TTS_DEVICE: cpu
+      OMP_NUM_THREADS: 4
+      MKL_NUM_THREADS: 4
+      NUMBA_CACHE_DIR: /tmp/numba-cache
+    volumes:
+      - type: bind
+        source: ${B2C_DATA_DIR}/models/phase8-speech/research-only-fasih-tts-v1
+        target: /app/model
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${B2C_DATA_DIR}/models/phase8-speech/catt/best_ed_mlm_ns_epoch_178.pt
+        target: /app/models/catt/best_ed_mlm_ns_epoch_178.pt
+        read_only: true
+        bind: {create_host_path: false}
+    networks: [b2c_internal]
+    mem_limit: 50g
+    cpus: 24
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,json,sys; d=json.load(urllib.request.urlopen('http://127.0.0.1:3006/health',timeout=10)); sys.exit(0 if d.get('status')=='ok' else 1)"]
+      interval: 30s
+      timeout: 15s
+      retries: 4
+      start_period: 900s
+    labels:
+      com.b2c.role: speech
+      com.b2c.provider: fasih-tts-v1
+
+  supertonic-tts:
+    profiles: [speech]
+    build:
+      context: ${B2C_DATA_DIR}/build-context/supertonic
+      dockerfile: Dockerfile
+    image: b2c-supertonic-tts:cpu
+    environment:
+      MODEL_DIR: /app/model
+      OMP_NUM_THREADS: 4
+    volumes:
+      - type: bind
+        source: ${B2C_DATA_DIR}/models/phase8-speech/supertonic3
+        target: /app/model
+        read_only: true
+        bind: {create_host_path: false}
+    networks: [b2c_internal]
+    mem_limit: 4g
+    cpus: 4
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,json,sys; d=json.load(urllib.request.urlopen('http://127.0.0.1:3007/health',timeout=10)); sys.exit(0 if d.get('status')=='ok' else 1)"]
+      interval: 30s
+      timeout: 15s
+      retries: 4
+      start_period: 120s
+    labels:
+      com.b2c.role: speech
+      com.b2c.provider: supertonic3
+
+  audio-renderer:
+    profiles: [speech]
+    build:
+      context: ..
+      dockerfile: docker/supertonic/Dockerfile.renderer
+    image: b2c-audio-renderer:20261012-fixes
+    environment:
+      FASIH_URL: http://fasih-tts:3006
+      SUPERTONIC_URL: http://supertonic-tts:3007
+      B2C_RENDERER_CACHE_DIR: /var/lib/b2c-speech-cache/wav
+      B2C_SPEECH_PUNCTUATION: ${B2C_SPEECH_PUNCTUATION:-off}
+      B2C_NAQTA_MODEL_DIR: /app/models/naqta
+    volumes:
+      - type: bind
+        source: ${B2C_DATA_DIR}/models/phase8-speech/arabic-punctuation/naqta-76591312db8d0bf9b9ad229a39bcf126b8fbde59
+        target: /app/models/naqta
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${B2C_DATA_DIR}/state/audio-renderer-cache
+        target: /var/lib/b2c-speech-cache
+        bind: {create_host_path: false}
+    depends_on:
+      fasih-tts: {condition: service_healthy}
+      supertonic-tts: {condition: service_healthy}
+    networks: [b2c_internal]
+    mem_limit: 8g
+    cpus: 8
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,json,sys; d=json.load(urllib.request.urlopen('http://127.0.0.1:3008/health',timeout=10)); sys.exit(0 if d.get('status')=='ok' else 1)"]
+      interval: 30s
+      timeout: 15s
+      retries: 4
+      start_period: 30s
+
+networks:
+  b2c_internal:
+    external: true
+    name: b2c_b2c_internal

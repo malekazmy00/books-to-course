@@ -1,0 +1,12 @@
+# Optional Gemini vision correction for Docling-detected table crops only.
+# The key is mounted from the existing RAM-backed secret and never enters the repository or .env.
+services:
+  worker:
+    environment:
+      B2C_GEMINI_API_KEY_FILE: /run/secrets/gemini_api_key
+    secrets:
+      - gemini_api_key
+    networks: [b2c_internal, b2c_edge]
+secrets:
+  gemini_api_key:
+    file: /dev/shm/b2c-gemini-api-key

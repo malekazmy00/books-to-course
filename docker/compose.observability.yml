@@ -75,7 +75,10 @@ services:
       LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL}
       LANGFUSE_INIT_USER_NAME: admin
       LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD}
-    networks: [b2c_internal, b2c_edge]
+    networks:
+      b2c_internal:
+        aliases: [langfuse-internal]
+      b2c_edge: {}
     ports: ["127.0.0.1:3100:3000"]
     restart: unless-stopped
     mem_limit: 2g

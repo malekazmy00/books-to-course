@@ -1,0 +1,6 @@
+FROM b2c-worker:dev
+USER root
+COPY packages/ /app/packages/
+COPY tests/ /app/tests/
+USER 10001:10001
+CMD ["b2c-worker"]

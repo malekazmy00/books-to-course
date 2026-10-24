@@ -1,0 +1,3 @@
+FROM b2c-hy-worker:dev
+COPY packages/translation/src/b2c_translation/generation.py /app/packages/translation/src/b2c_translation/generation.py
+COPY packages/orchestration/src/b2c_orchestration/translation.py /app/packages/orchestration/src/b2c_orchestration/translation.py

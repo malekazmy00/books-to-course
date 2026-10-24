@@ -1,0 +1,2 @@
+FROM b2c-api:terminology-repair-20261013
+COPY packages/api/src/b2c_api/app.py /app/packages/api/src/b2c_api/app.py

@@ -1,0 +1,10 @@
+apiVersion: 1
+providers:
+  - name: B2C operations
+    orgId: 1
+    folder: B2C
+    type: file
+    disableDeletion: true
+    editable: false
+    options:
+      path: /etc/grafana/dashboards

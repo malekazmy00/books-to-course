@@ -1,0 +1,19 @@
+# Explicit opt-in paid OpenRouter vision route. No implicit fallback from Qwen Free.
+services:
+  llm:
+    profiles: [local-llm]
+  worker:
+    environment:
+      B2C_LLM_BASE_URL: https://openrouter.ai/api/v1
+      B2C_OCR_ENGINE: ${B2C_OCR_ENGINE:-openrouter}
+      B2C_LLM_MODEL_ID: deepseek/deepseek-v4-flash-vision-exp
+      B2C_LLM_ALLOW_REMOTE: "true"
+      B2C_LLM_API_KEY_FILE: /run/secrets/openrouter_api_key
+      B2C_OPENROUTER_OCR_MAX_TOKENS: ${B2C_OPENROUTER_OCR_MAX_TOKENS:-12000}
+    networks: [b2c_internal, b2c_edge]
+    volumes:
+      - type: bind
+        source: ${B2C_OPENROUTER_KEY_HOST_FILE:?Set B2C_OPENROUTER_KEY_HOST_FILE to a local key file}
+        target: /run/secrets/openrouter_api_key
+        read_only: true
+        bind: {create_host_path: false}

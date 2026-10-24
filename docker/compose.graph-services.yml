@@ -1,0 +1,94 @@
+# B2C-only optional graph services. Requires the local BGE embedding overlay.
+# Creates new services only; no existing workflow or data migration is implicit.
+x-graph-env: &graph-env
+  B2C_GRAPH_SERVICE_KEY_FILE: /run/secrets/b2c_graph_service_api_key
+  B2C_GRAPH_LLM_BASE_URL: ${B2C_GRAPH_LLM_BASE_URL:-https://openrouter.ai/api/v1}
+  B2C_GRAPH_LLM_MODEL: ${B2C_GRAPH_LLM_MODEL:-deepseek/deepseek-v4-flash-0731}
+  B2C_GRAPH_LLM_KEY_FILE: /run/secrets/b2c_graph_llm_api_key
+  B2C_GRAPH_EMBEDDING_BASE_URL: ${B2C_GRAPH_EMBEDDING_BASE_URL:-http://bge-embed:8000/v1}
+  B2C_GRAPH_EMBEDDING_MODEL: ${B2C_GRAPH_EMBEDDING_MODEL:-BAAI/bge-m3}
+  B2C_GRAPH_EMBEDDING_KEY_FILE: /run/secrets/b2c_embedding_api_key
+  B2C_GRAPH_EMBEDDING_DIM: ${B2C_GRAPH_EMBEDDING_DIM:-1024}
+  B2C_GRAPH_TIMEOUT_S: ${B2C_GRAPH_TIMEOUT_S:-900}
+  OMP_NUM_THREADS: "4"
+  TOKENIZERS_PARALLELISM: "false"
+
+x-graph-client-env: &graph-client-env
+  B2C_LIGHTRAG_SERVICE_URL: http://lightrag-service:9630
+  B2C_LIGHTRAG_SERVICE_KEY_FILE: /run/secrets/b2c_graph_service_api_key
+  B2C_HIPPORAG_SERVICE_URL: http://hipporag-service:9630
+  B2C_HIPPORAG_SERVICE_KEY_FILE: /run/secrets/b2c_graph_service_api_key
+
+x-graph-health: &graph-health
+  test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9630/health', timeout=5).read()"]
+  interval: 20s
+  timeout: 8s
+  retries: 5
+  start_period: 60s
+
+services:
+  lightrag-service:
+    profiles: [graph-engines]
+    build:
+      context: ..
+      dockerfile: docker/graph/Dockerfile.lightrag
+    image: b2c-lightrag-service:20261009
+    environment:
+      <<: *graph-env
+      B2C_GRAPH_ENGINE: lightrag
+      B2C_GRAPH_INDEX_ROOT: /data/indexes
+    volumes:
+      - type: bind
+        source: ${B2C_DATA_DIR}/state/graph-indexes/lightrag
+        target: /data/indexes
+        bind: {create_host_path: false}
+    secrets: [b2c_graph_service_api_key, b2c_graph_llm_api_key, b2c_embedding_api_key]
+    depends_on:
+      bge-embed: {condition: service_healthy}
+    networks: [b2c_internal, b2c_edge]
+    restart: unless-stopped
+    mem_limit: 10g
+    cpus: 4
+    healthcheck: *graph-health
+
+  hipporag-service:
+    profiles: [graph-engines]
+    build:
+      context: ..
+      dockerfile: docker/graph/Dockerfile.hipporag
+      additional_contexts:
+        hipporag_src: ${B2C_HIPPORAG_SOURCE_DIR:-/mnt/wsl/b2cdata/phase6-assets/runtime-src/hipporag2-patched-2bfd831}
+    image: b2c-hipporag-service:20261009
+    environment:
+      <<: *graph-env
+      B2C_GRAPH_ENGINE: hipporag
+      B2C_GRAPH_INDEX_ROOT: /data/indexes
+    volumes:
+      - type: bind
+        source: ${B2C_DATA_DIR}/state/graph-indexes/hipporag
+        target: /data/indexes
+        bind: {create_host_path: false}
+    secrets: [b2c_graph_service_api_key, b2c_graph_llm_api_key, b2c_embedding_api_key]
+    depends_on:
+      bge-embed: {condition: service_healthy}
+    networks: [b2c_internal, b2c_edge]
+    restart: unless-stopped
+    mem_limit: 8g
+    cpus: 4
+    healthcheck: *graph-health
+
+  api:
+    environment: *graph-client-env
+    secrets: [b2c_graph_service_api_key]
+  worker:
+    environment: *graph-client-env
+    secrets: [b2c_graph_service_api_key]
+  generation-worker:
+    environment: *graph-client-env
+    secrets: [b2c_graph_service_api_key]
+
+secrets:
+  b2c_graph_service_api_key:
+    file: ${B2C_GRAPH_SERVICE_KEY_HOST_FILE:-/root/.config/book2course/graph-service-api-key}
+  b2c_graph_llm_api_key:
+    file: ${B2C_GRAPH_LLM_KEY_HOST_FILE:-/root/.config/book2course/openrouter-api-key}

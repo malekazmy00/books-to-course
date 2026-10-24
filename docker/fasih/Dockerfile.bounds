@@ -1,0 +1,6 @@
+FROM b2c-fasih-tts:cpu
+ENV MPLCONFIGDIR=/tmp/matplotlib XDG_CACHE_HOME=/tmp/cache
+USER root
+COPY docker/fasih/server.py /app/server.py
+COPY docker/fasih/catt_bounds.py /app/catt_bounds.py
+USER fasih

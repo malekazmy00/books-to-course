@@ -1,0 +1,32 @@
+services:
+  hy-translation:
+    image: b2c-hy-translation:ocr-fragment-normalized-20261023
+
+  hy-translation-worker:
+    image: b2c-hy-worker:diagnostic-timeout-recovery-20261023
+    environment:
+      B2C_LLM_TIMEOUT_S: "900"
+
+  hy-translation-2:
+    image: b2c-hy-translation:ocr-fragment-normalized-20261023
+
+  hy-translation-3:
+    image: b2c-hy-translation:ocr-fragment-normalized-20261023
+
+  hy-translation-worker-2:
+    image: b2c-hy-worker:diagnostic-timeout-recovery-20261023
+    environment:
+      B2C_LLM_TIMEOUT_S: "900"
+
+  hy-translation-worker-3:
+    image: b2c-hy-worker:diagnostic-timeout-recovery-20261023
+    environment:
+      B2C_LLM_TIMEOUT_S: "900"
+
+  hy-translation-4:
+    image: b2c-hy-translation:ocr-fragment-normalized-20261023
+
+  hy-translation-worker-4:
+    image: b2c-hy-worker:diagnostic-timeout-recovery-20261023
+    environment:
+      B2C_LLM_TIMEOUT_S: "900"

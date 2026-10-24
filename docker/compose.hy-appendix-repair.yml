@@ -1,0 +1,5 @@
+services:
+  hy-translation-worker:
+    image: b2c-hy-worker:terminology-repair-20261013
+  hy-translation-worker-2:
+    image: b2c-hy-worker:terminology-repair-20261013

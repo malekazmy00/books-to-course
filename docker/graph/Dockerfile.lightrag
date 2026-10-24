@@ -1,0 +1,15 @@
+FROM ghcr.io/hkuds/lightrag:v1.5.7@sha256:5bdbd524931b011df246fe20888d110cef691e6804c12cde636a2b746d7de27e
+USER root
+RUN /app/.venv/bin/python -m pip install --no-cache-dir fastapi==0.142.2 uvicorn==0.54.0 pydantic==2.13.5 \
+    && /app/.venv/bin/python -m pip check \
+    && groupadd --gid 10001 b2cgraph && useradd --uid 10001 --gid 10001 --create-home b2cgraph
+COPY packages/contracts/src /opt/b2c/contracts
+COPY packages/indexing/src /opt/b2c/indexing
+ENV PYTHONPATH=/opt/b2c/contracts:/opt/b2c/indexing \
+    PYTHONUNBUFFERED=1 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+    XDG_CACHE_HOME=/tmp/b2c-cache
+RUN /app/.venv/bin/python -c "from importlib.metadata import version; assert version('lightrag-hku') == '1.5.7'; import b2c_indexing.graph_api"
+USER 10001:10001
+WORKDIR /tmp
+ENTRYPOINT ["/app/.venv/bin/uvicorn"]
+CMD ["b2c_indexing.graph_api:create_app", "--factory", "--host", "0.0.0.0", "--port", "9630", "--workers", "1"]

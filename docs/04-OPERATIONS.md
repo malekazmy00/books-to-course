@@ -81,7 +81,8 @@
 | python base (hy-translation) | `python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f` | 2026-10-24 | same |
 | haproxy (hy-translation-proxy) | `3.2-alpine@sha256:5d97434a423c2533cfeb42874d45cf6d69a840b60334582dfbfd5008e94c80be` | 2026-10-24 | same |
 | vendored BookTrans | upstream commit `fefaf9962e48ab9286992e43c24a9e6d6c8755af` | 2026-10-24 | `vendor/booktrans/UPSTREAM-COMMIT.txt` |
-| Hy-MT2 1.8B / Fasih-TTS v1 / CATT / Supertonic3 / Naqta / EmbeddingGemma | **not pinned** | — | VERIFY: record revision + SHA-256 of each weights dir on the data disk |
+| Hy-MT2 1.8B (`tencent/Hy-MT2-1.8B`) + its prompt templates (D-028 `PlainMTEngine`, `b2c_translation/prompts.py` `hy-mt2.*@v1`) | revision `9a341cd1b679d3efd23b46e847b01745a71ed792`; `model.safetensors` LFS oid `sha256:29e9117a44c79f81857613601968ff482d8a23c2d6736a1710bba9e5ca4762e5` (from the HF download metadata on the data disk; local SHA-256 not yet recomputed) | 2026-10-24 | https://huggingface.co/tencent/Hy-MT2-1.8B (model card "Hy-MT2 Translation Task Instruction Examples": Default / Terminology / background-information templates; `chat_template.jinja`) — upstream README and template byte-identical to the data-disk copy; same table in https://github.com/Tencent-Hunyuan/Hy-MT2 @ `ff1903ecaa724e10951a23c16817a2413c752b35` |
+| Fasih-TTS v1 / CATT / Supertonic3 / Naqta / EmbeddingGemma | **not pinned** | — | VERIFY: record revision + SHA-256 of each weights dir on the data disk |
 | fasih / supertonic build context | **not in git** (`${B2C_DATA_DIR}/build-context/*`) | — | open: move into `docker/` so images are reproducible |
 
 ## 6. المراقبة (Observability)

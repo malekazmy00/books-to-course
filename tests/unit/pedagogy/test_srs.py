@@ -70,3 +70,23 @@ def test_fsrs_wrapper_requires_utc_and_persists_card_state() -> None:
     second_json, _, _ = review_card(user_id="learner", rating=1, reviewed_at=reviewed_at,
                                     card_json=first_json)
     assert Card.from_json(second_json).state == Card.from_json(first_json).state
+
+
+def test_new_card_id_is_stable_per_user_and_question() -> None:
+    from b2c_pedagogy.srs import stable_card_id
+
+    reviewed_at = datetime(2026, 10, 5, 12, tzinfo=timezone.utc)
+    first_json, first_log, _ = review_card(user_id="learner", rating=3, reviewed_at=reviewed_at,
+                                           question_id="l1:q001")
+    again_json, again_log, _ = review_card(user_id="learner", rating=3, reviewed_at=reviewed_at,
+                                           question_id="l1:q001")
+    other_q = review_card(user_id="learner", rating=3, reviewed_at=reviewed_at, question_id="l1:q002")[1]
+    other_u = review_card(user_id="learner-2", rating=3, reviewed_at=reviewed_at, question_id="l1:q001")[1]
+    assert first_json == again_json
+    assert first_log.card_id == again_log.card_id == str(stable_card_id("learner", "l1:q001"))
+    assert len({first_log.card_id, other_q.card_id, other_u.card_id}) == 3
+    assert 0 < int(first_log.card_id) < 2 ** 63
+    # The id survives later reviews through the persisted card state.
+    _, later, _ = review_card(user_id="learner", rating=1, reviewed_at=reviewed_at, card_json=first_json,
+                              question_id="l1:q001")
+    assert later.card_id == first_log.card_id

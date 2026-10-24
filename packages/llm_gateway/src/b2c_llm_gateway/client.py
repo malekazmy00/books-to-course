@@ -22,7 +22,7 @@ from opentelemetry.trace import SpanKind, Status, StatusCode
 from pydantic import BaseModel, ValidationError
 
 from .budget import FreeTokenQuotaExceeded, InMemoryOpenRouterBudget, OpenRouterQuotaExceeded
-from .cache import LLMCache, cache_key
+from .cache import LLMCache, cache_key, text_cache_key
 from .errors import (
     CloudProviderNotAllowed,
     InvalidLLMOutput,
@@ -70,6 +70,33 @@ class ChatResult:
     attempts: int = 1
     finish_reason: str | None = None
     generation_attempts: int | None = None
+
+
+@dataclass(frozen=True)
+class TextCompletion:
+    """Plain-text completion (D-028 engines). Field-compatible with
+    ``b2c_translation.engines.base.TextCompletion``; ``cached`` is extra metadata."""
+    text: str
+    model: str
+    finish_reason: str | None = None
+    usage: dict[str, int | float] = field(default_factory=dict)
+    cached: bool = False
+
+
+_TEXT_ROLES = {"system", "user", "assistant"}
+
+
+def _validate_text_messages(messages: Any) -> list[dict[str, str]]:
+    if not isinstance(messages, (list, tuple)) or not messages:
+        raise ValueError("messages must be a non-empty sequence")
+    clean: list[dict[str, str]] = []
+    for message in messages:
+        role = message.get("role") if hasattr(message, "get") else None
+        content = message.get("content") if hasattr(message, "get") else None
+        if role not in _TEXT_ROLES or not isinstance(content, str):
+            raise ValueError("each message needs role system/user/assistant and string content")
+        clean.append({"role": role, "content": content})
+    return clean
 
 
 class LLMGateway:
@@ -366,6 +393,62 @@ class LLMGateway:
         result, parsed = self._run(messages, params, prompt_version, schema=schema)
         assert parsed is not None
         return result, parsed
+
+    def complete_text(self, messages, *, prompt_version: str, max_tokens: int,
+                      temperature: float = 0.0) -> TextCompletion:
+        """Plain-text chat completion: messages are sent as given, no response_format.
+
+        Satisfies ``TextCompletionGateway`` (b2c_translation.engines.base). Cached only at
+        temperature 0, under ``text_cache_key`` (provider + base URL + model + messages +
+        params + prompt_version + key-format version). ``finish_reason == "length"`` raises
+        LLMOutputTruncated and is never cached.
+        """
+        clean = _validate_text_messages(messages)
+        if not isinstance(max_tokens, int) or isinstance(max_tokens, bool) or max_tokens < 1:
+            raise ValueError("max_tokens must be a positive integer")
+        params = self._params(temperature, max_tokens, self.reasoning_effort)
+        cacheable = self.cache is not None and params["temperature"] == 0.0
+        key = text_cache_key(provider=self.provider_name, base_url=self.base_url,
+                             model_id=self.model_id, messages=clean, params=params,
+                             prompt_version=prompt_version)
+        with self._tracer.start_as_current_span(f"chat {self.model_id}", kind=SpanKind.CLIENT) as span:
+            span.set_attributes({
+                "gen_ai.operation.name": "chat",
+                "gen_ai.provider.name": self.provider_name,
+                "gen_ai.request.model": self.model_id,
+                "gen_ai.request.temperature": params["temperature"],
+                "gen_ai.request.max_tokens": max_tokens,
+                "gen_ai.output.type": "text",
+                "b2c.prompt_version": prompt_version,
+                "b2c.cache_key": key,
+            })
+            if self.capture_content:
+                span.set_attribute("langfuse.observation.input", json.dumps(clean, ensure_ascii=False))
+            hit = self.cache.get(key) if cacheable else None
+            if hit is not None and isinstance(hit.get("text"), str):
+                res = ChatResult(text=hit["text"], model=hit.get("model", self.model_id),
+                                 usage=hit.get("usage", {}), cached=True, attempts=0,
+                                 finish_reason=hit.get("finish_reason"), generation_attempts=1)
+                self._finish(span, res, cache_hit=True)
+                return TextCompletion(res.text, res.model, res.finish_reason, dict(res.usage), True)
+            try:
+                res = self._call(clean, params)
+                if res.finish_reason == "length":
+                    raise LLMOutputTruncated(
+                        "LLM output reached its token limit", last_output=res.text,
+                        usage=res.usage, model_id=res.model, finish_reason=res.finish_reason)
+            except (LLMOutputTruncated, OpenRouterQuotaExceeded, OpenRouterRateLimited,
+                    FreeTokenQuotaExceeded, LLMRequestRejected, LLMUnavailable) as exc:
+                span.set_status(Status(StatusCode.ERROR, type(exc).__name__))
+                raise
+            if cacheable:
+                self.cache.put(key, self.model_id, {
+                    "text": res.text, "model": res.model, "usage": res.usage,
+                    "finish_reason": res.finish_reason, "key_inputs": {
+                        "provider": self.provider_name, "base_url": self.base_url,
+                        "prompt_version": prompt_version}})
+            self._finish(span, res, cache_hit=False)
+            return TextCompletion(res.text, res.model, res.finish_reason, dict(res.usage), False)
 
     # ---------------------------------------------------------------- internals
     @staticmethod

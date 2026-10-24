@@ -293,8 +293,87 @@ def _generate_translation(request: CompletionRequest, target: str, payload: dict
                       "total_tokens": input_tokens + output_tokens}}
 
 
+_LEGACY_SYSTEM = re.compile(r"from (en|ar) to (en|ar)")
+_PLAIN_ROLES = {"system", "user", "assistant"}
+
+
+def is_legacy_request(request: CompletionRequest) -> bool:
+    """The pre-D-028 B2C protocol: structured output (response_format) and/or the
+    "from xx to yy" system instruction with a JSON segment batch. Such requests keep the
+    original behaviour byte-for-byte (paused workflows depend on it)."""
+    if request.response_format is not None:
+        return True
+    system = " ".join(x.get("content", "") for x in request.messages if x.get("role") == "system")
+    return _LEGACY_SYSTEM.search(system) is not None
+
+
+def plain_messages(messages: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Validate an OpenAI-style conversation; it is passed to the chat template unchanged."""
+    if not messages or any(set(m) - {"role", "content"} or m.get("role") not in _PLAIN_ROLES
+                           or not isinstance(m.get("content"), str) for m in messages):
+        raise HTTPException(422, "messages need role system/user/assistant and string content")
+    if messages[-1]["role"] != "user":
+        raise HTTPException(422, "the last message must be the user turn")
+    return messages
+
+
+def _generate_plain(request: CompletionRequest, cancelled: threading.Event) -> dict | None:
+    """D-028 path: the tokenizer chat template is applied to the received messages as-is.
+    No prompt building, no marker inventory, no glossary, no retry feedback."""
+    import torch
+    from transformers import StoppingCriteriaList
+
+    criteria = StoppingCriteriaList([_DisconnectStoppingCriteria(cancelled)])
+    with lock, torch.inference_mode():
+        if cancelled.is_set():
+            return None
+        inputs = tokenizer.apply_chat_template(request.messages, add_generation_prompt=True,
+            tokenize=True, return_dict=True, return_tensors="pt")
+        count = inputs["input_ids"].shape[-1]
+        user_tokens = len(tokenizer.encode(request.messages[-1]["content"], add_special_tokens=False))
+        output_limit = _bounded_output_tokens(request.max_tokens, user_tokens)
+        if count + output_limit > 32768:
+            raise HTTPException(422, "translation unit exceeds serving context; split the unit")
+        output = model.generate(**inputs, max_new_tokens=output_limit,
+                                do_sample=False, stopping_criteria=criteria)
+        if cancelled.is_set():
+            return None
+        generated = output[0][count:]
+        text = tokenizer.decode(generated, skip_special_tokens=True).strip()
+    return {"id": "hy-translation", "object": "chat.completion", "model": MODEL_ID,
+            "choices": [{"index": 0, "finish_reason": "length" if len(generated) >= output_limit else "stop",
+                         "message": {"role": "assistant", "content": text}}],
+            "usage": {"prompt_tokens": count, "completion_tokens": len(generated),
+                      "total_tokens": count + len(generated)}}
+
+
+async def _run_cancellable(raw_request: Request, func, *args):
+    cancelled = threading.Event()
+    watcher = asyncio.create_task(_watch_disconnect(raw_request, cancelled))
+    try:
+        result = await anyio.to_thread.run_sync(func, *args, cancelled, abandon_on_cancel=True)
+    finally:
+        cancelled.set()
+        watcher.cancel()
+    if result is None:
+        return Response(status_code=499)
+    return result
+
+
+async def _plain_completion(request: CompletionRequest, raw_request: Request):
+    if request.model != MODEL_ID or request.stream:
+        raise HTTPException(422, "unsupported model or streaming request")
+    if request.temperature != 0.0 or request.response_format is not None:
+        raise HTTPException(422, "plain route serves greedy plain-text completions only")
+    health()
+    plain_messages(request.messages)
+    return await _run_cancellable(raw_request, _generate_plain, request)
+
+
 @app.post("/v1/chat/completions")
 async def completions(request: CompletionRequest, raw_request: Request):
+    if not is_legacy_request(request):
+        return await _plain_completion(request, raw_request)
     if request.model != MODEL_ID or request.stream:
         raise HTTPException(422, "unsupported model or streaming request")
     health()
@@ -310,3 +389,10 @@ async def completions(request: CompletionRequest, raw_request: Request):
     if result is None:
         return Response(status_code=499)
     return result
+
+
+@app.post("/plain/v1/chat/completions")
+async def plain_completions(request: CompletionRequest, raw_request: Request):
+    """Unambiguous OpenAI-compatible endpoint for the D-028 engines (gateway base_url
+    ``http://<host>:3007/plain/v1``): never takes the legacy path."""
+    return await _plain_completion(request, raw_request)

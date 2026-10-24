@@ -122,7 +122,10 @@ class UnitTranslator:
 
     # ------------------------------------------------------------------ routes
     def _rule(self, unit: TranslationUnit) -> UnitResult:
-        target = restore_footnotes(self.reference_renderer(unit), unit.footnote_markers)
+        # Back-of-book index entries are kept verbatim: an Arabic edition rebuilds its index
+        # from the translated text, so translating entries one by one has no use.
+        rendered = self.reference_renderer(unit) if unit.kind == "reference" else unit.source_text
+        target = restore_footnotes(rendered, unit.footnote_markers)
         issues = run_checks(self._context(unit, target))
         decision = decide(issues, None, attempts=0, max_attempts=1, engine_supports_repair=False, origin="rule")
         return UnitResult(decision.to_unit_translation(unit_id=unit.unit_id, target_text=target, engine=None,

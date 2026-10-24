@@ -201,3 +201,9 @@ def test_references_use_the_rule_renderer_by_default():
     out = translator(engine).translate(unit("Ibid., 55.", kind="reference")).translation
     assert "المرجع نفسه" in out.target_text and "55" in out.target_text
     assert out.origin == "rule" and engine.requests == []
+
+
+def test_index_entries_are_kept_verbatim_by_rule():
+    engine = FakeEngine([])
+    out = translator(engine).translate(unit("hegemony, 12, 45-47", kind="index")).translation
+    assert out.origin == "rule" and out.target_text == "hegemony, 12, 45-47" and engine.requests == []

@@ -779,6 +779,30 @@ def _emit_translation_checkpoint(callback, progress: dict[str, object]) -> None:
         raise _TranslationCheckpointError("translation_checkpoint_write_failed") from exc
 
 
+def _checkpoint_payload(
+    event: str, segments: Sequence[SourceSegment], accepted_by_id: Mapping[str, TranslatedSegment], *,
+    batch_no: int | None = None, total_batches: int | None = None, with_citations: bool = False,
+    **fields: object,
+) -> dict[str, object]:
+    """Build one translation checkpoint event: shared progress fields, then event fields.
+
+    Batch-scoped events carry batch_index/total_batches/total_segments; every event
+    carries completed_segments and completed_segment_ids in source order, and
+    with_citations adds the sorted completed_citations.
+    """
+    payload: dict[str, object] = {"event": event}
+    if batch_no is not None:
+        payload.update({"batch_index": batch_no + 1, "total_batches": total_batches,
+                        "total_segments": len(segments)})
+    payload["completed_segments"] = len(accepted_by_id)
+    payload["completed_segment_ids"] = [x.segment_id for x in segments if x.segment_id in accepted_by_id]
+    if with_citations:
+        payload["completed_citations"] = sorted({c for x in segments if x.segment_id in accepted_by_id
+                                                 for c in x.citations})
+    payload.update(fields)
+    return payload
+
+
 def _translation_request_subset(schema, messages: list[dict[str, str]], pending: list[SourceSegment], *, batch_no: int):
     """Rebuild both schema and payload when only unfinished original IDs remain."""
     choices = Literal.__getitem__(tuple(item.segment_id for item in pending))
@@ -953,16 +977,13 @@ def _request_translation_batch(
                 "false positive and the draft already covers the source, preserve it unchanged. Return every requested ID."
             )}]
         if (attempt > 1 or deferred) and progress_callback is not None:
-            _emit_translation_checkpoint(progress_callback, {
-                "event": "batch_retry", "batch_index": batch_no + 1,
-                "total_batches": total_batches, "total_segments": len(segments),
-                "completed_segments": len(accepted_by_id),
-                "completed_segment_ids": [x.segment_id for x in segments if x.segment_id in accepted_by_id],
-                "current_segment_ids": [x.segment_id for x in working], "attempt": attempt,
-                "deferred_batches": [index for index in deferred_batch_indexes if index != batch_no + 1],
-                "failed_segment_ids": [],
-                "current_citations": sorted({c for x in working for c in x.citations}),
-            })
+            _emit_translation_checkpoint(progress_callback, _checkpoint_payload(
+                "batch_retry", segments, accepted_by_id, batch_no=batch_no, total_batches=total_batches,
+                current_segment_ids=[x.segment_id for x in working], attempt=attempt,
+                deferred_batches=[index for index in deferred_batch_indexes if index != batch_no + 1],
+                failed_segment_ids=[],
+                current_citations=sorted({c for x in working for c in x.citations}),
+            ))
         try:
             result = gateway.structured(request_messages, request_schema,
                 prompt_version=f"{prompt_version}:unit-{batch_no}:attempt-{attempt}{':deferred' if deferred else ''}",
@@ -1006,17 +1027,18 @@ def _request_translation_batch(
                     accepted_by_id[source.segment_id] = translated
                     if progress_callback is not None and len(working) > 1:
                         batch_sources = checkpoint_batch or pending
-                        _emit_translation_checkpoint(progress_callback, {
-                            "event": "batch_completed" if all(x.segment_id in accepted_by_id for x in batch_sources) else "batch_partial_completed", "batch_index": batch_no + 1,
-                            "total_batches": total_batches, "total_segments": len(segments),
-                            "completed_segments": len(accepted_by_id),
-                            "completed_segment_ids": [x.segment_id for x in segments if x.segment_id in accepted_by_id],
-                            "current_segment_ids": [x.segment_id for x in working if x.segment_id not in accepted_by_id],
-                            "current_citations": sorted({c for x in working if x.segment_id not in accepted_by_id for c in x.citations}),
-                            "batch_translations": [accepted_by_id[x.segment_id].model_dump(mode="json") for x in batch_sources if x.segment_id in accepted_by_id],
-                            "completed_citations": sorted({c for x in segments if x.segment_id in accepted_by_id for c in x.citations}),
-                            "failed_segment_ids": [], "recovery_method": "per_item_validation",
-                        })
+                        _emit_translation_checkpoint(progress_callback, _checkpoint_payload(
+                            "batch_completed" if all(x.segment_id in accepted_by_id for x in batch_sources)
+                            else "batch_partial_completed",
+                            segments, accepted_by_id, batch_no=batch_no, total_batches=total_batches,
+                            with_citations=True,
+                            current_segment_ids=[x.segment_id for x in working if x.segment_id not in accepted_by_id],
+                            current_citations=sorted({c for x in working if x.segment_id not in accepted_by_id
+                                                      for c in x.citations}),
+                            batch_translations=[accepted_by_id[x.segment_id].model_dump(mode="json")
+                                                for x in batch_sources if x.segment_id in accepted_by_id],
+                            failed_segment_ids=[], recovery_method="per_item_validation",
+                        ))
             if all(source.segment_id in local or (checkpoint_full_units and source.segment_id in accepted_by_id) for source in pending):
                 return list(local.values()), len(local)
         except _RECOVERABLE_ERRORS as exc:
@@ -1185,12 +1207,11 @@ def translate_segments(
                         "tokens": [match.group(0) for match in _TABLE_LITERAL.finditer(source.text)]}
                        for source in segments if _recognized_rating_table(source.text) and _TABLE_LITERAL.search(source.text)]
     if progress_callback is not None:
-        _emit_translation_checkpoint(progress_callback, {"event": "checkpoint_audited", "source_warnings": source_warnings,
-                           "completed_segments": len(accepted_by_id),
-                           "completed_segment_ids": [x.segment_id for x in segments if x.segment_id in accepted_by_id],
-                           "suspect_segment_ids": [x["segment_id"] for x in suspect_details],
-                           "suspect_segments": len(suspect_details), "suspect_details": suspect_details,
-                           "completeness_policy": "English prose blocks in Arabic output are rejected; source_chars>=200 and target/source<0.45; conservative triage"})
+        _emit_translation_checkpoint(progress_callback, _checkpoint_payload(
+            "checkpoint_audited", segments, accepted_by_id, source_warnings=source_warnings,
+            suspect_segment_ids=[x["segment_id"] for x in suspect_details],
+            suspect_segments=len(suspect_details), suspect_details=suspect_details,
+            completeness_policy="English prose blocks in Arabic output are rejected; source_chars>=200 and target/source<0.45; conservative triage"))
     # Units whose bounded adaptive split already failed in this run: never re-run it.
     adaptive_failures: dict[str, Exception] = {}
 
@@ -1208,29 +1229,22 @@ def translate_segments(
         pending = [item for item in batch if item.segment_id not in accepted_by_id]
         if not pending:
             if progress_callback is not None:
-                _emit_translation_checkpoint(progress_callback, {
-                    "event": "batch_resumed", "batch_index": batch_no + 1,
-                    "total_batches": total_batches, "total_segments": len(segments),
-                    "completed_segments": len(accepted_by_id),
-                    "completed_segment_ids": [x.segment_id for x in segments if x.segment_id in accepted_by_id],
-                    "current_segment_ids": [],
-                    "batch_translations": [accepted_by_id[x.segment_id].model_dump(mode="json") for x in batch],
-                    "completed_citations": sorted({c for x in segments if x.segment_id in accepted_by_id for c in x.citations}),
-                    "current_citations": [],
-                })
+                _emit_translation_checkpoint(progress_callback, _checkpoint_payload(
+                    "batch_resumed", segments, accepted_by_id, batch_no=batch_no, total_batches=total_batches,
+                    with_citations=True, current_segment_ids=[],
+                    batch_translations=[accepted_by_id[x.segment_id].model_dump(mode="json") for x in batch],
+                    current_citations=[],
+                ))
             continue
         if progress_callback is not None:
-            _emit_translation_checkpoint(progress_callback, {
-                "event": "batch_started", "batch_index": batch_no + 1,
-                "total_batches": total_batches, "total_segments": len(segments),
-                "completed_segments": len(accepted_by_id),
-                "completed_segment_ids": [x.segment_id for x in segments if x.segment_id in accepted_by_id],
-                "current_segment_ids": [x.segment_id for x in pending],
-                "current_unit": _translation_unit_key(pending[0]),
-                "deferred_batches": [item[0] + 1 for item in deferred_batches],
-                "failed_segment_ids": [],
-                "current_citations": sorted({c for x in pending for c in x.citations}),
-            })
+            _emit_translation_checkpoint(progress_callback, _checkpoint_payload(
+                "batch_started", segments, accepted_by_id, batch_no=batch_no, total_batches=total_batches,
+                current_segment_ids=[x.segment_id for x in pending],
+                current_unit=_translation_unit_key(pending[0]),
+                deferred_batches=[item[0] + 1 for item in deferred_batches],
+                failed_segment_ids=[],
+                current_citations=sorted({c for x in pending for c in x.citations}),
+            ))
         choices = Literal.__getitem__(tuple(item.segment_id for item in pending))
         item_schema = create_model(f"TranslationItem{batch_no}", __base__=TranslatedSegment,
                                    segment_id=(choices, ...))
@@ -1267,17 +1281,17 @@ def translate_segments(
                     prompt_version=prompt_version, progress_callback=progress_callback, target_language=validation_target_language)
                 accepted_by_id[source.segment_id] = translated
                 if progress_callback is not None:
-                    _emit_translation_checkpoint(progress_callback, {
-                        "event": "batch_completed" if all(x.segment_id in accepted_by_id for x in batch) else "batch_partial_completed", "batch_index": batch_no + 1,
-                        "total_batches": total_batches, "total_segments": len(segments),
-                        "completed_segments": len(accepted_by_id),
-                        "completed_segment_ids": [x.segment_id for x in segments if x.segment_id in accepted_by_id],
-                        "current_segment_ids": [x.segment_id for x in pending if x.segment_id not in accepted_by_id],
-                        "current_citations": [],
-                        "batch_translations": [accepted_by_id[x.segment_id].model_dump(mode="json") for x in batch if x.segment_id in accepted_by_id],
-                        "completed_citations": sorted({c for x in segments if x.segment_id in accepted_by_id for c in x.citations}),
-                        "failed_segment_ids": [], "recovery_method": "adaptive_split",
-                    })
+                    _emit_translation_checkpoint(progress_callback, _checkpoint_payload(
+                        "batch_completed" if all(x.segment_id in accepted_by_id for x in batch)
+                        else "batch_partial_completed",
+                        segments, accepted_by_id, batch_no=batch_no, total_batches=total_batches,
+                        with_citations=True,
+                        current_segment_ids=[x.segment_id for x in pending if x.segment_id not in accepted_by_id],
+                        current_citations=[],
+                        batch_translations=[accepted_by_id[x.segment_id].model_dump(mode="json")
+                                            for x in batch if x.segment_id in accepted_by_id],
+                        failed_segment_ids=[], recovery_method="adaptive_split",
+                    ))
             except _RECOVERABLE_ERRORS as exc:
                 # The normal/deferred path still retries this original as a whole unit.
                 adaptive_failures[source.segment_id] = exc
@@ -1311,33 +1325,27 @@ def translate_segments(
             messages = _attach_retry_feedback(messages, retry_feedback)
             deferred_batches.append((batch_no, batch, pending, schema, messages, exc))
             if progress_callback is not None:
-                _emit_translation_checkpoint(progress_callback, {
-                    "event": "batch_deferred", "batch_index": batch_no + 1,
-                    "total_batches": total_batches, "total_segments": len(segments),
-                    "completed_segments": len(accepted_by_id),
-                    "completed_segment_ids": [x.segment_id for x in segments if x.segment_id in accepted_by_id],
-                    "current_segment_ids": [], "current_citations": [],
-                    "deferred_batches": [item[0] + 1 for item in deferred_batches],
-                    "deferred_units": [_translation_unit_key(item[2][0]) for item in deferred_batches],
-                    "failed_segment_ids": [x.segment_id for x in pending],
-                    "failed_units": [_segment_failure_record(source, exc, batch_no=batch_no, attempts=2)
-                                     for source in pending],
-                    "last_error_type": type(exc).__name__, "last_error_reason": _translation_error_reason(exc),
-                })
+                _emit_translation_checkpoint(progress_callback, _checkpoint_payload(
+                    "batch_deferred", segments, accepted_by_id, batch_no=batch_no, total_batches=total_batches,
+                    current_segment_ids=[], current_citations=[],
+                    deferred_batches=[item[0] + 1 for item in deferred_batches],
+                    deferred_units=[_translation_unit_key(item[2][0]) for item in deferred_batches],
+                    failed_segment_ids=[x.segment_id for x in pending],
+                    failed_units=[_segment_failure_record(source, exc, batch_no=batch_no, attempts=2)
+                                  for source in pending],
+                    last_error_type=type(exc).__name__, last_error_reason=_translation_error_reason(exc),
+                ))
             continue
         accepted_by_id.update({item.segment_id: item for item in translated_items})
         if progress_callback is not None:
             full_batch = [accepted_by_id[x.segment_id] for x in batch]
-            _emit_translation_checkpoint(progress_callback, {
-                "event": "batch_completed", "batch_index": batch_no + 1,
-                "total_batches": total_batches, "total_segments": len(segments),
-                "completed_segments": len(accepted_by_id),
-                "completed_segment_ids": [x.segment_id for x in segments if x.segment_id in accepted_by_id],
-                "current_segment_ids": [], "batch_translations": [x.model_dump(mode="json") for x in full_batch],
-                "completed_citations": sorted({c for x in segments if x.segment_id in accepted_by_id for c in x.citations}),
-                "current_citations": [], "deferred_batches": [item[0] + 1 for item in deferred_batches],
-                "failed_segment_ids": [],
-            })
+            _emit_translation_checkpoint(progress_callback, _checkpoint_payload(
+                "batch_completed", segments, accepted_by_id, batch_no=batch_no, total_batches=total_batches,
+                with_citations=True, current_segment_ids=[],
+                batch_translations=[x.model_dump(mode="json") for x in full_batch],
+                current_citations=[], deferred_batches=[item[0] + 1 for item in deferred_batches],
+                failed_segment_ids=[],
+            ))
 
     deferred_failures: list[tuple[int, list[SourceSegment], Exception]] = []
     for batch_no, batch, pending, schema, messages, initial_error in deferred_batches:
@@ -1389,37 +1397,27 @@ def translate_segments(
             if source.segment_id in accepted_by_id and progress_callback is not None:
                 completed_items = [accepted_by_id[item.segment_id] for item in batch
                                    if item.segment_id in accepted_by_id]
-                _emit_translation_checkpoint(progress_callback, {
-                    "event": "batch_completed" if len(completed_items) == len(batch) else "batch_partial_completed",
-                    "batch_index": batch_no + 1, "total_batches": total_batches,
-                    "total_segments": len(segments), "completed_segments": len(accepted_by_id),
-                    "completed_segment_ids": [item.segment_id for item in segments
-                                               if item.segment_id in accepted_by_id],
-                    "current_segment_ids": [], "current_citations": [],
-                    "batch_translations": [item.model_dump(mode="json") for item in completed_items],
-                    "completed_citations": sorted({citation for item in segments
-                                                    if item.segment_id in accepted_by_id
-                                                    for citation in item.citations}),
-                    "recovery_method": recovery_method,
-                    "failed_segment_ids": [],
-                })
+                _emit_translation_checkpoint(progress_callback, _checkpoint_payload(
+                    "batch_completed" if len(completed_items) == len(batch) else "batch_partial_completed",
+                    segments, accepted_by_id, batch_no=batch_no, total_batches=total_batches,
+                    with_citations=True, current_segment_ids=[], current_citations=[],
+                    batch_translations=[item.model_dump(mode="json") for item in completed_items],
+                    recovery_method=recovery_method, failed_segment_ids=[],
+                ))
     if deferred_failures:
         failed_segment_ids = [segment.segment_id for _, pending, _ in deferred_failures for segment in pending]
         if progress_callback is not None:
-            _emit_translation_checkpoint(progress_callback, {
-                "event": "batch_failed", "batch_index": deferred_failures[-1][0] + 1,
-                "total_batches": total_batches, "total_segments": len(segments),
-                "completed_segments": len(accepted_by_id),
-                "completed_segment_ids": [x.segment_id for x in segments if x.segment_id in accepted_by_id],
-                "current_segment_ids": [], "current_citations": [],
-                "deferred_batches": [batch_no + 1 for batch_no, _, _ in deferred_failures],
-                "deferred_units": [_translation_unit_key(pending[0]) for _, pending, _ in deferred_failures],
-                "failed_segment_ids": failed_segment_ids,
-                "failed_units": [_segment_failure_record(source, exc, batch_no=batch_no, attempts=1)
-                                 for batch_no, pending, exc in deferred_failures for source in pending],
-                "last_error_type": type(deferred_failures[-1][2]).__name__,
-                "last_error_reason": _translation_error_reason(deferred_failures[-1][2]),
-            })
+            _emit_translation_checkpoint(progress_callback, _checkpoint_payload(
+                "batch_failed", segments, accepted_by_id, batch_no=deferred_failures[-1][0],
+                total_batches=total_batches, current_segment_ids=[], current_citations=[],
+                deferred_batches=[batch_no + 1 for batch_no, _, _ in deferred_failures],
+                deferred_units=[_translation_unit_key(pending[0]) for _, pending, _ in deferred_failures],
+                failed_segment_ids=failed_segment_ids,
+                failed_units=[_segment_failure_record(source, exc, batch_no=batch_no, attempts=1)
+                              for batch_no, pending, exc in deferred_failures for source in pending],
+                last_error_type=type(deferred_failures[-1][2]).__name__,
+                last_error_reason=_translation_error_reason(deferred_failures[-1][2]),
+            ))
     missing_ids = [segment_id for segment_id in ids if segment_id not in accepted_by_id]
     failed_ids = [segment.segment_id for _, pending, _ in deferred_failures for segment in pending]
     if set(missing_ids) != set(failed_ids):
@@ -1437,15 +1435,15 @@ def translate_segments(
     suspect_ids += [segment_id for segment_id in passthrough_ids if segment_id not in suspect_ids]
     incomplete = bool(missing_ids or passthrough_ids)
     if progress_callback is not None:
-        _emit_translation_checkpoint(progress_callback, {"event": "translation_partial" if incomplete else "translation_completed",
-                           "completed_segments": len(accepted), "total_segments": len(ids),
-                           "completed_segment_ids": [item.segment_id for item in accepted],
-                           "missing_segment_ids": missing_ids, "retry_segment_ids": missing_ids,
-                           "failed_segment_ids": failed_ids, "suspect_segment_ids": suspect_ids,
-                           "source_preserved_segment_ids": passthrough_ids,
-                           "failed_units": [_segment_failure_record(source, exc, batch_no=batch_no, attempts=1)
-                                            for batch_no, pending, exc in deferred_failures for source in pending],
-                           "current_segment_ids": [], "current_citations": []})
+        _emit_translation_checkpoint(progress_callback, _checkpoint_payload(
+            "translation_partial" if incomplete else "translation_completed", segments, accepted_by_id,
+            total_segments=len(ids),
+            missing_segment_ids=missing_ids, retry_segment_ids=missing_ids,
+            failed_segment_ids=failed_ids, suspect_segment_ids=suspect_ids,
+            source_preserved_segment_ids=passthrough_ids,
+            failed_units=[_segment_failure_record(source, exc, batch_no=batch_no, attempts=1)
+                          for batch_no, pending, exc in deferred_failures for source in pending],
+            current_segment_ids=[], current_citations=[]))
     return TranslationPack(source_language=source_language, target_language=target_language,
                           model_id=gateway.model_id, segments=accepted,
                           status="partial" if incomplete else "completed", total_segments=len(ids),

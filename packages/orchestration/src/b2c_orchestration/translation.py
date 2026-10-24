@@ -151,6 +151,44 @@ def translation_checkpoint_records(artifact_store: Any, prefix: str):
         continuation = next_token
 
 
+def seed_translation_checkpoints(
+    artifact_store: Any, workflow_ids: list[str], compatible: dict[str, Any],
+    sources: dict[str, SourceSegment],
+) -> dict[str, tuple[datetime, TranslatedSegment]]:
+    """Collect compatible saved units from every checkpoint of earlier runs.
+
+    Only malformed checkpoint content is skipped; storage failures propagate so
+    a transient S3 error cannot silently discard paid translations, and a
+    truncated listing without a fresh continuation token fails instead of
+    re-listing the first page forever.
+    """
+    seeded: dict[str, tuple[datetime, TranslatedSegment]] = {}
+    for checkpoint_workflow_id in workflow_ids:
+        prefix = f"_system/translation-checkpoints/{checkpoint_workflow_id}/"
+        token = None
+        while True:
+            args = {"Bucket": artifact_store.bucket, "Prefix": prefix}
+            if token:
+                args["ContinuationToken"] = token
+            page = artifact_store.s3.list_objects_v2(**args)
+            for entry in page.get("Contents", []):
+                body = artifact_store.s3.get_object(Bucket=artifact_store.bucket, Key=entry["Key"])["Body"].read()
+                try:
+                    saved = json.loads(body)
+                    merge_translation_checkpoint(saved, compatible, sources, seeded)
+                except (ValueError, TypeError, KeyError, AttributeError):
+                    # json/pydantic errors are ValueErrors; a non-object payload
+                    # raises AttributeError. Skip only that checkpoint.
+                    continue
+            if not page.get("IsTruncated"):
+                break
+            next_token = page.get("NextContinuationToken")
+            if not next_token or next_token == token:
+                raise ValueError("translation checkpoint listing has invalid pagination")
+            token = next_token
+    return seeded
+
+
 def translation_manual_overrides(artifact_store: Any, inp: TranslateContentInput, workflow_id: str) -> list[dict[str, Any]]:
     originals = {x.segment_id:x for x in translation_source_segments(artifact_store, inp)}
     prefix = f"_system/translation-overrides/{workflow_id}/"
@@ -425,29 +463,12 @@ class TranslationActivities:
             checkpoint_workflow_ids = list(dict.fromkeys(
                 item for item in (inp.resume_from_workflow_id, workflow_id) if item
             ))
-            seeded: dict[str, tuple[datetime, TranslatedSegment]] = {}
             source_by_id = {item.segment_id: item for item in source_segments}
             compatible = {name: value for name, value in run_identity.items()
                           if name not in {"max_tokens", "prompt_version", "model_id",
                                           "translation_engine", "provider_id"}}
-            for checkpoint_workflow_id in checkpoint_workflow_ids:
-                prefix = f"_system/translation-checkpoints/{checkpoint_workflow_id}/"
-                token = None
-                while True:
-                    args = {"Bucket": self.artifact_store.bucket, "Prefix": prefix}
-                    if token:
-                        args["ContinuationToken"] = token
-                    page = self.artifact_store.s3.list_objects_v2(**args)
-                    for entry in page.get("Contents", []):
-                        try:
-                            saved = json.loads(self.artifact_store.s3.get_object(
-                                Bucket=self.artifact_store.bucket, Key=entry["Key"])["Body"].read())
-                            merge_translation_checkpoint(saved, compatible, source_by_id, seeded)
-                        except Exception:
-                            continue
-                    if not page.get("IsTruncated"):
-                        break
-                    token = page.get("NextContinuationToken")
+            seeded = seed_translation_checkpoints(self.artifact_store, checkpoint_workflow_ids,
+                                                  compatible, source_by_id)
             resumed_by_id = {item.segment_id: item for item in resume_segments}
             resumed_by_id.update({key: value[1] for key, value in seeded.items()})
             resume_segments = list(resumed_by_id.values())

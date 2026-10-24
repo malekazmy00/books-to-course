@@ -4,8 +4,10 @@ import math, re
 from collections import Counter
 from collections.abc import Callable, Sequence
 from b2c_contracts.models import StructuredChunk
+from b2c_core.arabic_text import normalize_arabic
 _TOKEN_RE = re.compile(r"\w+", re.UNICODE)
-def _terms(text: str) -> list[str]: return [x.casefold() for x in _TOKEN_RE.findall(text)]
+def _terms(text: str) -> list[str]:
+    return [x.casefold() for x in _TOKEN_RE.findall(normalize_arabic(text))]
 def lexical_search(query: str, chunks: Sequence[StructuredChunk], *, top_k: int = 10,
                    allowed_roles: set[str] | None = None,
                    allowed_book_ids: set[str] | None = None) -> list[tuple[StructuredChunk, float]]:

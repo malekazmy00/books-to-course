@@ -9,6 +9,8 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
+from b2c_core.arabic_text import strip_arabic_marks
+
 
 class TranslationGateway(Protocol):
     model_id: str
@@ -19,8 +21,8 @@ class TranslationGateway(Protocol):
 def terminology_violations(source: str, target: str, glossary: Mapping[str, str]) -> list[str]:
     """Require only explicitly selected source terms, never guess their domain."""
     def normalize(text):
-        text = unicodedata.normalize("NFKC", text).casefold()
-        return " ".join(re.sub(r"[\u064b-\u065f\u0670\u0640]", "", text).split())
+        # Diacritics/tatweel only; alef variants stay distinct here (unchanged policy).
+        return " ".join(strip_arabic_marks(unicodedata.normalize("NFKC", text).casefold()).split())
     normalized_source, normalized_target = normalize(source), normalize(target)
     # Explicit equivalents of selected Arabic targets, not domain inference.
     # Definite forms and noun/adjective realizations preserve the selected sense.

@@ -5,13 +5,17 @@ import hashlib
 import re
 
 from b2c_contracts.models import Block, CourseOutline, ParsedBook, StructuredChunk
+from b2c_core.arabic_text import normalize_arabic
 
 _TOKEN_RE = re.compile(r"\w+|[^\w\s]", re.UNICODE)
 
 
 def estimate_tokens(text: str) -> int:
-    """Tokenizer-independent estimate, pending in-domain evaluation."""
-    return max(1, len(_TOKEN_RE.findall(text)))
+    """Tokenizer-independent estimate, pending in-domain evaluation.
+
+    Arabic diacritics/tatweel are removed first so they do not count as tokens.
+    """
+    return max(1, len(_TOKEN_RE.findall(normalize_arabic(text))))
 
 
 def _chunk_id(book_id: str, block_ids: list[str]) -> str:

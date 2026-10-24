@@ -7,7 +7,6 @@ import asyncio
 import json
 import os
 import re
-from datetime import datetime, timezone
 from temporalio.client import Client
 from temporalio.exceptions import ApplicationError
 from temporalio.api.common.v1 import WorkflowExecution

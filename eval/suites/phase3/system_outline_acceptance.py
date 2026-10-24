@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Run deterministic system outline review and T-IDX-01 corpus checks."""
 from __future__ import annotations
-import hashlib, json
+import hashlib
+import json
 from pathlib import Path
 from b2c_contracts import CourseOutline, ParsedBook, SCHEMA_VERSION
 from b2c_outline.review import POLICY_ID, POLICY_VERSION, review_outline

@@ -1,7 +1,8 @@
-import io,json
+import io
+import json
 from datetime import UTC,datetime
 from types import SimpleNamespace
-import httpx,pytest
+import httpx
 from b2c_api.app import create_app
 from b2c_contracts import ArtifactRef,ParsedBook,Block,PageRef
 from b2c_core import Settings

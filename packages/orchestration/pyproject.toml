@@ -2,7 +2,7 @@
 name = "b2c-orchestration"
 version = "0.1.0"
 description = "Temporal workflows + thin activities. The only package that knows the order of layers."
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "b2c-contracts",
     "b2c-core",

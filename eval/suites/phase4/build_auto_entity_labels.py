@@ -5,7 +5,14 @@ The output is diagnostic, not human gold. Provider calls fail closed, checkpoint
 before execution, and never use a fallback route.
 """
 from __future__ import annotations
-import argparse, hashlib, json, math, re, time, urllib.error, urllib.request
+import argparse
+import hashlib
+import json
+import math
+import re
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 API_URL='https://api.inceptionlabs.ai/v1/chat/completions'

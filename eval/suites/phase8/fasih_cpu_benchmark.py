@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
 """Paired Fasih CPU inference benchmark; experimental only, never changes service defaults."""
 from __future__ import annotations
-import argparse, hashlib, json, os, random, sys, time
+import argparse
+import hashlib
+import json
+import os
+import random
+import sys
+import time
 from pathlib import Path
 import numpy as np
 import soundfile as sf

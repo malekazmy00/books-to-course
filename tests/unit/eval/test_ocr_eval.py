@@ -1,5 +1,6 @@
 from __future__ import annotations
-import importlib.util,json
+import importlib.util
+import json
 from pathlib import Path
 import pytest
 MODULE=Path(__file__).resolve().parents[3]/"eval/suites/phase2/ocr_eval.py"

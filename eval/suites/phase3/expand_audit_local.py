@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """Local-only expanded Phase 3 auto audit. Source text never leaves localhost."""
 from __future__ import annotations
-import hashlib, itertools, json, time, urllib.request
+import hashlib
+import itertools
+import json
+import time
+import urllib.request
 from pathlib import Path
 ROOT=Path("/root/projects/book2course"); DATA=Path("/mnt/wsl/b2cdata/phase1-sources")
 OUT=DATA/"phase3-auto-audit-v2.json"; CK=DATA/"phase3-auto-audit-v2-checkpoint.json"

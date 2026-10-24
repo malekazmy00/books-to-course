@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Build frozen, local, non-gold Phase3 retrieval controls and lexical calibration."""
 from __future__ import annotations
-import hashlib, itertools, json, math, unicodedata
+import hashlib
+import itertools
+import json
+import unicodedata
 from pathlib import Path
 from b2c_contracts.models import StructuredChunk
 from b2c_indexing import lexical_search
@@ -41,7 +44,6 @@ def main():
         "label_origin":"deterministic_control_or_model_auto","generation_group":group,"gold_eligible":False,
         "label_provenance":provenance,"qrels":qrels,"source_manifest_sha256":"f8b91470da88691d3b2a4c92306c9fed0387f14e7f4d37f37ad7168aad10dd62"})
     # Existing supported examples are retained; exact source/page/quote validated.
-    base_byid={r["query_id"]:r for r in base}
     for i,b in enumerate(base,1):
         add(f"sup-{i:03d}",b["query"],"supported",b["query_id"],[copyqrel(x) for x in b["qrels"]],
             qtype="direct",provenance="Frozen Qwen3-Coder QA; exact source/page/quote validation")

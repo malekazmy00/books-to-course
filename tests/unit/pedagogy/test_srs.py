@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 import pytest
 from b2c_contracts import CourseOutline, Lesson, LessonSpan, Module, Question
-from fsrs import Card, Rating, Scheduler
+from fsrs import Card
 
 from b2c_pedagogy.srs import build_review_quiz, review_card
 

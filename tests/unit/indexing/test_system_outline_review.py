@@ -1,4 +1,3 @@
-from datetime import UTC
 import pytest
 from b2c_contracts import Block, CourseOutline, Lesson, LessonSpan, Module, PageRef, ParsedBook
 from b2c_outline import outline_from_book

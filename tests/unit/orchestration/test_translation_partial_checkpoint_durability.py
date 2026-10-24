@@ -72,7 +72,6 @@ def test_partial_original_checkpoint_survives_progress_failure_and_resumes_only_
 
 
 def test_translation_pause_occurs_after_saved_batch_before_next_provider_request(monkeypatch):
-    import time
     import b2c_orchestration.translation as mod
     from b2c_orchestration.controls import control_key
     sources = [SourceSegment(segment_id=f's{i}', text='The value is 5.') for i in range(8)]

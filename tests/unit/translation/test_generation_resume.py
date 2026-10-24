@@ -33,7 +33,7 @@ class MustNotCallGateway(EchoStructuringGateway):
 
 def test_translation_resumes_from_completed_batches_without_model_calls():
     segments = [
-        SourceSegment(segment_id=f"s{i}", text=f"The value is 5.",
+        SourceSegment(segment_id=f"s{i}", text="The value is 5.",
                       citations=[f"book:p{i + 1}"])
         for i in range(9)
     ]
@@ -70,7 +70,7 @@ def test_translation_resumes_from_completed_batches_without_model_calls():
 
 def test_translation_retries_only_segments_missing_from_partial_checkpoint():
     segments = [
-        SourceSegment(segment_id=f"s{i}", text=f"The value is 5.")
+        SourceSegment(segment_id=f"s{i}", text="The value is 5.")
         for i in range(9)
     ]
     gateway = EchoStructuringGateway()

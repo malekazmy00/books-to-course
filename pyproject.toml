@@ -2,7 +2,7 @@
 name = "book2course"
 version = "0.0.0"
 description = "Research (non-commercial) platform: books -> Arabic-narrated courses. Workspace root."
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "b2c-contracts",
     "b2c-core",
@@ -26,6 +26,7 @@ dev = [
     "import-linter>=2.1",
     "moto[s3]>=5.0",
     "opentelemetry-sdk>=1.27,<2",
+    "ruff==0.14.0",
 ]
 
 [tool.uv]
@@ -55,6 +56,22 @@ b2c-pedagogy = { workspace = true }
 b2c-translation = { workspace = true }
 b2c-speech = { workspace = true }
 b2c-api = { workspace = true }
+
+[tool.ruff]
+target-version = "py312"
+extend-exclude = ["vendor", "outputs", "android", "eval/android", ".claude"]
+
+[tool.ruff.lint]
+# pyflakes + pycodestyle errors. The compact one-line style (E701/E702) and short
+# math names (E741) are house style here; E731 lambdas are used as small adapters.
+select = ["E4", "E7", "E9", "F"]
+ignore = ["E701", "E702", "E731", "E741"]
+
+[tool.ruff.lint.per-file-ignores]
+# one-off scripts and tests put eval/ or scripts/ on sys.path before importing
+"eval/**" = ["E402"]
+"scripts/**" = ["E402"]
+"tests/**" = ["E402"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

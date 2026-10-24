@@ -1,6 +1,8 @@
 """Deterministic, provenance-bearing structural outline approval policy."""
 from __future__ import annotations
-import hashlib, json, re
+import hashlib
+import json
+import re
 from dataclasses import dataclass
 from b2c_contracts import CourseOutline, ParsedBook
 from .from_book import front_matter_prefix_end

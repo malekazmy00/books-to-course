@@ -4,7 +4,6 @@ import argparse
 import hashlib
 import json
 import sys
-from pathlib import Path
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, create_model
@@ -13,11 +12,9 @@ sys.path.insert(0, "/tmp/phase5-live-src/llm")
 sys.path.insert(0, "/tmp/phase5-live-src/synthesis")
 import b2c_pedagogy
 b2c_pedagogy.__path__.insert(0, "/tmp/phase5-live-src")
-from b2c_contracts import ArtifactRef
 from b2c_core import Settings
 from b2c_core.artifacts import ArtifactStore
 from b2c_llm_gateway import LLMGateway
-from b2c_llm_gateway import client as gateway_client
 from b2c_llm_gateway import client as gateway_client
 from b2c_pedagogy.lesson_enrichment import LessonEnrichment
 

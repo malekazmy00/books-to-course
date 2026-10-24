@@ -24,7 +24,7 @@ define allow_empty
 	$(1) || { rc=$$?; [ $$rc -eq 5 ] && echo "(no tests yet)" || exit $$rc; }
 endef
 
-.PHONY: help env data-init build up start down ps logs limits budget lint-imports test test-unit test-contract \
+.PHONY: help env data-init build up start down ps logs limits budget lint check lint-imports test test-unit test-contract \
 	test-golden test-integration test-e2e eval bench-llm
 
 help:
@@ -61,6 +61,11 @@ logs:
 
 limits:              ## T-P0-04 view: limits of every b2c container
 	@bash eval/suites/phase0/t_p0_04_limits.sh
+
+lint:                ## ruff (config in pyproject.toml)
+	uv run ruff check .
+
+check: lint lint-imports test-contract test-unit   ## CI gate (.github/workflows/ci.yml)
 
 lint-imports:        ## T-P0-01
 	uv run lint-imports

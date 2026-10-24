@@ -2,7 +2,7 @@
 name = "b2c-indexing"
 version = "0.0.0"
 description = "L3 Chunking & Index: ParsedBook -> StructuredChunk[] + embeddings."
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = ["b2c-contracts", "b2c-core", "b2c-llm-gateway", "psycopg[binary]>=3.2,<4"]
 
 [tool.uv.sources]

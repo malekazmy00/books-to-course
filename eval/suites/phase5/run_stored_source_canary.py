@@ -1,6 +1,9 @@
 """One-request live enrichment canary from the stored Think Stats 2e Chapter 3 source."""
 from __future__ import annotations
-import argparse, hashlib, json, sys
+import argparse
+import hashlib
+import json
+import sys
 from pathlib import Path
 from typing import Literal
 import b2c_pedagogy
@@ -8,8 +11,7 @@ sys.path.insert(0, "/tmp/phase5-live-src/llm")
 sys.path.insert(0, "/tmp/phase5-live-src/synthesis")
 b2c_pedagogy.__path__.insert(0, "/tmp/phase5-live-src")
 from pydantic import Field, create_model
-from b2c_contracts import (Block, CourseOutline, Lesson, LessonSpan, Module, PageRef,
-                           ParsedBook, StructuredChunk)
+from b2c_contracts import (CourseOutline, Lesson, LessonSpan, Module, ParsedBook, StructuredChunk)
 from b2c_core import Settings
 from b2c_core.artifacts import ArtifactStore
 from b2c_llm_gateway import LLMGateway

@@ -1,5 +1,7 @@
 from __future__ import annotations
-import hashlib,importlib.util,json
+import hashlib
+import importlib.util
+import json
 from pathlib import Path
 import pytest
 MODULE=Path(__file__).resolve().parents[3]/"eval/suites/phase4/compare_rankings.py"

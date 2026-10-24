@@ -6,7 +6,6 @@ import importlib.util
 import json
 import pathlib
 import statistics
-from typing import Any
 
 def load_module(path: pathlib.Path, name: str):
     spec=importlib.util.spec_from_file_location(name,path)
@@ -69,7 +68,6 @@ def main() -> None:
         raise SystemExit(f"only {len(latencies)}/{len(rows)} LightRAG queries completed")
     corpus_hash=phase4.corpus_fingerprint(args.chunks)
     dataset_hash=hashlib.sha256(args.dataset.read_bytes()).hexdigest()
-    qrows={r["query_id"]:r for r in rows}
     chunks=[phase3.StructuredChunk(
         chunk_id=r["chunk_id"],book_id=r["book_id"],role=r["role"],
         section_path=r.get("section_path",[]),block_ids=r.get("block_ids") or [r["chunk_id"]],

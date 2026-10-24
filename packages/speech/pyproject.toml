@@ -2,7 +2,7 @@
 name = "b2c-speech"
 version = "0.0.0"
 description = "L8 Speech: diacritize, TTS providers, audio QA."
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = ["b2c-contracts", "b2c-core", "b2c-llm-gateway"]
 
 [tool.uv.sources]

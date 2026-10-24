@@ -1,10 +1,14 @@
-import sys,json,re,hashlib,collections
+import sys
+import json
+import re
+import hashlib
+import collections
 from pathlib import Path
 sys.path.extend(["/app/packages/core/src","/app/packages/contracts/src"])
 sys.path.insert(0,"/tmp/phase5-live-src/synthesis")
 from b2c_core import Settings
 from b2c_core.artifacts import ArtifactStore
-from b2c_contracts import Block,CourseOutline,Lesson,LessonSpan,Module,PageRef,ParsedBook,StructuredChunk
+from b2c_contracts import StructuredChunk
 import b2c_pedagogy
 b2c_pedagogy.__path__.insert(0,"/tmp/phase5-live-src")
 from b2c_pedagogy.lesson_enrichment import (_AssetsCandidate,_MCQProposal,_Sentence,_SummaryPoint,
@@ -131,7 +135,7 @@ for start in range(0,len(proposals)-19):
   lesson=_make_lesson_assets(lesson_id,candidate,chunks,prompt_version="saved-raw-rebuild-v1")
   selected=group; selected_questions=built; provenance=provenance[start:start+20]
   break
- except Exception as exc:
+ except Exception:
   rejects["product_builder_or_asset_validation"]+=1
 if selected is None:
  print(json.dumps({"status":"no_passing_20_question_window","valid_unique":len(proposals),

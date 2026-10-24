@@ -1,6 +1,8 @@
 """Offline revalidation of retained original translation evidence; never invokes a model."""
 from __future__ import annotations
-import argparse, json, re
+import argparse
+import json
+import re
 from pathlib import Path
 from collections import Counter
 from b2c_translation.generation import validate_manual_translation, translation_completeness_issue

@@ -1,6 +1,9 @@
 """Compare frozen Phase 6 rankings on automatically judged Phase 3 semantic qrels."""
 from __future__ import annotations
-import argparse, hashlib, importlib.util, json
+import argparse
+import hashlib
+import importlib.util
+import json
 from pathlib import Path
 from typing import Any
 

@@ -5,7 +5,7 @@ import pytest
 from fastapi import FastAPI
 from moto import mock_aws
 from b2c_core import ArtifactStore
-from b2c_api.saved_audio import saved_audio_router, saved_book_tracks
+from b2c_api.saved_audio import saved_audio_router
 
 
 def track(store, key, identity):

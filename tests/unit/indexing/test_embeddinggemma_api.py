@@ -1,4 +1,3 @@
-import pytest
 from fastapi.testclient import TestClient
 from b2c_indexing.embeddinggemma_api import create_app, DIMENSIONS, MODEL_ID, windows
 

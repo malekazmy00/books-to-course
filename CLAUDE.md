@@ -63,7 +63,7 @@ make up [PROFILES=local-llm|speech|hy-translation] [EXTERNAL=1]
 make start                     # same, without rebuilding (boot path: scripts/windows/start-b2c-stack.ps1)
 make down                      # stop every b2c service in every profile; volumes kept
 make budget                    # rule 8: fail if the selected profiles exceed 85 GiB / 40 CPUs
-make check                     # CI gate: ruff, import-linter, unit + contract tests, compose budget
+make check                     # CI gate: ruff, import-linter, unit + contract tests
 make test                      # all tests
 make test-unit | test-contract | test-golden | test-integration | test-e2e
 make eval PHASE=N              # runs the phase's eval suite; evidence in eval/reports/phase-N-evidence/

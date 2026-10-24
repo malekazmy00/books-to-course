@@ -1,6 +1,8 @@
 """System audit of the frozen 50-query pack; validates source citations, not semantics."""
 from __future__ import annotations
-import hashlib, json, unicodedata
+import hashlib
+import json
+import unicodedata
 from pathlib import Path
 from typing import Any
 

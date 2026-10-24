@@ -1,7 +1,9 @@
 from __future__ import annotations
-import hashlib,json,re,sys
+import hashlib
+import json
+import re
+import sys
 from pathlib import Path
-from pydantic import Field
 sys.path.insert(0,"/tmp/phase5-live-src/llm")
 sys.path.insert(0,"/tmp/phase5-live-src/synthesis")
 import b2c_pedagogy

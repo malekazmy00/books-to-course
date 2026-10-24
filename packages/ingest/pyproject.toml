@@ -2,7 +2,7 @@
 name = "b2c-ingest"
 version = "0.0.0"
 description = "L1 Ingestion: PDFs to provenance-preserving ParsedBook blocks, including Docling OCR."
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "b2c-contracts",
     "b2c-core",

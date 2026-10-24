@@ -2,7 +2,7 @@
 name = "b2c-core"
 version = "0.1.0"
 description = "Cross-cutting: stage_key, ArtifactStore (S3), ProvRecorder (W3C PROV tables), config, JSON logging."
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "b2c-contracts",
     "pydantic>=2.7,<3",

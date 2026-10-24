@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Read-only audit of the first lesson/body and QA tracks; never sends inference."""
-import argparse,json,time,hashlib,textwrap
+import argparse
+import json
+import time
+import hashlib
 from pathlib import Path
 from b2c_core import ArtifactStore,Settings
 from b2c_contracts import ArtifactRef

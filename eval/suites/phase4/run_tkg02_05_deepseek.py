@@ -4,7 +4,13 @@ No human-gold claim, no fallback, no retries. Provider response text and source
 quotes are stored only in the isolated B2C evaluation data volume.
 """
 from __future__ import annotations
-import argparse, hashlib, json, math, re, time, unicodedata, urllib.request
+import argparse
+import hashlib
+import json
+import math
+import time
+import unicodedata
+import urllib.request
 from collections import Counter
 from pathlib import Path
 
@@ -96,7 +102,7 @@ def main() -> None:
 
     # T-KG-02: candidate pairs are all in the 30 Lane documents retained by the isolated LightRAG eval store.
     pairfile=d/"tkg02-pair-candidates-lane-30.json"; candidates=json.loads(pairfile.read_text())
-    source_labels=json.loads((d/"phase4-deepseek-3book-entities-final.json").read_text())
+    json.loads((d/"phase4-deepseek-3book-entities-final.json").read_text())
     source_chunks={c["chunk_id"]:c for c in load_jsonl(Path("/mnt/wsl/b2cdata/phase1-sources/lane-primary-30-chunks.jsonl"))}
     for pair in candidates["pairs"]:
         for side in ("left","right"):

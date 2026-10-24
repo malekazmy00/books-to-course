@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-import pytest
 
 from b2c_ingest.docling_pdf import (
     _logical_arabic_lines_for_item,

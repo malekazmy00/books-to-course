@@ -1,6 +1,11 @@
 """One Atria proposal call plus product-path context/blind solver calls; no retries."""
 from __future__ import annotations
-import hashlib, json, re, sys, urllib.error, urllib.request
+import hashlib
+import json
+import re
+import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 sys.path.insert(0, "/tmp/phase5-live-src/llm")
 sys.path.insert(0, "/tmp/phase5-live-src/synthesis")

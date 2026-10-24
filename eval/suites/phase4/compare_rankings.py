@@ -1,6 +1,9 @@
 """Paired, same-corpus comparison of Phase 3 and graph-assisted rankings."""
 from __future__ import annotations
-import argparse, hashlib, importlib.util, json
+import argparse
+import hashlib
+import importlib.util
+import json
 from pathlib import Path
 from typing import Any
 class ComparisonError(ValueError):

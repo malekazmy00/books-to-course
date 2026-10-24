@@ -1,4 +1,7 @@
-import hashlib, importlib.util, json, sys
+import hashlib
+import importlib.util
+import json
+import sys
 from pathlib import Path
 ROOT=Path('/root/projects/book2course')
 DATA=Path('/mnt/wsl/b2cdata/phase1-sources')

@@ -1,4 +1,7 @@
-import sys, json, re, hashlib, collections
+import sys
+import json
+import hashlib
+import collections
 from pathlib import Path
 sys.path.extend(["/app/packages/core/src", "/app/packages/contracts/src"])
 sys.path.insert(0, "/tmp/phase5-live-src/synthesis")
@@ -8,8 +11,7 @@ from b2c_contracts import StructuredChunk
 import b2c_pedagogy
 b2c_pedagogy.__path__.insert(0, "/tmp/phase5-live-src")
 from b2c_pedagogy.lesson_enrichment import (
-    LessonEnrichment, _AssetsCandidate, _GlossaryCandidate, _MCQProposal,
-    _Sentence, _SummaryPoint, _build_numbered_procedure_mcqs, _make_lesson_assets,
+    LessonEnrichment, _AssetsCandidate, _GlossaryCandidate, _Sentence, _SummaryPoint, _build_numbered_procedure_mcqs, _make_lesson_assets,
 )
 
 OLD_COURSE = "phase5-seatweaving-saved-raw-rebuilt-v1"

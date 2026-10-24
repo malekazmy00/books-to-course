@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """Page-level OCR evaluation with NFC grapheme CER, whitespace-token WER and title splits."""
 from __future__ import annotations
-import argparse,json,math,statistics,unicodedata
+import argparse
+import json
+import math
+import statistics
+import unicodedata
 from collections import defaultdict
 from pathlib import Path
 

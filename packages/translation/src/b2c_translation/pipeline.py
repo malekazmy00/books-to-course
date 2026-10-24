@@ -134,6 +134,8 @@ def term_injection_block(source_chunk: str, termbase: Sequence[TermbaseEntry]) -
     return "\n".join(lines)
 
 # Licensed domain glossary integration used by the translation pipeline.
-from .agrovoc import AgrovocCompilation, AgrovocIndex, compile_agrovoc_termbase
-from .multisource_terms import (WikidataConceptIndex, MultiSourceCompilation,
-    compile_multisource_termbase)
+# Re-exported for callers that import them from b2c_translation.pipeline; kept at the
+# bottom because agrovoc/multisource_terms import helpers defined above.
+from .agrovoc import AgrovocCompilation, AgrovocIndex, compile_agrovoc_termbase  # noqa: E402,F401
+from .multisource_terms import (  # noqa: E402,F401
+    MultiSourceCompilation, WikidataConceptIndex, compile_multisource_termbase)

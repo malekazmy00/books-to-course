@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """Single-request, zero-priced OpenRouter extraction canary for Phase 4."""
 from __future__ import annotations
-import hashlib, json, re, sys, urllib.error, urllib.request
+import hashlib
+import json
+import re
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any

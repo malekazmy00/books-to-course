@@ -4,7 +4,9 @@ This is diagnostic only: generated labels are not human gold and selected
 thresholds are not production defaults.
 """
 from __future__ import annotations
-import argparse, hashlib, json
+import argparse
+import hashlib
+import json
 from pathlib import Path
 from typing import Any
 

@@ -1,7 +1,7 @@
 import boto3
 import pytest
 from moto import mock_aws
-from b2c_contracts import BookUpload, ParsedBook, stage_key
+from b2c_contracts import BookUpload, ParsedBook
 from b2c_core import ArtifactStore
 from b2c_core.stage_library import StageBundle, StageLibrary, payload_digest
 

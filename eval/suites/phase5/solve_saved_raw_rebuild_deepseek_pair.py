@@ -1,4 +1,8 @@
-import sys,json,hashlib,urllib.request,urllib.error,decimal
+import sys
+import json
+import hashlib
+import urllib.request
+import urllib.error
 from pathlib import Path
 sys.path.extend(["/app/packages/core/src","/app/packages/contracts/src"]);sys.path.insert(0,"/tmp/phase5-live-src/synthesis")
 from b2c_core import Settings

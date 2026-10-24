@@ -1,6 +1,8 @@
 """Free Phase 5 canary using one stored, internal-test-only Seat Weaving page."""
 from __future__ import annotations
-import hashlib, json, sys
+import hashlib
+import json
+import sys
 import re
 from pathlib import Path
 from typing import Annotated, Literal
@@ -34,7 +36,7 @@ def main():
     pages=[(page,re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", " ", text)) for page,text in raw_pages]
     source_hash=hashlib.sha256("\n\n".join(f"{page}\n{text}" for page,text in pages).encode()).hexdigest()
     book_id="seat-weaving-1917"
-    book=ParsedBook(book_id=book_id,title="Seat Weaving (1917), pp.12-13",role="spine",
+    ParsedBook(book_id=book_id,title="Seat Weaving (1917), pp.12-13",role="spine",
         page_count=2,toc_source="headings",parser={"name":"stored-groundtruth","version":"internal-test-only"},
         blocks=[Block(block_id=f"seatweaving-j{page}",type="paragraph",text=text,
                       refs=[PageRef(book_id=book_id,page_no=page)],

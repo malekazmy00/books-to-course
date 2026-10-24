@@ -4,7 +4,12 @@ The judge sees the question and the full frozen corpus, never its candidate qrel
 Outputs are machine-evaluated research labels, never human gold.
 """
 from __future__ import annotations
-import argparse, hashlib, json, re, time, unicodedata
+import argparse
+import hashlib
+import json
+import re
+import time
+import unicodedata
 from dataclasses import replace
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -179,7 +184,7 @@ def main()->None:
     sys.path.insert(0,str(Path(__file__).resolve().parent))
     import retrieval_eval
     root=args.data_root
-    queries_path=root/"phase3-qa-50.jsonl"; pack_path=root/"phase3-owner-review-pack.json"
+    queries_path=root/"phase3-qa-50.jsonl"
     query_rows=[json.loads(x) for x in queries_path.read_text(encoding="utf-8").splitlines() if x.strip()]
     chunks=[]
     for name in ("lane-primary-30-chunks.jsonl","thinkstats-supplement-7-chunks.jsonl"):

@@ -2,7 +2,7 @@
 name = "b2c-kg"
 version = "0.0.0"
 description = "L4 Knowledge Graph: LightRAG client, entity resolution, concept layer."
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = ["b2c-contracts", "b2c-core", "b2c-llm-gateway"]
 
 [tool.uv.sources]

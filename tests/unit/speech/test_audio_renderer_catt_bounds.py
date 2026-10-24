@@ -1,4 +1,9 @@
-import importlib.util, json, sys, types, wave, io
+import importlib.util
+import json
+import sys
+import types
+import wave
+import io
 from pathlib import Path
 import pytest
 

@@ -1,7 +1,9 @@
 from __future__ import annotations
-import hashlib,json,re,sys
+import hashlib
+import json
+import re
+import sys
 from pathlib import Path
-from pydantic import Field
 sys.path.insert(0,"/tmp/phase5-live-src/llm")
 sys.path.insert(0,"/tmp/phase5-live-src/synthesis")
 import b2c_pedagogy
@@ -129,11 +131,10 @@ def main():
     candidate_schema=_exact_list_schema(_AssetsCandidate,"questions",_MCQCandidate,10)
     candidate=candidate_schema.model_validate_json(adapted)
     try:
-        assets=_make_lesson_assets(LESSON,candidate,chunks,prompt_version=PROMPT)
+        _make_lesson_assets(LESSON,candidate,chunks,prompt_version=PROMPT)
         preflight="pass"
     except ValueError as exc:
         if "q003: distractors lack a source-grounded detail" not in str(exc): raise
-        assets=None
         preflight="one-targeted-distractor-repair-required"
     gateway_client.MAX_RETRIES=0
     gateway_client.OPENROUTER_RETRYABLE_POOL_MARKERS=()

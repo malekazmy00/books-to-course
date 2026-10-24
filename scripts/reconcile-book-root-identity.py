@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Verify an uploaded PDF and fill missing root identity; dry-run by default."""
-import argparse, hashlib, json
+import argparse
+import hashlib
+import json
 from b2c_core import ArtifactStore, Settings
-from b2c_contracts import ArtifactRef
 from b2c_core.legacy_source_backfill import _verified_artifact
 
 p=argparse.ArgumentParser(description=__doc__)

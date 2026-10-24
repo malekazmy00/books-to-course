@@ -63,7 +63,7 @@ services:
 
   hy-translation-proxy:
     profiles: [hy-translation]
-    image: haproxy:3.2-alpine
+    image: haproxy:3.2-alpine@sha256:5d97434a423c2533cfeb42874d45cf6d69a840b60334582dfbfd5008e94c80be
     volumes:
       - ./hy-translation/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro
     networks: [b2c_internal]

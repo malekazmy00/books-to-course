@@ -73,9 +73,16 @@
 | FastAPI / uvicorn / python-multipart | uv.lock (b2c-api) | 2026-09-30 | local upload/status API on 127.0.0.1:8100 |
 | Docling | 2.131.0 (uv.lock; b2c-ingest[docling]) | 2026-10-01 | CPU PyTorch; OCR/layout/table models prefetched into worker image for offline runtime |
 | OpenRouter test profile | `nvidia/nemotron-3-super-120b-a12b:free` | 2026-10-01 | Verified with schema-constrained JSON; free endpoint reported $0 and 86.54% availability over 3d when checked. Read-only key mount; free-provider prompts may be logged. Base compose stays local. |
-| LightRAG | Phase 1+; not verified in Phase 0 | — | — |
-| bge-m3 / bge-reranker-v2-m3 | Phase 1+; not verified in Phase 0 | — | — |
-| py-fsrs | Phase 1+; not verified in Phase 0 | — | — |
+| LightRAG | v1.5.7 (eval/reports/phase4) | — | VERIFY: record the image digest / lock entry used by compose.lightrag.yml |
+| bge-m3 / bge-reranker-v2-m3 | not pinned | — | VERIFY: model revision missing |
+| py-fsrs | `fsrs==6.3.2` (uv.lock) | 2026-10-24 | uv.lock |
+| temporalio SDK | 1.33.0 (uv.lock) | 2026-10-24 | uv.lock |
+| python base (fasih, supertonic) | `python:3.11-slim@sha256:bab1b7ef4b450c81002278d035eff85ebe394ae94df904f7a3ba14f7e16e487b` | 2026-10-24 | digest of the locally built base (`docker image inspect`) |
+| python base (hy-translation) | `python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f` | 2026-10-24 | same |
+| haproxy (hy-translation-proxy) | `3.2-alpine@sha256:5d97434a423c2533cfeb42874d45cf6d69a840b60334582dfbfd5008e94c80be` | 2026-10-24 | same |
+| vendored BookTrans | upstream commit `fefaf9962e48ab9286992e43c24a9e6d6c8755af` | 2026-10-24 | `vendor/booktrans/UPSTREAM-COMMIT.txt` |
+| Hy-MT2 1.8B / Fasih-TTS v1 / CATT / Supertonic3 / Naqta / EmbeddingGemma | **not pinned** | — | VERIFY: record revision + SHA-256 of each weights dir on the data disk |
+| fasih / supertonic build context | **not in git** (`${B2C_DATA_DIR}/build-context/*`) | — | open: move into `docker/` so images are reproducible |
 
 ## 6. المراقبة (Observability)
 

@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.11-slim@sha256:bab1b7ef4b450c81002278d035eff85ebe394ae94df904f7a3ba14f7e16e487b
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 MODEL_DIR=/app/model
 WORKDIR /app
 RUN pip install --no-cache-dir fastapi==0.115.12 uvicorn[standard]==0.34.2 supertonic==1.3.1

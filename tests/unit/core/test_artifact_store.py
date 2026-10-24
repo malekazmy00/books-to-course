@@ -64,6 +64,24 @@ def test_get_or_compute_runs_once(store):
     assert r1 == r2 and len(calls) == 1
 
 
+def test_artifact_row_is_recorded_idempotently_on_every_access(store):
+    class Recorder:
+        def __init__(self):
+            self.rows = []
+
+        def record_artifact(self, course_id, ref):
+            self.rows.append((course_id, ref.key))
+
+    recorder = Recorder()
+    # An artifact written by a store without a recorder (e.g. the old audio
+    # worker) must still be registered when a recording store reuses it.
+    store.put("crs_01", "outline", KEY, {"out.json": b"{}"})
+    store.recorder = recorder
+    store.get_or_compute("crs_01", "outline", KEY, lambda: {"out.json": b"{}"})
+    store.put("crs_01", "outline", KEY, {"out.json": b"{}"})
+    assert recorder.rows == [("crs_01", KEY), ("crs_01", KEY)]
+
+
 @pytest.mark.parametrize("course,stage,key,name", [
     ("../x", "s", KEY, "f"),
     ("c", "a/b", KEY, "f"),

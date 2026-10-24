@@ -70,6 +70,29 @@ def test_rerun_is_all_cache_hits_and_no_llm_call(acts):
     assert len(calls) == 1
 
 
+def test_provenance_is_recorded_on_cache_hits_too(acts):
+    a, _, _ = acts
+
+    class Prov:
+        def __init__(self):
+            self.records = []
+
+        def record_activity(self, **kwargs):
+            self.records.append(kwargs)
+            return kwargs["activity_id"]
+
+    a.prov = Prov()
+    inp = HelloInput(course_id="crs_hello", name="Ada")
+    for _ in range(2):
+        p = run(a.prepare, inp)
+        g = run(a.greet, inp, p["ref"])
+        run(a.finalize, inp, g["ref"])
+    stages = [record["stage"] for record in a.prov.records]
+    assert stages == ["hello-prepare", "hello-greet", "hello-finalize"] * 2
+    # Re-recording reuses the deterministic activity id (rows are ON CONFLICT DO NOTHING).
+    assert a.prov.records[:3] == a.prov.records[3:]
+
+
 def test_different_input_gets_different_keys(acts):
     a, _, _ = acts
     p1 = run(a.prepare, HelloInput(course_id="c", name="Ada"))

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from typing import Any
 
@@ -103,9 +104,41 @@ class ProvRecorder:
         return act
 
     def end_activity(self, activity_id: str) -> None:
+        # Idempotent: re-recording a cache hit keeps the original end time.
         with self._conn() as c:
-            c.execute("UPDATE prov_activity SET ended_at=%s WHERE activity_id=%s",
+            c.execute("UPDATE prov_activity SET ended_at=%s WHERE activity_id=%s AND ended_at IS NULL",
                       (datetime.now(timezone.utc), activity_id))
+
+    def record_activity(self, *, stage: str, stage_version: str, agent: str | None = None,
+                        prompt_version: str | None = None, config: dict[str, Any] | None = None,
+                        activity_id: str | None = None, used: Sequence[str] = (),
+                        derived: Sequence[tuple[str, str]] = (),
+                        generated: Sequence[str] = ()) -> str:
+        """Record a complete activity and its relations in one transaction.
+
+        Every statement is idempotent (ON CONFLICT DO NOTHING / ended_at IS
+        NULL), so callers record on every run, including cache hits.
+        """
+        act = activity_id or f"act:{stage}:{uuid.uuid4().hex[:12]}"
+        now = datetime.now(timezone.utc)
+        with psycopg.connect(self.dsn) as c:  # commits on clean exit
+            c.execute(
+                "INSERT INTO prov_activity (activity_id, stage, stage_version, agent, prompt_version,"
+                " config, started_at) VALUES (%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+                (act, stage, stage_version, agent, prompt_version, json.dumps(config or {}), now),
+            )
+            for entity in used:
+                c.execute("INSERT INTO prov_used VALUES (%s,%s,%s) ON CONFLICT DO NOTHING",
+                          (act, entity, "input"))
+            for entity, source in derived:
+                c.execute("INSERT INTO prov_derived VALUES (%s,%s) ON CONFLICT DO NOTHING",
+                          (entity, source))
+            for entity in generated:
+                c.execute("INSERT INTO prov_generated VALUES (%s,%s) ON CONFLICT DO NOTHING",
+                          (entity, act))
+            c.execute("UPDATE prov_activity SET ended_at=%s WHERE activity_id=%s AND ended_at IS NULL",
+                      (now, act))
+        return act
 
     def used(self, activity_id: str, entity: str, role: str = "input") -> None:
         with self._conn() as c:

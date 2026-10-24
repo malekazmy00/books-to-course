@@ -65,18 +65,15 @@ class IngestPDFActivities:
             return
         # The agent is the engine this run actually used (inp.ocr_engine may
         # override the worker default), not the worker environment.
-        activity_record = self.prov.start_activity(
+        self.prov.record_activity(
             stage=STAGE, stage_version=STAGE_VERSION,
             agent=(self.gateway.model_id if ocr_engine == "openrouter" and self.gateway else
                    "surya-2-llama.cpp" if ocr_engine == "surya" else
                    "docling-rapidocr"),
             prompt_version=OCR_PROMPT_VERSION if ocr_engine == "openrouter" else None,
             activity_id=f"act:{STAGE}:{ref.key[:16]}",
+            used=[source_uri], derived=[(ref.uri, source_uri)], generated=[ref.uri],
         )
-        self.prov.used(activity_record, source_uri)
-        self.prov.derived(ref.uri, source_uri)
-        self.prov.generated(ref.uri, activity_record)
-        self.prov.end_activity(activity_record)
 
     @activity.defn(name="ingest_parse_pdf")
     def parse_pdf(self, inp: IngestPDFInput) -> dict[str, Any]:
@@ -219,8 +216,9 @@ class IngestPDFActivities:
             inp.course_id, STAGE, key, compute
         )
         parsed = ParsedBook.model_validate_json(self.store.read(ref, "parsed-book.json"))
-        if not cache_hit:
-            self._record(ref, source.uri, ocr_engine)
+        # Recording is idempotent; a cache hit may follow a crash between the
+        # artifact commit and its PROV rows, so always record.
+        self._record(ref, source.uri, ocr_engine)
         activity.logger.info("PDF parsed", extra={
             "stage": STAGE, "book_id": upload.book_id, "key": ref.key,
             "page_count": parsed.page_count, "blocks": len(parsed.blocks), "cache_hit": cache_hit,
@@ -328,16 +326,13 @@ class OutlineActivities:
             return
         inferred = any(lesson.provenance == "llm_inferred"
                        for module in outline.modules for lesson in module.lessons)
-        activity_record = self.prov.start_activity(
+        self.prov.record_activity(
             stage=OUTLINE_STAGE, stage_version=OUTLINE_STAGE_VERSION,
             agent=(getattr(self.gateway, "model_id", "outline-inference") if inferred else "deterministic-outline-v1"),
             prompt_version=OUTLINE_PROMPT_VERSION if inferred else None,
             activity_id=f"act:build-outline:{ref.key[:16]}",
+            used=[source_uri], derived=[(ref.uri, source_uri)], generated=[ref.uri],
         )
-        self.prov.used(activity_record, source_uri)
-        self.prov.derived(ref.uri, source_uri)
-        self.prov.generated(ref.uri, activity_record)
-        self.prov.end_activity(activity_record)
 
     @activity.defn(name="outline_from_parsed_book")
     def build(self, inp: BuildOutlineInput) -> dict[str, Any]:
@@ -372,8 +367,7 @@ class OutlineActivities:
             inp.course_id, "build-outline", key, compute
         )
         outline = CourseOutline.model_validate_json(self.store.read(ref, "course-outline.json"))
-        if not cache_hit:
-            self._record(ref, parsed_ref.uri, outline)
+        self._record(ref, parsed_ref.uri, outline)  # idempotent, see parse
         return {
             "ref": ref.model_dump(mode="json"), "cache_hit": cache_hit,
             "module_count": len(outline.modules),

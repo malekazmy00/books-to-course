@@ -81,6 +81,12 @@ class ArtifactStore:
     def _prefix_of(self, ref: ArtifactRef) -> str:
         return ref.uri.removeprefix(f"s3://{self.bucket}/")
 
+    def _record(self, course_id: str, ref: ArtifactRef) -> None:
+        # Idempotent (ON CONFLICT DO NOTHING): also registers artifacts written
+        # earlier by a store that had no recorder.
+        if self.recorder is not None:
+            self.recorder.record_artifact(course_id, ref)
+
     # ---------------------------------------------------------------- api
     def ensure_bucket(self) -> None:
         try:
@@ -104,6 +110,7 @@ class ArtifactStore:
             _check_name(name)
         existing = self.exists(course_id, stage, key)
         if existing is not None:
+            self._record(course_id, existing)
             return existing
         for name, data in files.items():
             self.s3.put_object(Bucket=self.bucket, Key=prefix + name, Body=data)
@@ -159,6 +166,7 @@ class ArtifactStore:
         """Return (ref, cache_hit). `compute` runs only when the artifact does not exist yet."""
         existing = self.exists(course_id, stage, key)
         if existing is not None:
+            self._record(course_id, existing)
             return existing, True
         return self.put(course_id, stage, key, compute()), False
 

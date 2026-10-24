@@ -106,23 +106,10 @@ def test_selected_surya_engine_dispatches_scans_to_local_client(monkeypatch):
 class _FakeProv:
     def __init__(self):
         self.activities = []
-        self.edges = []
 
-    def start_activity(self, **kwargs):
+    def record_activity(self, **kwargs):
         self.activities.append(kwargs)
         return kwargs["activity_id"]
-
-    def used(self, act, uri):
-        self.edges.append(("used", act, uri))
-
-    def derived(self, out, src):
-        self.edges.append(("derived", out, src))
-
-    def generated(self, out, act):
-        self.edges.append(("generated", out, act))
-
-    def end_activity(self, act):
-        self.edges.append(("end", act))
 
 
 class _OCRGateway:
@@ -210,3 +197,13 @@ def test_outline_provenance_stage_version_matches_cache_key_version():
     OutlineActivities(store=None, prov=prov)._record(ref, "s3://artifacts/c/parsed/", outline)
     assert OUTLINE_STAGE_VERSION == "4"
     assert prov.activities[0]["stage_version"] == OUTLINE_STAGE_VERSION
+
+
+def test_parse_provenance_is_recorded_on_cache_hit(monkeypatch):
+    prov = _FakeProv()
+    results, _, _ = _run_parse(monkeypatch, prov=prov, runs=2)
+    assert [r["cache_hit"] for r in results] == [False, True]
+    assert len(prov.activities) == 2 and prov.activities[0] == prov.activities[1]
+    record = prov.activities[0]
+    out = record["generated"][0]
+    assert record["used"] and record["derived"] == [(out, record["used"][0])]

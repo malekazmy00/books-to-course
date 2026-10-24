@@ -101,6 +101,25 @@ async def verified_ref(store: Any, course_id: str, ref: Any, stage: str, label: 
     return ref
 
 
+try:  # boto is always present with the S3 store, but keep deps importable without it
+    from botocore.exceptions import BotoCoreError, ClientError
+    _BOTO_ERRORS: tuple[type[BaseException], ...] = (BotoCoreError, ClientError)
+except ImportError:  # pragma: no cover
+    _BOTO_ERRORS = ()
+
+# Failures of the object store (or of API lookups that wrap it as 503/404),
+# plus corrupt stored JSON. Anything else in a best-effort write is a bug.
+STORAGE_ERRORS: tuple[type[BaseException], ...] = (
+    *_BOTO_ERRORS, OSError, json.JSONDecodeError, HTTPException)
+PROGRESS_WARNING = "book progress could not be saved; the workflow was started"
+
+
+def with_progress_warning(response: dict[str, Any], warning: str | None) -> dict[str, Any]:
+    if warning:
+        response["progress_warning"] = warning
+    return response
+
+
 def validation_locations(exc: Any) -> list[dict[str, Any]]:
     """Pydantic error locations and types only; never the offending input values."""
     return [{"loc": list(error.get("loc", ())), "type": error.get("type", "value_error")}

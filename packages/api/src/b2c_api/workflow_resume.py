@@ -60,9 +60,12 @@ async def retry_failed_stage(client, workflow_id: str, book_id: str, verify_owne
         await client.start_workflow(workflow.run, inp, id=resumed_id, task_queue=attrs.task_queue.name)
     except WorkflowAlreadyStartedError:
         pass
-    await remember_progress(course, book_id, stage, resumed_id)
-    return {'course_id': course, 'workflow_id': resumed_id, 'resumed_from': workflow_id,
-            'stage': stage, 'resumption_mode': mode}
+    warning = await remember_progress(course, book_id, stage, resumed_id)
+    result = {'course_id': course, 'workflow_id': resumed_id, 'resumed_from': workflow_id,
+              'stage': stage, 'resumption_mode': mode}
+    if warning:
+        result['progress_warning'] = warning
+    return result
 
 
 def workflow_resume_router(get_client, verify_owner, remember_progress, *, include_resume: bool = True):

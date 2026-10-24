@@ -76,8 +76,12 @@ from b2c_api.deps import (
     require_book_id,
     require_course_id,
     require_workflow_id,
+    PROGRESS_WARNING,
+    STORAGE_ERRORS,
     describe_or_404,
+    is_not_found,
     validation_locations,
+    with_progress_warning,
     s3_bytes,
     s3_json,
     stream_artifact_file,
@@ -454,8 +458,7 @@ def create_app(
             obj = store.s3.get_object(Bucket=settings.s3_bucket, Key=key)
             record.update(json.loads(obj["Body"].read()))
         except Exception as exc:
-            code = getattr(exc, "response", {}).get("ResponseMetadata", {}).get("HTTPStatusCode")
-            if code != 404:
+            if not is_not_found(exc):
                 raise
         stages = record.setdefault("stages", {})
         if stage != "ingest":
@@ -523,7 +526,13 @@ def create_app(
                 "translation": "translations", "book_translation": "translations", "audio": "audio"}[stage]
 
     async def remember_book_progress(course_id: str, book_id: str, stage: str, workflow_id: str,
-                                     metadata: dict[str, Any] | None = None) -> None:
+                                     metadata: dict[str, Any] | None = None) -> str | None:
+        """Record a stage in the book's progress registry.
+
+        The workflow has already been started, so a storage failure is not
+        fatal: it is logged and returned as a client-visible warning. Any other
+        exception is a bug and propagates.
+        """
         try:
             incoming = dict(metadata or {})
             parsed_sha = incoming.get("source_parsed_sha256")
@@ -556,8 +565,10 @@ def create_app(
                         "book_title": candidate.get("title")})
                     break
             await run_in_threadpool(write_book_progress, course_id, book_id, stage, workflow_id, incoming)
-        except Exception:
+        except STORAGE_ERRORS:
             log.exception("could not persist book workflow progress")
+            return PROGRESS_WARNING
+        return None
 
     @app.get("/health")
     async def health() -> dict[str, str]:
@@ -679,15 +690,16 @@ def create_app(
             "source_artifact_ref": source_ref.model_dump(mode="json")}
         await run_in_threadpool(store.put, metadata.course_id, "book-library", library_key,
             {"book-library.json": json.dumps(library_record, ensure_ascii=False).encode("utf-8")})
-        await remember_book_progress(metadata.course_id, canonical_book_id, "ingest", workflow_id,
-                                     {"book_title": metadata.title, "source_file_sha256": digest,
-                                      "source_upload_ref": source_ref.model_dump(mode="json")})
-        return {
+        progress_warning = await remember_book_progress(
+            metadata.course_id, canonical_book_id, "ingest", workflow_id,
+            {"book_title": metadata.title, "source_file_sha256": digest,
+             "source_upload_ref": source_ref.model_dump(mode="json")})
+        return with_progress_warning({
             "course_id": metadata.course_id, "book_id": canonical_book_id,
             "workflow_id": workflow_id, "force_reprocess": metadata.force_reprocess,
             "source_artifact": source_ref.model_dump(mode="json"),
             "status_url": f"/v1/ingestions/{workflow_id}",
-        }
+        }, progress_warning)
 
     @app.get("/v1/courses/{course_id}/books")
     async def list_course_books(course_id: str) -> dict[str, Any]:
@@ -1312,7 +1324,7 @@ def create_app(
                     "approved_outline": approved_ref.model_dump(mode="json"),
                     "index_workflow_id": index_workflow_id,
                 }) from exc
-        await remember_book_progress(outline.course_id, outline.spine_book_id, "outline",
+        progress_warning = await remember_book_progress(outline.course_id, outline.spine_book_id, "outline",
                                      index_workflow_id or workflow_id,
                                      {"approved_outline_ref": approved_ref.model_dump(mode="json"),
                                       "source_parsed_sha256": parsed_ref.sha256,
@@ -1321,18 +1333,18 @@ def create_app(
                                       "source_ingest_workflow_id": workflow_id,
                                       "approval_provenance": provenance.model_dump(mode="json")})
         if index_workflow_id:
-            await remember_book_progress(outline.course_id, outline.spine_book_id, "index",
+            progress_warning = await remember_book_progress(outline.course_id, outline.spine_book_id, "index",
                                          index_workflow_id, {"source_parsed_sha256": parsed_ref.sha256,
                                          "source_identity": payload["source_identity"],
                                          "source_file_sha256": payload["source_identity"].get("source_file_sha256"),
                                          "source_ingest_workflow_id": workflow_id,
                                          "outline_sha256": approved_ref.sha256,
                                          "index_parameters": {"target_tokens": review.target_tokens,
-                                         "overlap_ratio": review.overlap_ratio, "embedding_model": index_input.embedding_model}})
-        return {"approved_outline": approved_ref.model_dump(mode="json"),
+                                         "overlap_ratio": review.overlap_ratio, "embedding_model": index_input.embedding_model}}) or progress_warning
+        return with_progress_warning({"approved_outline": approved_ref.model_dump(mode="json"),
                 "reviewer_id": review.reviewer_id, "review_type": review.review_type,
                 "approval_provenance": provenance.model_dump(mode="json"),
-                "approved_at": payload["approved_at"], "index_workflow_id": index_workflow_id}
+                "approved_at": payload["approved_at"], "index_workflow_id": index_workflow_id}, progress_warning)
 
     @app.get("/v1/indexings/{workflow_id}")
     async def indexing_status(workflow_id: str, recovery_course_id: str | None = None) -> dict[str, Any]:
@@ -1506,6 +1518,7 @@ def create_app(
         except Exception as exc:
             log.exception("failed to queue translation workflow")
             raise HTTPException(status_code=503, detail="translation could not be queued") from exc
+        progress_warning = None
         try:
             store = app.state.artifact_store or ArtifactStore.from_settings(settings)
             app.state.artifact_store = store
@@ -1523,7 +1536,7 @@ def create_app(
                 source_parsed_sha256 = qa_source.get("spine_parsed_sha256")
                 outline_sha256 = qa_source.get("approved_outline_sha256")
             if book_id and source_parsed_sha256:
-                await remember_book_progress(course_id, book_id,
+                progress_warning = await remember_book_progress(course_id, book_id,
                     "book_translation" if request.source_kind == "book" else "translation", workflow_id, {
                         "source_parsed_sha256": source_parsed_sha256,
                         "source_artifact_sha256": source.sha256,
@@ -1533,8 +1546,12 @@ def create_app(
                         "outline_sha256": outline_sha256,
                     })
         except Exception:
+            # Book association reads stored source artifacts; it is best-effort
+            # because the workflow is already queued.
             log.exception("could not associate translation workflow with its exact book source")
-        return {"course_id": course_id, "workflow_id": workflow_id, "status_url": f"/v1/translations/{workflow_id}"}
+            progress_warning = PROGRESS_WARNING
+        return with_progress_warning({"course_id": course_id, "workflow_id": workflow_id,
+                                      "status_url": f"/v1/translations/{workflow_id}"}, progress_warning)
 
     @app.get("/v1/translations/{workflow_id}")
     async def translation_status(workflow_id: str) -> dict[str, Any]:
@@ -2135,6 +2152,7 @@ def create_app(
         except Exception as exc:
             log.exception("failed to queue MP3 generation")
             raise HTTPException(status_code=503, detail="MP3 generation could not be queued") from exc
+        progress_warning = None
         try:
             if outline_ref is not None:
                 store = app.state.artifact_store or ArtifactStore.from_settings(settings)
@@ -2147,7 +2165,7 @@ def create_app(
                 approved_payload = json.loads(await run_in_threadpool(store.read, outline_manifest, "approved-outline.json"))
                 book_id = approved_payload["outline"]["spine_book_id"]
                 spine_ref = ArtifactRef.model_validate(approved_payload["spine_parsed_ref"])
-                await remember_book_progress(course_id, book_id, "audio", workflow_id, {
+                progress_warning = await remember_book_progress(course_id, book_id, "audio", workflow_id, {
                     "source_parsed_sha256": spine_ref.sha256,
                     "outline_sha256": outline_ref.sha256,
                     "source_artifact_sha256": source.sha256,
@@ -2155,7 +2173,8 @@ def create_app(
                 })
         except Exception:
             log.exception("could not associate audio workflow with its book")
-        return {"course_id": course_id, "workflow_id": workflow_id, "status_url": f"/v1/audio/{workflow_id}", "file_url": f"/v1/audio/{workflow_id}/file", "manifest_url": f"/v1/audio/{workflow_id}/manifest"}
+            progress_warning = PROGRESS_WARNING
+        return with_progress_warning({"course_id": course_id, "workflow_id": workflow_id, "status_url": f"/v1/audio/{workflow_id}", "file_url": f"/v1/audio/{workflow_id}/file", "manifest_url": f"/v1/audio/{workflow_id}/manifest"}, progress_warning)
 
     async def partial_audio_manifest(workflow_id: str) -> dict[str, Any]:
         store = app.state.artifact_store or ArtifactStore.from_settings(settings)
@@ -2487,20 +2506,22 @@ def create_app(
         except Exception as exc:
             log.exception("failed to start course question generation")
             raise HTTPException(status_code=503, detail="question generation could not be queued") from exc
+        progress_warning = None
         try:
             store = app.state.artifact_store or ArtifactStore.from_settings(settings)
             app.state.artifact_store = store
             approved_payload = json.loads(await run_in_threadpool(store.read, approved_ref, "approved-outline.json"))
             book_id = approved_payload["outline"]["spine_book_id"]
             spine_ref = ArtifactRef.model_validate(approved_payload["spine_parsed_ref"])
-            await remember_book_progress(course_id, book_id, "qa", workflow_id, {
+            progress_warning = await remember_book_progress(course_id, book_id, "qa", workflow_id, {
                 "source_parsed_sha256": spine_ref.sha256,
                 "outline_sha256": approved_ref.sha256,
                 "index_workflow_id": request.index_workflow_id,
             })
         except Exception:
             log.exception("could not associate QA workflow with its book")
-        return {"course_id": course_id, "workflow_id": workflow_id, "status_url": f"/v1/course-qa/{workflow_id}", "force_regenerate": request.force_regenerate}
+            progress_warning = PROGRESS_WARNING
+        return with_progress_warning({"course_id": course_id, "workflow_id": workflow_id, "status_url": f"/v1/course-qa/{workflow_id}", "force_regenerate": request.force_regenerate}, progress_warning)
 
     @app.get("/v1/course-qa/{workflow_id}")
     async def course_qa_status(workflow_id: str, recovery_course_id: str | None = None, recovery_book_id: str | None = None) -> dict[str, Any]:
@@ -2792,17 +2813,19 @@ def create_app(
                     id=resumed_id, task_queue=inp.activity_task_queue)
             except WorkflowAlreadyStartedError:
                 pass
+            progress_warning = None
             try:
                 store = app.state.artifact_store or ArtifactStore.from_settings(settings)
                 app.state.artifact_store = store
                 approved_ref = ArtifactRef.model_validate(inp.approved_outline_ref)
                 approved_payload = json.loads(await run_in_threadpool(store.read, approved_ref, "approved-outline.json"))
                 book_id = approved_payload["outline"]["spine_book_id"]
-                await remember_book_progress(inp.course_id, book_id, "qa", resumed_id)
+                progress_warning = await remember_book_progress(inp.course_id, book_id, "qa", resumed_id)
             except Exception:
                 log.exception("could not associate resumed QA workflow with its book")
-            return {"course_id": inp.course_id, "workflow_id": resumed_id,
-                    "status_url": f"/v1/course-qa/{resumed_id}", "resumed_from": workflow_id}
+                progress_warning = PROGRESS_WARNING
+            return with_progress_warning({"course_id": inp.course_id, "workflow_id": resumed_id,
+                    "status_url": f"/v1/course-qa/{resumed_id}", "resumed_from": workflow_id}, progress_warning)
         except HTTPException:
             raise
         except Exception as exc:

@@ -21,7 +21,7 @@ with workflow.unsafe.imports_passed_through():
     from b2c_core.source_identity import parsed_source_identity, source_identity_file
     from b2c_contracts import ArtifactRef, BookUpload, CourseOutline, ParsedBook, stage_key
     from b2c_ingest import (
-        OCRRequired, UnsupportedPDF, SuryaUnavailable, parse_pdf_book,
+        OCRRequired, UnsupportedPDF, parse_pdf_book,
         parse_pdf_with_docling, parse_pdf_with_surya, parse_pdf_with_openrouter,
     )
     from b2c_ingest.openrouter_ocr import OCR_PROMPT_VERSION
@@ -268,7 +268,6 @@ class OutlineActivities:
                 "no-TOC outline inference is unavailable; configure a local model or explicitly enable the remote evaluation-data route"
             )
         assert self.gateway is not None
-        model = self.gateway.model_id
         max_chars = min(18000, int(getattr(self.gateway, "page_batch_max_chars", 24000)))
         max_pages = min(10, int(getattr(self.gateway, "page_batch_max_pages", 10)))
         groups: list[list[Any]] = []

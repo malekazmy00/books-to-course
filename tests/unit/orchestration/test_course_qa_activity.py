@@ -334,7 +334,7 @@ def test_course_qa_retrieval_keeps_primary_and_supplementary_source_attribution(
 
 def test_checkpoint_loader_paginates_skips_enrichment_and_requires_explicit_switch():
     from b2c_orchestration.qa import _load_qa_checkpoints
-    from b2c_pedagogy.qa_generation import ScopeResult, generate_course_qa
+    from b2c_pedagogy.qa_generation import generate_course_qa
     from tests.unit.pedagogy.test_qa_generation import fixture_sources, FakeGateway as QAGateway
     outline, book, chunks = fixture_sources()
     scope = generate_course_qa(outline, book, chunks, QAGateway(), lesson_question_count=1,

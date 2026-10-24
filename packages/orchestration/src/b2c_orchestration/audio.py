@@ -1,6 +1,10 @@
 """Durable MP3 generation for books and per-lesson courses."""
 from __future__ import annotations
-import hashlib, json, os, textwrap, threading, urllib.request
+import hashlib
+import json
+import os
+import threading
+import urllib.request
 from urllib.error import HTTPError
 from datetime import timedelta
 from typing import Any, Literal
@@ -248,7 +252,8 @@ class MP3Activities:
     def __init__(self, artifact_store: Any) -> None: self.store = artifact_store
     def _render(self, text: str, language: str, progress_callback=None) -> bytes:
         body = text.strip()
-        if not body: raise ValueError("audio track contains no readable text")
+        if not body:
+            raise ValueError("audio track contains no readable text")
         base_url = os.getenv("B2C_AUDIO_RENDERER_URL", "http://audio-renderer:3008").rstrip("/")
         url = base_url + "/v1/render"
         punctuation_route = os.getenv("B2C_SPEECH_PUNCTUATION", "off")
@@ -338,7 +343,8 @@ class MP3Activities:
                     pack=None
                 elif ref.stage=="translate-content":
                     pack=json.loads(self.store.read(ref,"translation.json"))
-                    if pack.get("target_language")!=inp.language: raise ValueError("translation language mismatch")
+                    if pack.get("target_language")!=inp.language:
+                        raise ValueError("translation language mismatch")
                     if inp.book_audio_layout=="full_book":
                         text="\n".join(x["text"] for x in pack.get("segments",[]) if x.get("text","").strip())
                         key=stage_key("generate-mp3","3",[ref.sha256],{"language":inp.language,"kind":"book","render_policy":AUDIO_RENDER_POLICY,"punctuation_route":os.getenv("B2C_SPEECH_PUNCTUATION","off")})
@@ -346,7 +352,8 @@ class MP3Activities:
                         out,hit=persist_audio(inp.course_id,"generate-mp3",key,lambda:{"course.mp3":self._render(text,inp.language),"audio-manifest.json":json.dumps(manifest).encode()})
                         return {"course_id":inp.course_id,"status":"completed","kind":"book","language":inp.language,"artifact":out.model_dump(mode="json"),"cache_hit":hit}
                     parsed=None
-                else: raise ValueError("book audio requires parsed or translated content")
+                else:
+                    raise ValueError("book audio requires parsed or translated content")
                 if inp.book_audio_layout=="full_book":
                     if ref.stage=="ingest-parse-pdf":
                         text="\n".join(x.text for x in parsed.blocks if x.text.strip())
@@ -384,11 +391,14 @@ class MP3Activities:
                         lesson_blocks=blocks[positions[span.start_block]:positions[span.end_block]+1]
                         pieces=[]
                         for block in lesson_blocks:
-                            if not block.text.strip(): continue
+                            if not block.text.strip():
+                                continue
                             value=translated.get(block.block_id) if pack else block.text
-                            if pack and not value: raise ValueError("translated lesson segment missing: "+block.block_id)
+                            if pack and not value:
+                                raise ValueError("translated lesson segment missing: "+block.block_id)
                             pieces.append(value)
-                        if not pieces: continue
+                        if not pieces:
+                            continue
                         track_id=lesson.lesson_id+"-book"
                         config={"language":inp.language,"kind":"book_lesson","track_id":track_id,"model":"fasih-tts-v1" if inp.language=="ar" else "supertonic3","render_policy":AUDIO_RENDER_POLICY,"punctuation_route":os.getenv("B2C_SPEECH_PUNCTUATION","off")}
                         track_key=stage_key("generate-mp3-track","2",[source_book_ref.sha256,outline_ref.sha256,ref.sha256],config)
@@ -396,14 +406,17 @@ class MP3Activities:
                         tracks.append({"track_id":track_id,"kind":"book_lesson","lesson_id":lesson.lesson_id,"title":lesson.title,"language":inp.language,"filename":track_id+".mp3","artifact_ref":track_ref.model_dump(mode="json"),"cache_hit":hit})
                         save_audio_progress("book_lessons", tracks, planned_track_count)
                         wait_for_activity_checkpoint(self.store, "audio-track:" + track_id)
-                if not tracks: raise ValueError("approved outline produced no readable lesson tracks")
+                if not tracks:
+                    raise ValueError("approved outline produced no readable lesson tracks")
                 manifest={"course_id":inp.course_id,"kind":"book_lessons","language":inp.language,"track_count":len(tracks),"tracks":tracks}
                 key=stage_key("generate-mp3","4",[source_book_ref.sha256,outline_ref.sha256,ref.sha256],{"language":inp.language,"kind":"book_lessons","lesson_ids":sorted(selected_lesson_ids),"render_policy":AUDIO_RENDER_POLICY,"punctuation_route":os.getenv("B2C_SPEECH_PUNCTUATION","off")})
                 out,hit=persist_audio(inp.course_id,"generate-mp3",key,lambda:{"audio-manifest.json":json.dumps(manifest,ensure_ascii=False,indent=2).encode()})
                 return {"course_id":inp.course_id,"status":"completed","kind":"book_lessons","language":inp.language,"artifact":out.model_dump(mode="json"),"manifest":manifest,"track_count":len(tracks),"cache_hit":hit}
-            if ref.stage not in {"generate-course-qa","translate-content"} or inp.approved_outline_ref is None: raise ValueError("course audio requires QA and approved outline")
+            if ref.stage not in {"generate-course-qa","translate-content"} or inp.approved_outline_ref is None:
+                raise ValueError("course audio requires QA and approved outline")
             outline_ref=ArtifactRef.model_validate(inp.approved_outline_ref)
-            if outline_ref.stage!="approve-outline" or not outline_ref.uri.startswith(f"s3://{self.store.bucket}/{inp.course_id}/"): raise ValueError("approved outline scope invalid")
+            if outline_ref.stage!="approve-outline" or not outline_ref.uri.startswith(f"s3://{self.store.bucket}/{inp.course_id}/"):
+                raise ValueError("approved outline scope invalid")
             outline=CourseOutline.model_validate(json.loads(self.store.read(outline_ref,"approved-outline.json"))["outline"])
             source_book_ref=ArtifactRef.model_validate(inp.source_book_ref or {})
             if source_book_ref.stage!="ingest-parse-pdf" or not source_book_ref.uri.startswith(f"s3://{self.store.bucket}/{inp.course_id}/"):
@@ -429,11 +442,14 @@ class MP3Activities:
             qa_ref,pack=ref,None
             if ref.stage=="translate-content":
                 pack=json.loads(self.store.read(ref,"translation.json"))
-                if pack.get("target_language")!=inp.language: raise ValueError("translation language mismatch")
+                if pack.get("target_language")!=inp.language:
+                    raise ValueError("translation language mismatch")
                 source_info=json.loads(self.store.read(ref,"translation-source.json"))
                 qa_ref=ArtifactRef.model_validate(source_info["source_artifact_ref"])
-                if inp.source_qa_artifact_ref and ArtifactRef.model_validate(inp.source_qa_artifact_ref).sha256 != qa_ref.sha256: raise ValueError("translation QA source mismatch")
-                if qa_ref.stage!="generate-course-qa" or not qa_ref.uri.startswith(f"s3://{self.store.bucket}/{inp.course_id}/"): raise ValueError("translation source scope invalid")
+                if inp.source_qa_artifact_ref and ArtifactRef.model_validate(inp.source_qa_artifact_ref).sha256 != qa_ref.sha256:
+                    raise ValueError("translation QA source mismatch")
+                if qa_ref.stage!="generate-course-qa" or not qa_ref.uri.startswith(f"s3://{self.store.bucket}/{inp.course_id}/"):
+                    raise ValueError("translation source scope invalid")
             qa=json.loads(self.store.read(qa_ref,"course-qa.json"))
             if ((qa.get("status") != "final" and not inp.allow_partial_qa) or
                     not qa_source_matches(self.store, qa, qa_ref, outline_ref, source_book_ref, inp.course_id)):
@@ -441,9 +457,12 @@ class MP3Activities:
             tr={str(x.get("segment_id")):str(x.get("text","")) for x in (pack or {}).get("segments",[])}
             def val(sid,original):
                 value=tr.get(sid,"") if pack else original
-                if pack and not value: raise ValueError("translation missing: "+sid)
+                if pack and not value:
+                    raise ValueError("translation missing: "+sid)
                 return value
-            assets={str(x.get("lesson_id")):x for x in qa.get("lesson_assets",[])}; scopes={str(x.get("scope_id")):x for x in qa.get("scopes",[])}; tracks=[]
+            assets={str(x.get("lesson_id")):x for x in qa.get("lesson_assets",[])}
+            scopes={str(x.get("scope_id")):x for x in qa.get("scopes",[])}
+            tracks=[]
             selected = set(inp.lesson_ids or [])
             course_lessons = [lesson for module in outline.modules for lesson in module.lessons if not is_front_matter_lesson(lesson) and (not selected or lesson.lesson_id in selected)]
             for lesson in course_lessons:
@@ -459,7 +478,8 @@ class MP3Activities:
                 cfg={"language":inp.language,"kind":kind,"track_id":tid,"model":"fasih-tts-v1" if inp.language=="ar" else "supertonic3","render_policy":AUDIO_RENDER_POLICY,"punctuation_route":os.getenv("B2C_SPEECH_PUNCTUATION","off")}
                 if kind == "lesson_attachment":
                     cfg["include_summaries"] = inp.include_summaries
-                hashes=list(source_hashes or ([qa_ref.sha256,outline_ref.sha256]+([ref.sha256] if pack else []))); key=stage_key("generate-mp3-track","2",hashes,cfg)
+                hashes=list(source_hashes or ([qa_ref.sha256,outline_ref.sha256]+([ref.sha256] if pack else [])))
+                key=stage_key("generate-mp3-track","2",hashes,cfg)
                 current_track={"track_id":tid,"kind":kind,"lesson_id":lesson_id,"title":title,
                                "status":"rendering","completed_segments":0,"remaining_segments":None,"failed_segments":0}
                 renderer_state={}
@@ -494,7 +514,8 @@ class MP3Activities:
                     lesson_blocks=source_blocks[source_positions[span.start_block]:source_positions[span.end_block]+1]
                     source_parts=[]
                     for block in lesson_blocks:
-                        if not block.text.strip(): continue
+                        if not block.text.strip():
+                            continue
                         text=book_translation.get(block.block_id,"") if book_pack else block.text
                         if book_pack and not text.strip():
                             raise ValueError("translated source text missing: "+block.block_id)
@@ -502,7 +523,8 @@ class MP3Activities:
                     if source_parts:
                         source_track_id=lesson.lesson_id+"-source-text"
                         source_hashes=[source_book_ref.sha256,outline_ref.sha256]
-                        if book_translation_ref: source_hashes.append(book_translation_ref.sha256)
+                        if book_translation_ref:
+                            source_hashes.append(book_translation_ref.sha256)
                         add(source_track_id,"lesson_source_text",lesson.title,"\n".join(source_parts),lesson.lesson_id,source_hashes)
                     if inp.allow_partial_qa and lesson.lesson_id not in coverage["ready_lesson_ids"]:
                         continue
@@ -526,18 +548,25 @@ class MP3Activities:
                         add(lesson.lesson_id+"-attachment","lesson_attachment",lesson.title+(" — الملخص والأسئلة والإجابات" if inp.include_summaries else " — الأسئلة والإجابات"),
                             "\n".join(lines),lesson.lesson_id)
             for scope in qa.get("scopes",[]) if inp.include_extra_scopes else []:
-                if scope.get("kind")=="lesson": continue
-                if inp.allow_partial_qa and scope.get("status") != "final": continue
-                sid=str(scope.get("scope_id","scope")); lines=[]
+                if scope.get("kind")=="lesson":
+                    continue
+                if inp.allow_partial_qa and scope.get("status") != "final":
+                    continue
+                sid=str(scope.get("scope_id","scope"))
+                lines=[]
                 for i,q in enumerate(scope.get("items",[]),1):
                     lines += ["سؤال: "+val("scope:"+sid+":qa:"+str(i)+":question",str(q.get("question",""))),"الإجابة: "+val("scope:"+sid+":qa:"+str(i)+":answer",str(q.get("answer","")))]
-                if lines: add(str(scope.get("kind"))+"-"+sid+"-questions",str(scope.get("kind"))+"_questions",str(scope.get("scope_title",sid)),"\n".join(lines))
-            if not tracks: raise ValueError("course artifact produced no audio tracks")
+                if lines:
+                    add(str(scope.get("kind"))+"-"+sid+"-questions",str(scope.get("kind"))+"_questions",str(scope.get("scope_title",sid)),"\n".join(lines))
+            if not tracks:
+                raise ValueError("course artifact produced no audio tracks")
             manifest={"course_id":inp.course_id,"kind":"course","language":inp.language,"track_count":len(tracks),"tracks":tracks,"attachment_coverage":coverage,"qa_status":qa.get("status"),"include_summaries":inp.include_summaries}
-            hashes=[qa_ref.sha256,outline_ref.sha256,source_book_ref.sha256]+([ref.sha256] if pack else [])+([book_translation_ref.sha256] if book_translation_ref else []); key=stage_key("generate-mp3","3",hashes,{"language":inp.language,"kind":"course","lesson_ids":inp.lesson_ids,"allow_partial_qa":inp.allow_partial_qa,"include_summaries":inp.include_summaries,"include_extra_scopes":inp.include_extra_scopes,"render_policy":AUDIO_RENDER_POLICY,"punctuation_route":os.getenv("B2C_SPEECH_PUNCTUATION","off")})
+            hashes=[qa_ref.sha256,outline_ref.sha256,source_book_ref.sha256]+([ref.sha256] if pack else [])+([book_translation_ref.sha256] if book_translation_ref else [])
+            key=stage_key("generate-mp3","3",hashes,{"language":inp.language,"kind":"course","lesson_ids":inp.lesson_ids,"allow_partial_qa":inp.allow_partial_qa,"include_summaries":inp.include_summaries,"include_extra_scopes":inp.include_extra_scopes,"render_policy":AUDIO_RENDER_POLICY,"punctuation_route":os.getenv("B2C_SPEECH_PUNCTUATION","off")})
             out,hit=persist_audio(inp.course_id,"generate-mp3",key,lambda:{"audio-manifest.json":json.dumps(manifest,ensure_ascii=False,indent=2).encode()})
             return {"course_id":inp.course_id,"status":"completed","kind":"course","language":inp.language,"artifact":out.model_dump(mode="json"),"manifest":manifest,"track_count":len(tracks),"cache_hit":hit}
-        except ApplicationError: raise
+        except ApplicationError:
+            raise
         except HTTPError as exc:
             retryable = renderer_status_retryable(exc.code)
             raise ApplicationError(f"audio renderer returned HTTP {exc.code}",

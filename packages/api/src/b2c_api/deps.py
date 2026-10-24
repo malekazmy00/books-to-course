@@ -22,6 +22,24 @@ COURSE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}")
 BOOK_ID = re.compile(r"[A-Za-z0-9._-]{1,120}")
 
 
+async def describe_or_404(client: Any, workflow_id: str,
+                          detail: str = "workflow not found") -> tuple[Any, Any]:
+    """Describe a workflow: Temporal NOT_FOUND -> 404, any other failure -> 503."""
+    from temporalio.service import RPCError, RPCStatusCode
+
+    handle = client.get_workflow_handle(workflow_id)
+    try:
+        return handle, await handle.describe()
+    except RPCError as exc:
+        if exc.status == RPCStatusCode.NOT_FOUND:
+            raise HTTPException(status_code=404, detail=detail) from exc
+        raise HTTPException(status_code=503, detail="Temporal is unavailable") from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Temporal is unavailable") from exc
+
+
 def is_workflow_id(kind: str, workflow_id: str) -> bool:
     return WORKFLOW_ID_PATTERNS[kind].fullmatch(workflow_id) is not None
 

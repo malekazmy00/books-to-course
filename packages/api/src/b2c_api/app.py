@@ -74,6 +74,7 @@ from b2c_api.deps import (
     require_book_id,
     require_course_id,
     require_workflow_id,
+    describe_or_404,
     s3_bytes,
     s3_json,
 )
@@ -392,6 +393,13 @@ def create_app(
         if app.state.temporal_client is None:
             app.state.temporal_client = await temporal_connect(settings)
         return app.state.temporal_client
+
+    async def connected_temporal() -> Any:
+        try:
+            return await get_temporal_client()
+        except Exception as exc:
+            log.exception("could not connect to Temporal")
+            raise HTTPException(status_code=503, detail="Temporal is unavailable") from exc
 
     async def model_worker_queue_ready(provider) -> bool:
         # A workflow poller is enough to accept and persist a translation request.
@@ -1486,12 +1494,8 @@ def create_app(
     @app.get("/v1/translations/{workflow_id}")
     async def translation_status(workflow_id: str) -> dict[str, Any]:
         require_workflow_id("translate", workflow_id, "translation workflow not found")
-        try:
-            client = await get_temporal_client()
-            handle = client.get_workflow_handle(workflow_id)
-            description = await handle.describe()
-        except Exception as exc:
-            raise HTTPException(status_code=503, detail="Temporal is unavailable") from exc
+        client = await connected_temporal()
+        handle, description = await describe_or_404(client, workflow_id, "translation workflow not found")
         status_name = getattr(getattr(description, "status", None), "name", "")
         response: dict[str, Any] = {"workflow_id": workflow_id, "status": status_name}
         if status_name == "RUNNING":
@@ -1558,7 +1562,11 @@ def create_app(
                     "message": "\u0627\u0644\u0631\u062d\u0644\u0629 \u0642\u064a\u062f \u0627\u0644\u062a\u0646\u0641\u064a\u0630 \u0644\u0643\u0646 \u0644\u0627 \u064a\u0648\u062c\u062f \u0633\u062c\u0644 \u062a\u0642\u062f\u0645 \u0645\u062d\u0641\u0648\u0638; \u0644\u0627 \u064a\u0645\u0643\u0646 \u062a\u062d\u062f\u064a\u062f \u0627\u0644\u0645\u0642\u0627\u0637\u0639 \u0627\u0644\u0645\u0646\u062c\u0632\u0629 \u062d\u062a\u0649 \u0627\u0644\u0622\u0646.",
                 }
         if status_name == "COMPLETED":
-            result = await handle.result()
+            try:
+                result = await handle.result()
+            except Exception as exc:
+                log.exception("failed to read completed translation result")
+                raise HTTPException(status_code=503, detail="translation result is unavailable") from exc
             response["result"] = result
             count = int(result.get("segment_count", 0))
             total = int(result.get("total_segments", count))
@@ -1581,7 +1589,11 @@ def create_app(
                 raise HTTPException(status_code=503, detail="translation artifact failed scope validation")
             store = app.state.artifact_store or ArtifactStore.from_settings(settings)
             app.state.artifact_store = store
-            response["translation"] = json.loads(await run_in_threadpool(store.read, ref, "translation.json"))
+            try:
+                response["translation"] = json.loads(await run_in_threadpool(store.read, ref, "translation.json"))
+            except Exception as exc:
+                log.exception("failed to read completed translation artifact")
+                raise HTTPException(status_code=503, detail="translation artifact is unavailable") from exc
         elif status_name in {"FAILED", "CANCELED", "TERMINATED", "TIMED_OUT"}:
             store = app.state.artifact_store or ArtifactStore.from_settings(settings)
             app.state.artifact_store = store
@@ -1790,8 +1802,8 @@ def create_app(
 
     async def terminal_translation(workflow_id: str) -> TranslateContentInput:
         require_workflow_id("translate", workflow_id, "translation workflow not found")
-        client = await get_temporal_client()
-        description = await client.get_workflow_handle(workflow_id).describe()
+        client = await connected_temporal()
+        _, description = await describe_or_404(client, workflow_id, "translation workflow not found")
         if getattr(getattr(description, "status", None), "name", "") not in {"COMPLETED", "FAILED", "CANCELED", "TERMINATED", "TIMED_OUT"}:
             raise HTTPException(status_code=409, detail="selected-unit changes require a terminal parent translation")
         return await original_translation_input(workflow_id)
@@ -1832,7 +1844,10 @@ def create_app(
             raise HTTPException(status_code=422, detail="candidate source identity mismatch")
         if revision_id and record.get("revision_id") != revision_id:
             raise HTTPException(status_code=422, detail="candidate revision identity mismatch")
-        record["text"] = validate_manual_translation(matches[0].text, record["text"], target_language=original.target_language)
+        try:
+            record["text"] = validate_manual_translation(matches[0].text, record["text"], target_language=original.target_language)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         return record
 
     @app.get("/v1/translations/{workflow_id}/retranslations/{candidate_id}")
@@ -1934,7 +1949,10 @@ def create_app(
             if len(versions) != 1:
                 raise HTTPException(status_code=404,detail="selected saved revision not found")
             text = versions[0]["text"]
-        text = validate_manual_translation(unit["source_text"],text, target_language=original.target_language)
+        try:
+            text = validate_manual_translation(unit["source_text"],text, target_language=original.target_language)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         revision_id = uuid.uuid4().hex
         selection = {"workflow_id":workflow_id,"revision_id":revision_id,"segment_id":request.segment_id,
             "created_at":datetime.now(UTC).isoformat(),"text":text,"source_sha256":original.source_artifact_ref["sha256"],
@@ -1951,8 +1969,8 @@ def create_app(
     @app.post("/v1/translations/{workflow_id}/corrections", status_code=201)
     async def correct_translation_unit(workflow_id: str, request: TranslationCorrectionRequest) -> dict[str, Any]:
         require_workflow_id("translate", workflow_id, "translation workflow not found")
-        client = await get_temporal_client()
-        description = await client.get_workflow_handle(workflow_id).describe()
+        client = await connected_temporal()
+        _, description = await describe_or_404(client, workflow_id, "translation workflow not found")
         status = getattr(getattr(description, "status", None), "name", "")
         if status not in {"COMPLETED", "FAILED", "CANCELED", "TERMINATED", "TIMED_OUT"}:
             raise HTTPException(status_code=409, detail="corrections require a terminal translation; active work cannot be edited")
@@ -2524,8 +2542,8 @@ def create_app(
             return {"workflow_id": workflow_id, "control_kind": "qa_checkpoint",
                     "pause_url": f"/v1/course-qa/{workflow_id}/pause",
                     "resume_url": f"/v1/course-qa/{workflow_id}/resume"}
-        client = await get_temporal_client()
-        description = await client.get_workflow_handle(workflow_id).describe()
+        client = await connected_temporal()
+        _, description = await describe_or_404(client, workflow_id)
         record = await read_stage_control(workflow_id)
         boundary = {"ingest": "after_complete_parsed_book", "index": "after_indexed_book",
                     "translate": "after_saved_translation_batch", "mp3": "after_saved_audio_track"}[kind]
@@ -2538,9 +2556,8 @@ def create_app(
         kind = stage_control_kind(workflow_id)
         if kind == "qa":
             return await pause_course_qa(workflow_id)
-        client = await get_temporal_client()
-        handle = client.get_workflow_handle(workflow_id)
-        description = await handle.describe()
+        client = await connected_temporal()
+        handle, description = await describe_or_404(client, workflow_id)
         if description.status.name != "RUNNING":
             raise HTTPException(status_code=409, detail="only a running workflow can be paused")
         if kind == "mp3":
@@ -2577,8 +2594,8 @@ def create_app(
         kind = stage_control_kind(workflow_id)
         if kind == "qa":
             return await resume_course_qa(workflow_id)
-        client = await get_temporal_client()
-        description = await client.get_workflow_handle(workflow_id).describe()
+        client = await connected_temporal()
+        _, description = await describe_or_404(client, workflow_id)
         status_name = description.status.name
         if status_name in RETRY_STATUSES and retryable_kind(workflow_id):
             if request is None:

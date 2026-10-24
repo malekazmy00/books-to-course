@@ -84,6 +84,8 @@ class PostgresSRSStore:
             card_json, entry, due_at = review_card(
                 user_id=user_id, rating=rating, reviewed_at=reviewed_at,
                 card_json=row[0] if row else None,
+                # stable card id for new cards; question ids are only unique per course
+                question_id=f"{course_id}/{question_id}",
             )
             conn.execute(
                 "INSERT INTO learner_srs_cards "

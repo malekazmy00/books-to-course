@@ -25,7 +25,8 @@ with workflow.unsafe.imports_passed_through():
     from .heartbeat import LONG_ACTIVITY_HEARTBEAT_TIMEOUT, activity_heartbeats
     from b2c_llm_gateway import LLMRequestRejected, OpenRouterQuotaExceeded, FreeTokenQuotaExceeded, OpenRouterRateLimited
     from b2c_indexing import PostgresChunkStore, QueryRetrievalService
-    from b2c_pedagogy.lesson_enrichment import LessonEnrichment, generate_lesson_enrichments
+    from b2c_pedagogy.lesson_enrichment import (LESSON_ENRICHMENT_PROMPT_VERSION, LessonEnrichment,
+                                                generate_lesson_enrichments)
     from b2c_pedagogy.qa_generation import CourseQAResult, ScopeCheckpointError, ScopeResult, _derive_scopes, generate_course_qa
 
 
@@ -243,6 +244,8 @@ class CourseQAActivities:
             "model_id": self.gateway.model_id,
             "config": config,
             "qa_prompt_version": QA_PROMPT_VERSION,
+            # Frozen on purpose: changing it would orphan resumable scope checkpoints.
+            # Resumed enrichments are re-validated, and the final key below tracks the live prompt.
             "enrichment_prompt_version": "phase5-lesson-enrichment-v2",
         }
         checkpoint_fingerprint = hashlib.sha256(
@@ -261,7 +264,7 @@ class CourseQAActivities:
         cache_config["indexed_sources_sha256"] = checkpoint_identity["indexed_sources_sha256"]
         cache_config["qa_prompt_version"] = QA_PROMPT_VERSION
         key = stage_key("generate-course-qa", "3", [approved_ref.sha256], cache_config,
-                        model_id=self.gateway.model_id, prompt_version="phase5-lesson-enrichment-v3")
+                        model_id=self.gateway.model_id, prompt_version=LESSON_ENRICHMENT_PROMPT_VERSION)
         try:
             workflow_id = activity.info().workflow_id
         except RuntimeError:

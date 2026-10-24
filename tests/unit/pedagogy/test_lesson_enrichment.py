@@ -515,3 +515,16 @@ def test_numbered_procedure_builder_falls_back_when_source_support_is_insufficie
     sentences = [_Sentence(text_en=f"Step {step}. A source step has a distinct operation.",
                            citations=["c1"], kind="primary") for step in range(1, 4)]
     assert _build_numbered_procedure_mcqs(sentences, 3) is None
+
+
+def test_generation_prompt_is_coherent_and_versioned():
+    from b2c_pedagogy.lesson_enrichment import LESSON_ENRICHMENT_PROMPT_VERSION
+
+    outline, book, chunks = _sources()
+    gateway = _Gateway()
+    generate_lesson_enrichments(outline, book, chunks, gateway, question_count=3)
+    system = gateway.calls[0][2][0]["content"]
+    assert "Every summary, glossary item, and MCQ must reference sentence indices." in system
+    assert "Every summary, Use primary" not in system
+    assert LESSON_ENRICHMENT_PROMPT_VERSION == "phase5-lesson-enrichment-v4"
+    assert gateway.calls[0][1] == "phase5-lesson-enrichment-v4:generate:attempt-1"

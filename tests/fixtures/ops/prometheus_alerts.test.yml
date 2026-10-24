@@ -1,0 +1,44 @@
+rule_files:
+  - /etc/prometheus/alerts.yml
+evaluation_interval: 30s
+tests:
+  - name: target down fires and resolves after recovery
+    interval: 30s
+    input_series:
+      - series: 'up{job="temporal",instance="temporal:8000"}'
+        values: '1 0 0 0 0 0 0 1 1'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: B2CScrapeTargetDown
+        exp_alerts:
+          - exp_labels:
+              job: temporal
+              instance: temporal:8000
+              project: b2c
+              severity: warning
+            exp_annotations:
+              summary: B2C monitoring target is unavailable
+              description: Scrape target temporal at temporal:8000 has been down for 2 minutes.
+      - eval_time: 4m
+        alertname: B2CScrapeTargetDown
+        exp_alerts: []
+  - name: memory threshold fires and ignores unrelated project
+    interval: 30s
+    input_series:
+      - series: 'container_memory_working_set_bytes{container_label_com_docker_compose_project="b2c"}'
+        values: '0 85000000000x12 0 0'
+      - series: 'container_memory_working_set_bytes{container_label_com_docker_compose_project="unrelated"}'
+        values: '999999999999x15'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: B2CContainerMemoryBudgetHigh
+        exp_alerts:
+          - exp_labels:
+              project: b2c
+              severity: warning
+            exp_annotations:
+              summary: B2C container memory exceeds the 78 GiB budget
+              description: B2C working-set memory has exceeded 78 GiB for 5 minutes.
+      - eval_time: 7m
+        alertname: B2CContainerMemoryBudgetHigh
+        exp_alerts: []

@@ -2066,12 +2066,18 @@ def create_app(
                 await verified_ref(store, course_id, supplied, supplied.stage, label)
         try:
             client = await get_temporal_client()
-            digest = hashlib.sha256((course_id + source.sha256 + request.source_kind + request.language +
-                                     request.book_audio_layout + json.dumps([request.lesson_ids or [], request.allow_partial_qa, request.include_summaries, request.include_extra_scopes], separators=(",", ":")) +
-                                     (outline_ref.sha256 if outline_ref else "") +
-                                     (request.source_book_ref.sha256 if request.source_book_ref else "") +
-                                     (request.source_book_translation_ref.sha256 if request.source_book_translation_ref else "")).encode()).hexdigest()
-            workflow_id = "b2c-mp3-" + digest
+            identity = (course_id + source.sha256 + request.source_kind + request.language +
+                        request.book_audio_layout + json.dumps([request.lesson_ids or [], request.allow_partial_qa, request.include_summaries, request.include_extra_scopes], separators=(",", ":")) +
+                        (outline_ref.sha256 if outline_ref else "") +
+                        (request.source_book_ref.sha256 if request.source_book_ref else "") +
+                        (request.source_book_translation_ref.sha256 if request.source_book_translation_ref else ""))
+            legacy_workflow_id = "b2c-mp3-" + hashlib.sha256(identity.encode()).hexdigest()
+            workflow_id = legacy_workflow_id
+            if request.source_qa_artifact_ref is not None:
+                # The QA source selects different audio content, so it is part
+                # of the identity. Requests without it keep their old ID.
+                qa_identity = "\0source-qa:" + request.source_qa_artifact_ref.sha256
+                workflow_id = "b2c-mp3-" + hashlib.sha256((identity + qa_identity).encode()).hexdigest()
             inp = GenerateMP3Input(course_id=course_id, source_artifact_ref=source.model_dump(mode="json"),
                 source_kind=request.source_kind, language=request.language,
                 approved_outline_ref=outline_ref.model_dump(mode="json") if outline_ref else None,
@@ -2081,6 +2087,14 @@ def create_app(
                 book_audio_layout=request.book_audio_layout, lesson_ids=request.lesson_ids,
                 allow_partial_qa=request.allow_partial_qa, include_summaries=request.include_summaries, include_extra_scopes=request.include_extra_scopes,
                 activity_task_queue=os.getenv("B2C_AUDIO_TASK_QUEUE", AUDIO))
+            if workflow_id != legacy_workflow_id:
+                # A run started before the QA ref was hashed keeps serving the
+                # same request: reuse its ID only if its saved input names the
+                # same QA artifact.
+                previous = await load_audio_input(legacy_workflow_id)
+                if (previous is not None and previous.course_id == course_id
+                        and previous.source_qa_artifact_ref == inp.source_qa_artifact_ref):
+                    workflow_id = legacy_workflow_id
             store = app.state.artifact_store or ArtifactStore.from_settings(settings)
             app.state.artifact_store = store
             try:
@@ -2300,25 +2314,33 @@ def create_app(
             background=BackgroundTask(archive.close))
 
 
+    async def load_audio_input(workflow_id: str) -> GenerateMP3Input | None:
+        """The immutable start input of an MP3 run: saved copy, else Temporal history.
+
+        ``None`` when neither source has it; storage failures are 503.
+        """
+        try:
+            saved_input = await s3_bytes(get_store().s3, settings.s3_bucket, f"_system/audio-inputs/{workflow_id}.json")
+            if saved_input is not None:
+                return GenerateMP3Input.model_validate_json(saved_input)
+        except Exception as exc:
+            raise HTTPException(503, "audio input is unavailable") from exc
+        try:
+            client = await get_temporal_client()
+            history = await client.get_workflow_handle(workflow_id).fetch_history()
+            started = next(e for e in history.events if e.HasField("workflow_execution_started_event_attributes"))
+            values = await client.data_converter.decode(started.workflow_execution_started_event_attributes.input.payloads, [GenerateMP3Input])
+            return GenerateMP3Input.model_validate(values[0])
+        except Exception:
+            return None
+
     @app.get("/v1/audio/{workflow_id}/request")
     async def original_audio_request(workflow_id: str) -> dict[str, Any]:
         require_workflow_id("mp3", workflow_id, "audio workflow not found")
-        store = app.state.artifact_store or ArtifactStore.from_settings(settings)
-        app.state.artifact_store = store
-        try:
-            saved_input = await s3_bytes(store.s3, settings.s3_bucket, f"_system/audio-inputs/{workflow_id}.json")
-            inp = GenerateMP3Input.model_validate_json(saved_input) if saved_input is not None else None
-        except Exception as exc:
-            raise HTTPException(503, "audio input is unavailable") from exc
+        store = get_store()
+        inp = await load_audio_input(workflow_id)
         if inp is None:
-            try:
-                client = await get_temporal_client()
-                history = await client.get_workflow_handle(workflow_id).fetch_history()
-                started = next(e for e in history.events if e.HasField("workflow_execution_started_event_attributes"))
-                values = await client.data_converter.decode(started.workflow_execution_started_event_attributes.input.payloads, [GenerateMP3Input])
-                inp = GenerateMP3Input.model_validate(values[0])
-            except Exception as history_error:
-                raise HTTPException(409, "original audio input is unavailable") from history_error
+            raise HTTPException(409, "original audio input is unavailable")
         try:
             await run_in_threadpool(validate_mp3_input_lineage, store, inp)
         except Exception as exc:

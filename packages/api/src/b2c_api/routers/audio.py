@@ -9,7 +9,6 @@ from typing import Any
 from b2c_contracts import (
     ArtifactRef,
 )
-from b2c_core import ArtifactStore
 from b2c_orchestration.audio import GenerateMP3Input, GenerateMP3Workflow, validate_mp3_input_lineage
 from b2c_orchestration.queues import AUDIO
 
@@ -39,7 +38,6 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
     """Register the routes on ``router`` (the app itself in ``create_app``,
     keeping the route table flat and in its original order)."""
     router = APIRouter() if router is None else router
-    app = ctx.app
     settings = ctx.settings
     get_store = ctx.get_store
     get_temporal_client = ctx.get_temporal_client
@@ -110,8 +108,7 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
                 if (previous is not None and previous.course_id == course_id
                         and previous.source_qa_artifact_ref == inp.source_qa_artifact_ref):
                     workflow_id = legacy_workflow_id
-            store = app.state.artifact_store or ArtifactStore.from_settings(settings)
-            app.state.artifact_store = store
+            store = get_store()
             try:
                 await run_in_threadpool(validate_mp3_input_lineage, store, inp)
             except (ValueError, KeyError, TypeError) as exc:
@@ -133,8 +130,7 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
         progress_warning = None
         try:
             if outline_ref is not None:
-                store = app.state.artifact_store or ArtifactStore.from_settings(settings)
-                app.state.artifact_store = store
+                store = get_store()
                 manifest_bytes = await s3_bytes(store.s3, settings.s3_bucket,
                     outline_ref.uri.removeprefix(f"s3://{settings.s3_bucket}/") + "_manifest.json")
                 if manifest_bytes is None:
@@ -155,8 +151,7 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
         return with_progress_warning({"course_id": course_id, "workflow_id": workflow_id, "status_url": f"/v1/audio/{workflow_id}", "file_url": f"/v1/audio/{workflow_id}/file", "manifest_url": f"/v1/audio/{workflow_id}/manifest"}, progress_warning)
 
     async def partial_audio_manifest(workflow_id: str) -> dict[str, Any]:
-        store = app.state.artifact_store or ArtifactStore.from_settings(settings)
-        app.state.artifact_store = store
+        store = get_store()
         try:
             value = await s3_json(store.s3, settings.s3_bucket, f"_system/audio-progress/{workflow_id}.json")
         except Exception as exc:
@@ -226,7 +221,7 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
         if status != "COMPLETED": return await partial_audio_manifest(workflow_id)
         result = await handle.result(); ref = ArtifactRef.model_validate(result["artifact"])
         if ref.stage != "generate-mp3" or not ref.uri.startswith(f"s3://{settings.s3_bucket}/{result.get('course_id')}/"): raise HTTPException(status_code=503, detail="audio manifest reference is invalid")
-        store = app.state.artifact_store or ArtifactStore.from_settings(settings); app.state.artifact_store = store
+        store = get_store()
         try:
             value = json.loads(await run_in_threadpool(store.read, ref, "audio-manifest.json"))
             validate_audio_manifest(value, settings.s3_bucket, result.get("course_id"))
@@ -249,7 +244,7 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
             raise HTTPException(status_code=503, detail="audio track is unavailable") from exc
 
     async def add_audio_lesson_order(value: dict, workflow_id: str) -> dict:
-        store = app.state.artifact_store
+        store = get_store()
         try:
             display = await s3_json(store.s3, settings.s3_bucket, f"_system/audio-display/{workflow_id}.json")
             if display is None:
@@ -266,8 +261,7 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
 
     async def audio_course_name(course_id: str) -> str:
         require_course_id(course_id)
-        store = app.state.artifact_store or ArtifactStore.from_settings(settings)
-        app.state.artifact_store = store
+        store = get_store()
         try:
             course_settings = await s3_json(store.s3, settings.s3_bucket, course_id + "/course-settings.json")
         except Exception as exc:
@@ -276,7 +270,7 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
 
     async def list_course_audio_runs(course_id: str) -> dict[str, Any]:
         await audio_course_name(course_id)
-        store = app.state.artifact_store
+        store = get_store()
         try:
             records = await run_in_threadpool(course_audio_checkpoints, store, settings.s3_bucket, course_id)
         except Exception as exc:
@@ -314,7 +308,7 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
         if len(manifest["tracks"]) < int(manifest.get("track_count", len(manifest["tracks"]))):
             raise HTTPException(409, "course audio is incomplete; download saved tracks individually")
         name = await audio_course_name(course_id)
-        store = app.state.artifact_store
+        store = get_store()
         try:
             archive = await run_in_threadpool(audio_zip, store, manifest, name)
         except Exception as exc:

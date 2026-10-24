@@ -16,7 +16,6 @@ from b2c_contracts import (
     ParsedBook,
     stage_key,
 )
-from b2c_core import ArtifactStore
 from b2c_orchestration.ingest import IngestPDFInput, IngestPDFWorkflow
 from b2c_orchestration.queues import LIGHT
 
@@ -99,7 +98,6 @@ def books_router(ctx: ApiContext, router: Any = None) -> Any:
     """Register the routes on ``router`` (the app itself in ``create_app``,
     keeping the route table flat and in its original order)."""
     router = APIRouter() if router is None else router
-    app = ctx.app
     settings = ctx.settings
     get_store = ctx.get_store
     get_temporal_client = ctx.get_temporal_client
@@ -188,10 +186,7 @@ def books_router(ctx: ApiContext, router: Any = None) -> Any:
         )
         config = {"upload": upload.model_dump(mode="json")}
         key = stage_key("book-upload", "1", [digest], config)
-        store = app.state.artifact_store
-        if store is None:
-            store = ArtifactStore.from_settings(settings)
-            app.state.artifact_store = store
+        store = get_store()
         try:
             await run_in_threadpool(store.ensure_bucket)
             metadata_bytes = upload.model_dump_json().encode("utf-8")
@@ -282,8 +277,7 @@ def books_router(ctx: ApiContext, router: Any = None) -> Any:
     @router.get("/v1/courses/{course_id}/books")
     async def list_course_books(course_id: str) -> dict[str, Any]:
         require_course_id(course_id)
-        store = app.state.artifact_store or ArtifactStore.from_settings(settings)
-        app.state.artifact_store = store
+        store = get_store()
         try:
             response = await run_in_threadpool(store.s3.list_objects_v2, Bucket=settings.s3_bucket,
                                                 Prefix=course_id + "/book-library/", Delimiter="/")
@@ -345,8 +339,7 @@ def books_router(ctx: ApiContext, router: Any = None) -> Any:
     async def book_progress(course_id: str, book_id: str) -> dict[str, Any]:
         require_course_id(course_id)
         require_book_id(book_id)
-        store = app.state.artifact_store or ArtifactStore.from_settings(settings)
-        app.state.artifact_store = store
+        store = get_store()
         key = f"{course_id}/book-progress/{hashlib.sha256(book_id.encode()).hexdigest()}.json"
         try:
             record = await s3_json(store.s3, settings.s3_bucket, key)

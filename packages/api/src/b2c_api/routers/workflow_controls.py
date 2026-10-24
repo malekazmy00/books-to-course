@@ -5,7 +5,6 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from b2c_core import ArtifactStore
 
 from fastapi import HTTPException
 from fastapi.responses import Response
@@ -31,8 +30,7 @@ def workflow_controls_router(ctx: ApiContext, router: Any = None) -> Any:
     """Register the routes on ``router`` (the app itself in ``create_app``,
     keeping the route table flat and in its original order)."""
     router = APIRouter() if router is None else router
-    app = ctx.app
-    settings = ctx.settings
+    get_store = ctx.get_store
     get_temporal_client = ctx.get_temporal_client
     connected_temporal = ctx.connected_temporal
     pause_course_qa = ctx.late("pause_course_qa")
@@ -47,8 +45,7 @@ def workflow_controls_router(ctx: ApiContext, router: Any = None) -> Any:
         return match.group(1)
 
     async def read_stage_control(workflow_id: str) -> dict[str, Any]:
-        store = app.state.artifact_store or ArtifactStore.from_settings(settings)
-        app.state.artifact_store = store
+        store = get_store()
         try:
             return await s3_json(store.s3, store.bucket, f"_system/workflow-controls/{workflow_id}.json") or {}
         except Exception as exc:
@@ -93,7 +90,7 @@ def workflow_controls_router(ctx: ApiContext, router: Any = None) -> Any:
         current = await read_stage_control(workflow_id)
         if current.get("action") == "pause_after_checkpoint":
             return {"workflow_id": workflow_id, "status": current.get("state", "PAUSE_REQUESTED")}
-        store = app.state.artifact_store
+        store = get_store()
         record = {"workflow_id": workflow_id, "action": "pause_after_checkpoint",
                   "state": "PAUSE_REQUESTED", "requested_at": datetime.now(UTC).isoformat()}
         try:
@@ -134,7 +131,7 @@ def workflow_controls_router(ctx: ApiContext, router: Any = None) -> Any:
         if record.get("action") not in {"pause_after_checkpoint", "resume"}:
             raise HTTPException(status_code=409, detail="workflow has no pending pause")
         record.update({"action": "resume", "state": "ACTIVE", "resumed_at": datetime.now(UTC).isoformat()})
-        store = app.state.artifact_store
+        store = get_store()
         try:
             await run_in_threadpool(store.s3.put_object, Bucket=store.bucket,
                 Key=f"_system/workflow-controls/{workflow_id}.json",

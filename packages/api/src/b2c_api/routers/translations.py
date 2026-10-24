@@ -11,7 +11,6 @@ from b2c_contracts import (
     ArtifactRef,
     ParsedBook,
 )
-from b2c_core import ArtifactStore
 from b2c_core.source_identity import artifact_source_identity
 from b2c_translation.glossary import glossary_identity
 from b2c_orchestration.translation import TranslateContentInput, TranslateContentWorkflow, RetranslateSegmentInput, RetranslateSegmentWorkflow, translation_source_segments, translation_manual_overrides
@@ -68,7 +67,7 @@ def translations_router(ctx: ApiContext, router: Any = None) -> Any:
                     raise HTTPException(status_code=422, detail="resume request must match the validated original translation input")
             correction_ids = []
             if request.resume_from_workflow_id:
-                correction_store = app.state.artifact_store
+                correction_store = get_store()
                 corrections = await run_in_threadpool(translation_manual_overrides, correction_store, previous, request.resume_from_workflow_id)
                 correction_ids = sorted(x["revision_id"] for x in corrections)
             correction_identity = hashlib.sha256(json.dumps(correction_ids).encode()).hexdigest() if correction_ids else ""
@@ -108,8 +107,7 @@ def translations_router(ctx: ApiContext, router: Any = None) -> Any:
                 selected_provider_id=selected_provider,
                 selected_translation_engine=selected_translation_engine,
                 contextual_glossary=request.contextual_glossary)
-            store = app.state.artifact_store or ArtifactStore.from_settings(settings)
-            app.state.artifact_store = store
+            store = get_store()
             await run_in_threadpool(store.s3.put_object, Bucket=settings.s3_bucket,
                 Key=f"_system/translation-requests/{workflow_id}.json",
                 Body=inp.model_dump_json().encode("utf-8"), ContentType="application/json")
@@ -125,8 +123,7 @@ def translations_router(ctx: ApiContext, router: Any = None) -> Any:
             raise HTTPException(status_code=503, detail="translation could not be queued") from exc
         progress_warning = None
         try:
-            store = app.state.artifact_store or ArtifactStore.from_settings(settings)
-            app.state.artifact_store = store
+            store = get_store()
             book_id = None
             source_parsed_sha256 = None
             outline_sha256 = None
@@ -169,8 +166,7 @@ def translations_router(ctx: ApiContext, router: Any = None) -> Any:
             # Durable progress is written by the activity itself. Temporal event enum
             # encodings vary across SDK versions, so do not infer queue state from a
             # magic event number; an absent progress object is handled below as queued.
-            store = app.state.artifact_store or ArtifactStore.from_settings(settings)
-            app.state.artifact_store = store
+            store = get_store()
             progress_key = f"_system/translation-progress/{workflow_id}.json"
             try:
                 progress = await s3_json(store.s3, settings.s3_bucket, progress_key)
@@ -254,16 +250,14 @@ def translations_router(ctx: ApiContext, router: Any = None) -> Any:
             ref = ArtifactRef.model_validate(result["artifact"])
             if ref.stage != "translate-content" or not ref.uri.startswith(f"s3://{settings.s3_bucket}/{course_id}/"):
                 raise HTTPException(status_code=503, detail="translation artifact failed scope validation")
-            store = app.state.artifact_store or ArtifactStore.from_settings(settings)
-            app.state.artifact_store = store
+            store = get_store()
             try:
                 response["translation"] = json.loads(await run_in_threadpool(store.read, ref, "translation.json"))
             except Exception as exc:
                 log.exception("failed to read completed translation artifact")
                 raise HTTPException(status_code=503, detail="translation artifact is unavailable") from exc
         elif status_name in {"FAILED", "CANCELED", "TERMINATED", "TIMED_OUT"}:
-            store = app.state.artifact_store or ArtifactStore.from_settings(settings)
-            app.state.artifact_store = store
+            store = get_store()
             try:
                 progress_key = f"_system/translation-progress/{workflow_id}.json"
                 progress = await s3_json(store.s3, settings.s3_bucket, progress_key)
@@ -372,7 +366,7 @@ def translations_router(ctx: ApiContext, router: Any = None) -> Any:
     @router.post("/v1/translations/{workflow_id}/retranslations", status_code=202)
     async def retranslate_unit(workflow_id: str, request: TranslationRetranslateRequest) -> dict[str, Any]:
         original = await terminal_translation(workflow_id)
-        store = app.state.artifact_store
+        store = get_store()
         units = await translation_units(workflow_id)
         matches = [x for x in units["units"] if x["segment_id"] == request.segment_id]
         if len(matches) != 1:
@@ -427,13 +421,13 @@ def translations_router(ctx: ApiContext, router: Any = None) -> Any:
         if status == "COMPLETED":
             response["candidate"] = ready or await selected_candidate(workflow_id, candidate_id)
             original = await original_translation_input(workflow_id)
-            sources = await run_in_threadpool(translation_source_segments, app.state.artifact_store, original)
+            sources = await run_in_threadpool(translation_source_segments, get_store(), original)
             response["source_text"] = next(x.text for x in sources if x.segment_id == response["candidate"]["segment_id"])
             units = await translation_units(workflow_id)
             response["current_text"] = next(x["translated_text"] for x in units["units"] if x["segment_id"] == response["candidate"]["segment_id"])
             def candidate_revisions() -> list[dict[str, Any]]:
                 result = []
-                store = app.state.artifact_store
+                store = get_store()
                 for page in store.s3.get_paginator("list_objects_v2").paginate(Bucket=settings.s3_bucket, Prefix=f"_system/translation-candidate-revisions/{candidate_id}/"):
                     for item in page.get("Contents", []):
                         revision = json.loads(store.s3.get_object(Bucket=settings.s3_bucket, Key=item["Key"])["Body"].read())
@@ -450,7 +444,7 @@ def translations_router(ctx: ApiContext, router: Any = None) -> Any:
         candidate = await selected_candidate(workflow_id,candidate_id)
         if request.segment_id != candidate["segment_id"]:
             raise HTTPException(status_code=422,detail="revision must edit the selected candidate segment")
-        sources = await run_in_threadpool(translation_source_segments,app.state.artifact_store,original)
+        sources = await run_in_threadpool(translation_source_segments,get_store(),original)
         source = next(x for x in sources if x.segment_id == request.segment_id)
         try:
             text = validate_manual_translation(source.text,request.translated_text, target_language=original.target_language)
@@ -458,7 +452,7 @@ def translations_router(ctx: ApiContext, router: Any = None) -> Any:
             raise HTTPException(status_code=422,detail=str(exc)) from exc
         revision = {**candidate,"text":text,"revision_id":uuid.uuid4().hex,
             "created_at":datetime.now(UTC).isoformat(),"origin":"operator_candidate_edit","status":"awaiting_review"}
-        await run_in_threadpool(app.state.artifact_store.s3.put_object,Bucket=settings.s3_bucket,
+        await run_in_threadpool(get_store().s3.put_object,Bucket=settings.s3_bucket,
             Key=f"_system/translation-candidate-revisions/{candidate_id}/{revision['revision_id']}.json",
             Body=json.dumps(revision,ensure_ascii=False).encode(),ContentType="application/json",IfNoneMatch="*")
         return revision
@@ -471,7 +465,7 @@ def translations_router(ctx: ApiContext, router: Any = None) -> Any:
         revision_id = hashlib.sha256((candidate_id + (request.revision_id or "")).encode()).hexdigest()
         override = {**record,"workflow_id":workflow_id,"revision_id":revision_id,
             "created_at":datetime.now(UTC).isoformat(),"origin":"operator_accepted_retranslation"}
-        store = app.state.artifact_store
+        store = get_store()
         try:
             await run_in_threadpool(store.s3.put_object, Bucket=settings.s3_bucket,
                 Key=f"_system/translation-overrides/{workflow_id}/{revision_id}.json",
@@ -510,7 +504,7 @@ def translations_router(ctx: ApiContext, router: Any = None) -> Any:
             "target_language":original.target_language,"citations":unit["citations"],
             "origin":"operator_revision_selection","selected_revision_id":request.revision_id,
             "selected_original_machine_translation":request.revision_id is None}
-        await run_in_threadpool(app.state.artifact_store.s3.put_object,Bucket=settings.s3_bucket,
+        await run_in_threadpool(get_store().s3.put_object,Bucket=settings.s3_bucket,
             Key=f"_system/translation-overrides/{workflow_id}/{revision_id}.json",
             Body=json.dumps(selection,ensure_ascii=False).encode(),ContentType="application/json",IfNoneMatch="*")
         return {"workflow_id":workflow_id,"segment_id":request.segment_id,"revision_id":revision_id,
@@ -525,7 +519,7 @@ def translations_router(ctx: ApiContext, router: Any = None) -> Any:
         if status not in {"COMPLETED", "FAILED", "CANCELED", "TERMINATED", "TIMED_OUT"}:
             raise HTTPException(status_code=409, detail="corrections require a terminal translation; active work cannot be edited")
         original = await original_translation_input(workflow_id)
-        store = app.state.artifact_store
+        store = get_store()
         sources = await run_in_threadpool(translation_source_segments, store, original)
         source = next((x for x in sources if x.segment_id == request.segment_id), None)
         if source is None:

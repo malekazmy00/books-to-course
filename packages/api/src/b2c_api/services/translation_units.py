@@ -8,7 +8,6 @@ from typing import Any
 from b2c_contracts import (
     ArtifactRef,
 )
-from b2c_core import ArtifactStore
 from b2c_translation.generation import translation_completeness_issue
 from b2c_orchestration.translation import TranslateContentInput, translation_source_segments, translation_manual_overrides
 
@@ -25,14 +24,13 @@ from b2c_api.deps import ApiContext, log
 
 
 def bind_translation_units(ctx: ApiContext) -> None:
-    app = ctx.app
     settings = ctx.settings
+    get_store = ctx.get_store
     get_temporal_client = ctx.get_temporal_client
     connected_temporal = ctx.connected_temporal
 
     async def original_translation_input(workflow_id: str) -> TranslateContentInput:
-        store = app.state.artifact_store or ArtifactStore.from_settings(settings)
-        app.state.artifact_store = store
+        store = get_store()
         key = f"_system/translation-requests/{workflow_id}.json"
         saved_request = await s3_json(store.s3, settings.s3_bucket, key)
         if saved_request is not None:
@@ -55,7 +53,7 @@ def bind_translation_units(ctx: ApiContext) -> None:
 
     async def translation_checkpoints(workflow_id: str) -> dict[str, Any]:
         require_workflow_id("translate", workflow_id, "translation workflow not found")
-        store=app.state.artifact_store or ArtifactStore.from_settings(settings); app.state.artifact_store=store
+        store = get_store()
         prefix=f"_system/translation-checkpoints/{workflow_id}/"
         def read_batches() -> list[dict[str,Any]]:
             output=[]; token=None
@@ -92,7 +90,7 @@ def bind_translation_units(ctx: ApiContext) -> None:
         require_workflow_id("translate", workflow_id, "translation workflow not found")
         try:
             original = await original_translation_input(workflow_id)
-            store = app.state.artifact_store
+            store = get_store()
             source = await run_in_threadpool(translation_source_segments, store, original)
             # A resumed workflow gets a new ID but must keep exposing its
             # parent's durable work while it processes the remaining units.
@@ -160,7 +158,7 @@ def bind_translation_units(ctx: ApiContext) -> None:
     async def selected_candidate(workflow_id: str, candidate_id: str, revision_id: str | None = None) -> dict[str, Any]:
         require_workflow_id("retranslate", candidate_id, "candidate not found")
         original = await original_translation_input(workflow_id)
-        store = app.state.artifact_store
+        store = get_store()
         record = await s3_json(store.s3, settings.s3_bucket, (f"_system/translation-candidate-revisions/{candidate_id}/{revision_id}.json" if revision_id else f"_system/translation-candidates/{candidate_id}.json"))
         if record is None:
             raise HTTPException(status_code=409, detail="candidate is not ready for review")

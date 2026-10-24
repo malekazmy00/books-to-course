@@ -4,7 +4,6 @@ from __future__ import annotations
 from typing import Any
 
 import psycopg
-from b2c_core import ArtifactStore
 
 from b2c_indexing.postgres_store import PostgresChunkStore
 from fastapi import HTTPException
@@ -24,8 +23,8 @@ def indexing_router(ctx: ApiContext, router: Any = None) -> Any:
     """Register the routes on ``router`` (the app itself in ``create_app``,
     keeping the route table flat and in its original order)."""
     router = APIRouter() if router is None else router
-    app = ctx.app
     settings = ctx.settings
+    get_store = ctx.get_store
     get_temporal_client = ctx.get_temporal_client
 
     @router.get("/v1/indexings/{workflow_id}")
@@ -40,8 +39,7 @@ def indexing_router(ctx: ApiContext, router: Any = None) -> Any:
         except RPCError as exc:
             if exc.status != RPCStatusCode.NOT_FOUND:
                 raise HTTPException(status_code=503, detail="Temporal is unavailable") from exc
-            store = app.state.artifact_store or ArtifactStore.from_settings(settings)
-            app.state.artifact_store = store
+            store = get_store()
             try:
                 recovered = await recover_index(store, PostgresChunkStore(lambda: psycopg.connect(settings.pg_dsn)),
                                                 workflow_id, course_id=recovery_course_id)

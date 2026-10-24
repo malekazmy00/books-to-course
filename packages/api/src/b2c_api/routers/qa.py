@@ -10,7 +10,6 @@ from typing import Any
 from b2c_contracts import (
     ArtifactRef,
 )
-from b2c_core import ArtifactStore
 from b2c_orchestration.qa import GenerateCourseQAInput, GenerateCourseQAWorkflow
 from b2c_pedagogy.qa_generation import ScopeResult
 
@@ -139,8 +138,7 @@ def qa_router(ctx: ApiContext, router: Any = None) -> Any:
             raise HTTPException(status_code=503, detail="question generation could not be queued") from exc
         progress_warning = None
         try:
-            store = app.state.artifact_store or ArtifactStore.from_settings(settings)
-            app.state.artifact_store = store
+            store = get_store()
             approved_payload = json.loads(await run_in_threadpool(store.read, approved_ref, "approved-outline.json"))
             book_id = approved_payload["outline"]["spine_book_id"]
             spine_ref = ArtifactRef.model_validate(approved_payload["spine_parsed_ref"])
@@ -181,7 +179,7 @@ def qa_router(ctx: ApiContext, router: Any = None) -> Any:
                     recovered_ref = ArtifactRef.model_validate(saved["artifact_ref"])
                     if recovered_ref.stage != "generate-course-qa" or not recovered_ref.uri.startswith(f"s3://{settings.s3_bucket}/{recovery_course_id}/"):
                         raise HTTPException(status_code=503, detail="question generation artifact failed scope validation")
-                    recovered_store = app.state.artifact_store or ArtifactStore.from_settings(settings)
+                    recovered_store = get_store()
                     qa = json.loads(await run_in_threadpool(recovered_store.read, recovered_ref, "course-qa.json"))
                     scopes = qa.get("scopes", [])
                     recovered_status = "COMPLETED" if qa.get("status") == "final" else "PAUSED" if qa.get("status") == "paused" else "PARTIAL"
@@ -198,8 +196,7 @@ def qa_router(ctx: ApiContext, router: Any = None) -> Any:
             raise HTTPException(status_code=503, detail="Temporal is unavailable") from exc
         status_name = getattr(getattr(description, "status", None), "name", "")
         response: dict[str, Any] = {"workflow_id": workflow_id, "status": status_name}
-        store = app.state.artifact_store or ArtifactStore.from_settings(settings)
-        app.state.artifact_store = store
+        store = get_store()
         if status_name == "RUNNING":
             progress_key = f"_system/qa-progress/{workflow_id}.json"
             progress_value = None
@@ -226,10 +223,7 @@ def qa_router(ctx: ApiContext, router: Any = None) -> Any:
                     if (result_ref.stage != "generate-course-qa" or
                             not result_ref.uri.startswith(f"s3://{settings.s3_bucket}/{result.get('course_id')}/")):
                         raise HTTPException(status_code=503, detail="question generation artifact failed scope validation")
-                    store = app.state.artifact_store
-                    if store is None:
-                        store = ArtifactStore.from_settings(settings)
-                        app.state.artifact_store = store
+                    store = get_store()
                     response["course_qa"] = json.loads(await run_in_threadpool(
                         store.read, result_ref, "course-qa.json"))
                     qa_result = response["course_qa"]
@@ -251,8 +245,7 @@ def qa_router(ctx: ApiContext, router: Any = None) -> Any:
                 log.exception("failed to read completed question generation")
                 raise HTTPException(status_code=503, detail="question generation result is unavailable") from exc
         elif status_name in {"FAILED", "CANCELED", "TERMINATED", "TIMED_OUT"}:
-            store = app.state.artifact_store or ArtifactStore.from_settings(settings)
-            app.state.artifact_store = store
+            store = get_store()
             try:
                 progress_key = f"_system/qa-progress/{workflow_id}.json"
                 saved_progress = await s3_json(store.s3, settings.s3_bucket, progress_key)
@@ -281,8 +274,7 @@ def qa_router(ctx: ApiContext, router: Any = None) -> Any:
             status_name = getattr(getattr(description, "status", None), "name", "")
             if status_name != "RUNNING":
                 raise HTTPException(status_code=409, detail="only a running question generation can be paused")
-            store = app.state.artifact_store or ArtifactStore.from_settings(settings)
-            app.state.artifact_store = store
+            store = get_store()
             await run_in_threadpool(store.s3.put_object, Bucket=settings.s3_bucket,
                 Key=f"_system/qa-controls/{workflow_id}.json",
                 Body=json.dumps({"action":"pause_after_checkpoint","requested_at":datetime.now(UTC).isoformat()}).encode(),
@@ -339,8 +331,7 @@ def qa_router(ctx: ApiContext, router: Any = None) -> Any:
                 pass
             progress_warning = None
             try:
-                store = app.state.artifact_store or ArtifactStore.from_settings(settings)
-                app.state.artifact_store = store
+                store = get_store()
                 approved_ref = ArtifactRef.model_validate(inp.approved_outline_ref)
                 approved_payload = json.loads(await run_in_threadpool(store.read, approved_ref, "approved-outline.json"))
                 book_id = approved_payload["outline"]["spine_book_id"]
@@ -359,7 +350,7 @@ def qa_router(ctx: ApiContext, router: Any = None) -> Any:
     @router.get("/v1/course-qa/{workflow_id}/checkpoints")
     async def course_qa_checkpoints(workflow_id: str) -> dict[str, Any]:
         require_workflow_id("qa", workflow_id, "question generation workflow not found")
-        store=app.state.artifact_store or ArtifactStore.from_settings(settings); app.state.artifact_store=store
+        store = get_store()
         prefix=f"_system/qa-checkpoints/{workflow_id}/"
         def read_scopes() -> list[dict[str,Any]]:
             output=[]; token=None

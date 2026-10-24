@@ -7,7 +7,6 @@ import threading
 from datetime import UTC, datetime
 from typing import Any
 
-from b2c_core import ArtifactStore
 
 from fastapi import HTTPException
 from b2c_api.deps import (
@@ -29,14 +28,13 @@ def _serialize_progress_writes(function):
 
 
 def bind_book_progress(ctx: ApiContext) -> None:
-    app = ctx.app
     settings = ctx.settings
+    get_store = ctx.get_store
 
     @_serialize_progress_writes
     def write_book_progress(course_id: str, book_id: str, stage: str, workflow_id: str,
                             metadata: dict[str, Any] | None = None) -> None:
-        store = app.state.artifact_store or ArtifactStore.from_settings(settings)
-        app.state.artifact_store = store
+        store = get_store()
         key = f"{course_id}/book-progress/{hashlib.sha256(book_id.encode()).hexdigest()}.json"
         record: dict[str, Any] = {"schema_version": "1.0", "course_id": course_id,
                                   "book_id": book_id, "stages": {}}
@@ -112,8 +110,7 @@ def bind_book_progress(ctx: ApiContext) -> None:
                 "translation": "translations", "book_translation": "translations", "audio": "audio"}[stage]
 
     async def verify_resume_owner(course_id, book_id, stage, old_workflow):
-        store = app.state.artifact_store or ArtifactStore.from_settings(settings)
-        app.state.artifact_store = store
+        store = get_store()
         key = f"{course_id}/book-progress/{hashlib.sha256(book_id.encode()).hexdigest()}.json"
         try:
             record = await s3_json(store.s3, settings.s3_bucket, key)

@@ -8,7 +8,6 @@ from typing import Any
 from b2c_contracts import (
     Question,
 )
-from b2c_core import ArtifactStore
 from b2c_pedagogy.srs import build_review_quiz
 
 from b2c_api.serving import S3CourseServingCatalog, learner_question, parse_single_byte_range
@@ -29,13 +28,11 @@ def serving_router(ctx: ApiContext, router: Any = None) -> Any:
     router = APIRouter() if router is None else router
     app = ctx.app
     settings = ctx.settings
+    get_store = ctx.get_store
 
     def get_serving_catalog() -> Any:
         if app.state.serving_catalog is None:
-            store = app.state.artifact_store
-            if store is None:
-                store = ArtifactStore.from_settings(settings)
-                app.state.artifact_store = store
+            store = get_store()
             app.state.serving_catalog = S3CourseServingCatalog(store, settings.s3_bucket)
         return app.state.serving_catalog
 

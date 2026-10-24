@@ -15,7 +15,6 @@ from b2c_contracts import (
     ParsedBook,
     stage_key,
 )
-from b2c_core import ArtifactStore
 from b2c_core.source_identity import artifact_source_identity
 from b2c_core.processing_plan import plan_parsed_book
 from b2c_orchestration.indexing import IndexApprovedBookInput, IndexApprovedBookWorkflow
@@ -57,8 +56,8 @@ def ingestion_router(ctx: ApiContext, router: Any = None) -> Any:
     """Register the routes on ``router`` (the app itself in ``create_app``,
     keeping the route table flat and in its original order)."""
     router = APIRouter() if router is None else router
-    app = ctx.app
     settings = ctx.settings
+    get_store = ctx.get_store
     get_temporal_client = ctx.get_temporal_client
     book_progress = ctx.late("book_progress")
     indexing_status = ctx.late("indexing_status")
@@ -78,7 +77,7 @@ def ingestion_router(ctx: ApiContext, router: Any = None) -> Any:
         ref = ArtifactRef.model_validate(parsed)
         if ref.stage != "ingest-parse-pdf" or not ref.uri.startswith(f"s3://{settings.s3_bucket}/") or (course_id and not ref.uri.startswith(f"s3://{settings.s3_bucket}/{course_id}/")):
             raise HTTPException(status_code=503, detail="parsed artifact reference is invalid")
-        store = app.state.artifact_store or ArtifactStore.from_settings(settings); app.state.artifact_store = store
+        store = get_store()
         book = ParsedBook.model_validate_json(await run_in_threadpool(store.read, ref, "parsed-book.json"))
         blocks = book.blocks[offset:offset + limit]
         return {"workflow_id": workflow_id, "book_id": book.book_id, "title": book.title,
@@ -97,8 +96,7 @@ def ingestion_router(ctx: ApiContext, router: Any = None) -> Any:
         except RPCError as exc:
             if exc.status != RPCStatusCode.NOT_FOUND:
                 raise HTTPException(status_code=503, detail="Temporal is unavailable") from exc
-            store = app.state.artifact_store or ArtifactStore.from_settings(settings)
-            app.state.artifact_store = store
+            store = get_store()
             try:
                 recovered = await recover_extraction(store, client, workflow_id, course_id=recovery_course_id)
             except Exception as recovery_exc:
@@ -155,8 +153,7 @@ def ingestion_router(ctx: ApiContext, router: Any = None) -> Any:
             if parsed_ref.stage != "ingest-parse-pdf" or not parsed_ref.uri.startswith(
                     f"s3://{settings.s3_bucket}/{course_id}/"):
                 raise HTTPException(status_code=422, detail="parsed book is outside the requested course")
-            store = app.state.artifact_store or ArtifactStore.from_settings(settings)
-            app.state.artifact_store = store
+            store = get_store()
             parsed = ParsedBook.model_validate_json(await run_in_threadpool(
                 store.read, parsed_ref, "parsed-book.json"))
             progress = await book_progress(course_id, parsed.book_id)
@@ -245,10 +242,7 @@ def ingestion_router(ctx: ApiContext, router: Any = None) -> Any:
             if not outline_result:
                 raise HTTPException(status_code=409, detail="this ingestion has no spine outline")
             ref = ArtifactRef.model_validate(outline_result["ref"])
-            store = app.state.artifact_store
-            if store is None:
-                store = ArtifactStore.from_settings(settings)
-                app.state.artifact_store = store
+            store = get_store()
             outline = CourseOutline.model_validate_json(
                 await run_in_threadpool(store.read, ref, "course-outline.json"))
             return {"outline": outline.model_dump(mode="json"), "artifact": ref.model_dump(mode="json")}
@@ -305,10 +299,7 @@ def ingestion_router(ctx: ApiContext, router: Any = None) -> Any:
         expected_prefix = f"s3://{settings.s3_bucket}/{review.outline.course_id}/"
         if not parsed_ref.uri.startswith(expected_prefix):
             raise HTTPException(status_code=422, detail="spine ParsedBook artifact is outside the approved course")
-        store = app.state.artifact_store
-        if store is None:
-            store = ArtifactStore.from_settings(settings)
-            app.state.artifact_store = store
+        store = get_store()
         try:
             draft = CourseOutline.model_validate_json(
                 await run_in_threadpool(store.read, draft_ref, "course-outline.json")

@@ -13,7 +13,7 @@ from pypdf import PdfReader
 
 from b2c_contracts import Block, BookUpload, PageRef, ParsedBook
 
-from .gemini_tables import GeminiTableError, transcribe_table_png
+from .gemini_tables import DEFAULT_GEMINI_TABLE_MODEL, GeminiTableError, transcribe_table_png
 
 log = logging.getLogger(__name__)
 
@@ -150,6 +150,33 @@ def _run_arabic_ocr_by_page(source: Path, converter: object, page_numbers: set[i
     return results, scale
 
 
+TABLE_BACKEND_DOCLING = "docling-tableformer"
+
+
+def _table_backend_identity(outcomes: list[tuple[int, int, str]], gemini_enabled: bool) -> tuple[str, dict]:
+    """Summarise which backend actually produced each table.
+
+    Returns (summary, config fields). Without Gemini the identity is unchanged
+    ("docling-tableformer", no per-table list). With Gemini enabled, every table
+    records its real outcome so a fallback to Docling is never reported as Gemini.
+    """
+    if not gemini_enabled:
+        return TABLE_BACKEND_DOCLING, {"table_backend": TABLE_BACKEND_DOCLING}
+    backends = sorted({backend for _, _, backend in outcomes})
+    if not backends:
+        summary = "none"
+    elif len(backends) == 1:
+        summary = backends[0]
+    else:
+        counts = {backend: sum(1 for *_, b in outcomes if b == backend) for backend in backends}
+        summary = "mixed:" + ",".join(f"{backend}={counts[backend]}" for backend in backends)
+    return summary, {
+        "table_backend": summary,
+        "table_backend_requested": DEFAULT_GEMINI_TABLE_MODEL,
+        "table_backend_outcomes": [f"{page}:{seq}:{backend}" for page, seq, backend in outcomes],
+    }
+
+
 class DoclingUnavailable(RuntimeError):
     """The OCR extra is not installed in this worker image."""
 
@@ -216,6 +243,7 @@ def parse_pdf_with_docling(
     blocks: list[Block] = []
     sections: list[str] = []
     page_sequences: dict[int, int] = {}
+    table_outcomes: list[tuple[int, int, str]] = []
     headings = 0
 
     for item, depth in document.iterate_items(traverse_pictures=True):
@@ -283,6 +311,9 @@ def parse_pdf_with_docling(
             headings += 1
         seq = page_sequences.get(page_no, 0)
         page_sequences[page_no] = seq + 1
+        if block_type == "table":
+            table_outcomes.append((page_no, seq, DEFAULT_GEMINI_TABLE_MODEL if table_model_used
+                                   else TABLE_BACKEND_DOCLING))
         blocks.append(Block(
             block_id=f"{upload.book_id}:{page_no}:{seq}", type=block_type,
             level=level, text=text,
@@ -291,17 +322,20 @@ def parse_pdf_with_docling(
         ))
     if not blocks:
         raise ValueError("Docling produced no text blocks")
+    table_backend, table_config = _table_backend_identity(table_outcomes, bool(gemini_api_key))
     config = {"backend": "docling", "do_ocr": True, "ocr_language": upload.ocr_language,
               "ocr_backend": "onnxruntime",
               "arabic_rtl_order": "visual-to-logical-ocr-lines-v3" if upload.ocr_language == "ar" else "none",
               "min_page_chars": min_page_chars,
-              "table_backend": "gemini-3.5-flash-lite" if gemini_api_key else "docling-tableformer",
+              **table_config,
               "docling_version": docling.__version__, "pypdf_version": pypdf.__version__}
     return ParsedBook(
         book_id=upload.book_id, title=upload.title, role=upload.role,
         page_count=len(reader.pages), toc_source="headings" if headings else "pdf_outline",
         blocks=blocks,
         parser={"name": "docling-ocr", "version": docling.__version__,
-                "options_hash": hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()},
+                "options_hash": hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest(),
+                # Docling-only parses keep their previous identity exactly.
+                **({"table_backend": table_backend} if gemini_api_key else {})},
     )
 

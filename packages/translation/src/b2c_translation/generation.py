@@ -5,6 +5,7 @@ import re
 import unicodedata
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, create_model
@@ -1165,16 +1166,72 @@ def _translate_adaptive_unit(
     return TranslatedSegment(segment_id=source.segment_id, text=text)
 
 
-def translate_segments(
-    segments: Sequence[SourceSegment], gateway: TranslationGateway, *,
-    source_language: Literal["en", "ar"], target_language: Literal["en", "ar"],
-    glossary: Mapping[str, str] | None = None, max_tokens: int = 8192,
-    batch_size: int = 4,
-    prompt_version: str = "phase7-translation-v4",
-    progress_callback: Callable[[dict[str, object]], None] | None = None,
-    resume_segments: Sequence[TranslatedSegment] = (), validate_target_language_script: bool = True,
-) -> TranslationPack:
-    """Translate in page/lesson-bounded batches, checkpoint valid work, and retry deferred units."""
+_TRANSLATION_SYSTEM_PROMPT = (
+    "Translate the supplied segments faithfully from {source_language} to {target_language}. "
+    "Return exactly one segment for each supplied segment_id. Preserve dates, measurements, proper names, "
+    "citation markers, equations, and list numbering. Copy every protected marker present in each "
+    "source exactly once and in source order. These markers preserve numeric values including "
+    "footnotes, immutable table cells, and unclear source tokens. Never invent marker tokens. "
+    "Keep number words as words. Never add HTML, markup, or source citations absent from supplied text. Do not add explanations, omit facts, "
+    "combine segments, or change identifiers. Use glossary mappings exactly. When context_segments are present, "
+    "use them only to interpret OCR fragments and local meaning; never translate or return context IDs. "
+    "Return only the requested segments as structured data."
+)
+
+
+@dataclass
+class _TranslationRun:
+    """Mutable state of one translate_segments call, shared by its phases."""
+    segments: Sequence[SourceSegment]
+    gateway: TranslationGateway
+    source_language: str
+    target_language: str
+    glossary: Mapping[str, str] | None
+    max_tokens: int
+    prompt_version: str
+    progress_callback: Callable[[dict[str, object]], None] | None
+    validation_target_language: str | None
+    batches: list[list[SourceSegment]]
+    resumed_by_id: dict[str, TranslatedSegment]
+    accepted_by_id: dict[str, TranslatedSegment] = field(default_factory=dict)
+    deferred_batches: list[tuple[int, list[SourceSegment], list[SourceSegment], object,
+                                 list[dict[str, str]], Exception]] = field(default_factory=list)
+    deferred_failures: list[tuple[int, list[SourceSegment], Exception]] = field(default_factory=list)
+    # Units whose bounded adaptive split already failed in this run: never re-run it.
+    adaptive_failures: dict[str, Exception] = field(default_factory=dict)
+    suspect_details: list[dict[str, object]] = field(default_factory=list)
+    source_warnings: list[dict[str, object]] = field(default_factory=list)
+
+    @property
+    def total_batches(self) -> int:
+        return len(self.batches)
+
+    def emit(self, event: str, *, batch_no: int | None = None, with_citations: bool = False,
+             **fields: object) -> None:
+        if self.progress_callback is not None:
+            _emit_translation_checkpoint(self.progress_callback, _checkpoint_payload(
+                event, self.segments, self.accepted_by_id, batch_no=batch_no,
+                total_batches=self.total_batches if batch_no is not None else None,
+                with_citations=with_citations, **fields))
+
+    def unit_kwargs(self, batch_no: int) -> dict[str, object]:
+        """Arguments shared by every model request for one batch."""
+        return {"batch_no": batch_no, "total_batches": self.total_batches, "segments": self.segments,
+                "accepted_by_id": self.accepted_by_id, "max_tokens": self.max_tokens,
+                "prompt_version": self.prompt_version, "progress_callback": self.progress_callback,
+                "target_language": self.validation_target_language}
+
+    def deferred_indexes(self) -> list[int]:
+        return [item[0] + 1 for item in self.deferred_batches]
+
+
+def _plan_translation_run(
+    segments: Sequence[SourceSegment], gateway: TranslationGateway, *, source_language: str,
+    target_language: str, glossary: Mapping[str, str] | None, max_tokens: int, batch_size: int,
+    prompt_version: str, progress_callback: Callable[[dict[str, object]], None] | None,
+    resume_segments: Sequence[TranslatedSegment], validate_target_language_script: bool,
+) -> _TranslationRun:
+    """Planner: validate the request and split it into page/lesson-bounded batches."""
     if source_language == target_language:
         raise ValueError("source and target languages must differ")
     validation_target_language = target_language if validate_target_language_script else None
@@ -1186,238 +1243,221 @@ def translate_segments(
     if batch_size < 1:
         raise ValueError("batch_size must be positive")
     batches = plan_translation_batches(segments, batch_size)
-    total_batches = len(batches)
-    accepted_by_id: dict[str, TranslatedSegment] = {}
-    deferred_batches: list[tuple[int, list[SourceSegment], list[SourceSegment], object, list[dict[str, str]], Exception]] = []
     resumed_by_id = {item.segment_id: item for item in resume_segments}
     if len(resumed_by_id) != len(resume_segments) or set(resumed_by_id) - set(ids):
         raise ValueError("translation checkpoint contains duplicate or unknown segment ids")
-    suspect_details = []
-    for source in segments:
-        saved = resumed_by_id.get(source.segment_id)
+    return _TranslationRun(
+        segments=segments, gateway=gateway, source_language=source_language,
+        target_language=target_language, glossary=glossary, max_tokens=max_tokens,
+        prompt_version=prompt_version, progress_callback=progress_callback,
+        validation_target_language=validation_target_language, batches=batches,
+        resumed_by_id=resumed_by_id,
+    )
+
+
+def _audit_resumed_translations(run: _TranslationRun) -> None:
+    """Resume auditor: accept only saved translations that pass every deterministic check."""
+    for source in run.segments:
+        saved = run.resumed_by_id.get(source.segment_id)
         if saved is not None:
-            issue = translation_completeness_issue(source.text, saved.text, target_language=validation_target_language)
+            issue = translation_completeness_issue(source.text, saved.text, target_language=run.validation_target_language)
             if issue:
-                suspect_details.append({"segment_id": source.segment_id, **issue})
+                run.suspect_details.append({"segment_id": source.segment_id, **issue})
             else:
                 normalized = saved.model_copy(update={"text": _normalize_digit_glyphs(saved.text)})
-                if normalized.text.strip() and _number_tokens(source.text) == _number_tokens(normalized.text) and _table_saved_valid(source.text, normalized.text) and not terminology_violations(source.text, normalized.text, glossary or {}):
-                    accepted_by_id[source.segment_id] = normalized
-    source_warnings = [{"segment_id": source.segment_id, "reason": "unclear_table_token_preserved_verbatim",
-                        "tokens": [match.group(0) for match in _TABLE_LITERAL.finditer(source.text)]}
-                       for source in segments if _recognized_rating_table(source.text) and _TABLE_LITERAL.search(source.text)]
-    if progress_callback is not None:
-        _emit_translation_checkpoint(progress_callback, _checkpoint_payload(
-            "checkpoint_audited", segments, accepted_by_id, source_warnings=source_warnings,
-            suspect_segment_ids=[x["segment_id"] for x in suspect_details],
-            suspect_segments=len(suspect_details), suspect_details=suspect_details,
-            completeness_policy="English prose blocks in Arabic output are rejected; source_chars>=200 and target/source<0.45; conservative triage"))
-    # Units whose bounded adaptive split already failed in this run: never re-run it.
-    adaptive_failures: dict[str, Exception] = {}
+                if normalized.text.strip() and _number_tokens(source.text) == _number_tokens(normalized.text) and _table_saved_valid(source.text, normalized.text) and not terminology_violations(source.text, normalized.text, run.glossary or {}):
+                    run.accepted_by_id[source.segment_id] = normalized
+    run.source_warnings = [{"segment_id": source.segment_id, "reason": "unclear_table_token_preserved_verbatim",
+                            "tokens": [match.group(0) for match in _TABLE_LITERAL.finditer(source.text)]}
+                           for source in run.segments if _recognized_rating_table(source.text) and _TABLE_LITERAL.search(source.text)]
+    run.emit("checkpoint_audited", source_warnings=run.source_warnings,
+             suspect_segment_ids=[x["segment_id"] for x in run.suspect_details],
+             suspect_segments=len(run.suspect_details), suspect_details=run.suspect_details,
+             completeness_policy="English prose blocks in Arabic output are rejected; source_chars>=200 and target/source<0.45; conservative triage")
 
-    for batch_no, batch in enumerate(batches):
-        resumed_items: list[TranslatedSegment] = []
-        for source in batch:
-            saved = resumed_by_id.get(source.segment_id)
-            if saved is None:
-                continue
-            normalized = saved.model_copy(update={"text": _normalize_digit_glyphs(saved.text)})
-            if (normalized.text.strip() and _number_tokens(source.text) == _number_tokens(normalized.text)
-                and translation_completeness_issue(source.text, normalized.text, target_language=validation_target_language) is None and _table_saved_valid(source.text, normalized.text) and not terminology_violations(source.text, normalized.text, glossary or {})):
-                resumed_items.append(normalized)
-        accepted_by_id.update({item.segment_id: item for item in resumed_items})
-        pending = [item for item in batch if item.segment_id not in accepted_by_id]
-        if not pending:
-            if progress_callback is not None:
-                _emit_translation_checkpoint(progress_callback, _checkpoint_payload(
-                    "batch_resumed", segments, accepted_by_id, batch_no=batch_no, total_batches=total_batches,
-                    with_citations=True, current_segment_ids=[],
-                    batch_translations=[accepted_by_id[x.segment_id].model_dump(mode="json") for x in batch],
-                    current_citations=[],
-                ))
-            continue
-        if progress_callback is not None:
-            _emit_translation_checkpoint(progress_callback, _checkpoint_payload(
-                "batch_started", segments, accepted_by_id, batch_no=batch_no, total_batches=total_batches,
-                current_segment_ids=[x.segment_id for x in pending],
-                current_unit=_translation_unit_key(pending[0]),
-                deferred_batches=[item[0] + 1 for item in deferred_batches],
-                failed_segment_ids=[],
-                current_citations=sorted({c for x in pending for c in x.citations}),
-            ))
-        choices = Literal.__getitem__(tuple(item.segment_id for item in pending))
-        item_schema = create_model(f"TranslationItem{batch_no}", __base__=TranslatedSegment,
-                                   segment_id=(choices, ...))
-        schema = create_model(f"TranslationBatch{batch_no}", __base__=_TranslatedPayload,
-                              segments=(list[item_schema], Field(min_length=len(pending), max_length=len(pending))))
-        messages = [
-            {"role": "system", "content": (
-                f"Translate the supplied segments faithfully from {source_language} to {target_language}. "
-                "Return exactly one segment for each supplied segment_id. Preserve dates, measurements, proper names, "
-                "citation markers, equations, and list numbering. Copy every protected marker present in each "
-                "source exactly once and in source order. These markers preserve numeric values including "
-                "footnotes, immutable table cells, and unclear source tokens. Never invent marker tokens. "
-                "Keep number words as words. Never add HTML, markup, or source citations absent from supplied text. Do not add explanations, omit facts, "
-                "combine segments, or change identifiers. Use glossary mappings exactly. When context_segments are present, "
-                "use them only to interpret OCR fragments and local meaning; never translate or return context IDs. "
-                "Return only the requested segments as structured data."
-            )},
-            {"role": "user", "content": __import__("json").dumps({
-                "glossary": dict(glossary or {}),
-                "segments": [item.model_copy(update={"text": _protect_translation_tokens(item.text)}).model_dump(mode="json")
-                             for item in pending],
-            }, ensure_ascii=False)},
-        ]
-        messages = _attach_page_context(messages, segments)
 
-        # Isolate every headed/long original before any combined request.
-        for source in list(pending):
-            if len(source.text) <= 2400 and _leading_heading_split(source.text) is None and not _recognized_rating_table(source.text):
-                continue
-            try:
-                translated = _translate_adaptive_unit(source, gateway, messages,
-                    batch_no=batch_no, total_batches=total_batches, segments=segments,
-                    accepted_by_id=accepted_by_id, max_tokens=max_tokens,
-                    prompt_version=prompt_version, progress_callback=progress_callback, target_language=validation_target_language)
-                accepted_by_id[source.segment_id] = translated
-                if progress_callback is not None:
-                    _emit_translation_checkpoint(progress_callback, _checkpoint_payload(
-                        "batch_completed" if all(x.segment_id in accepted_by_id for x in batch)
-                        else "batch_partial_completed",
-                        segments, accepted_by_id, batch_no=batch_no, total_batches=total_batches,
-                        with_citations=True,
-                        current_segment_ids=[x.segment_id for x in pending if x.segment_id not in accepted_by_id],
-                        current_citations=[],
-                        batch_translations=[accepted_by_id[x.segment_id].model_dump(mode="json")
-                                            for x in batch if x.segment_id in accepted_by_id],
-                        failed_segment_ids=[], recovery_method="adaptive_split",
-                    ))
-            except _RECOVERABLE_ERRORS as exc:
-                # The normal/deferred path still retries this original as a whole unit.
-                adaptive_failures[source.segment_id] = exc
-        pending = [source for source in pending if source.segment_id not in accepted_by_id]
-        if not pending:
+def _resumed_batch_items(run: _TranslationRun, batch: Sequence[SourceSegment]) -> list[TranslatedSegment]:
+    """Resume auditor, per batch: saved items that still pass validation."""
+    resumed_items: list[TranslatedSegment] = []
+    for source in batch:
+        saved = run.resumed_by_id.get(source.segment_id)
+        if saved is None:
             continue
-        schema, messages = _translation_request_subset(schema, messages, pending, batch_no=batch_no)
+        normalized = saved.model_copy(update={"text": _normalize_digit_glyphs(saved.text)})
+        if (normalized.text.strip() and _number_tokens(source.text) == _number_tokens(normalized.text)
+            and translation_completeness_issue(source.text, normalized.text, target_language=run.validation_target_language) is None and _table_saved_valid(source.text, normalized.text) and not terminology_violations(source.text, normalized.text, run.glossary or {})):
+            resumed_items.append(normalized)
+    return resumed_items
+
+
+def _batch_request(run: _TranslationRun, batch_no: int, pending: list[SourceSegment]):
+    """Schema and messages restricted to exactly the pending original segment IDs."""
+    choices = Literal.__getitem__(tuple(item.segment_id for item in pending))
+    item_schema = create_model(f"TranslationItem{batch_no}", __base__=TranslatedSegment,
+                               segment_id=(choices, ...))
+    schema = create_model(f"TranslationBatch{batch_no}", __base__=_TranslatedPayload,
+                          segments=(list[item_schema], Field(min_length=len(pending), max_length=len(pending))))
+    messages = [
+        {"role": "system", "content": _TRANSLATION_SYSTEM_PROMPT.format(
+            source_language=run.source_language, target_language=run.target_language)},
+        {"role": "user", "content": __import__("json").dumps({
+            "glossary": dict(run.glossary or {}),
+            "segments": [item.model_copy(update={"text": _protect_translation_tokens(item.text)}).model_dump(mode="json")
+                         for item in pending],
+        }, ensure_ascii=False)},
+    ]
+    return schema, _attach_page_context(messages, run.segments)
+
+
+def _run_translation_batch(run: _TranslationRun, batch_no: int, batch: list[SourceSegment]) -> None:
+    """Batch runner: resume, isolate long/headed units, request the rest, or defer."""
+    accepted_by_id = run.accepted_by_id
+    accepted_by_id.update({item.segment_id: item for item in _resumed_batch_items(run, batch)})
+    pending = [item for item in batch if item.segment_id not in accepted_by_id]
+    if not pending:
+        run.emit("batch_resumed", batch_no=batch_no, with_citations=True, current_segment_ids=[],
+                 batch_translations=[accepted_by_id[x.segment_id].model_dump(mode="json") for x in batch],
+                 current_citations=[])
+        return
+    run.emit("batch_started", batch_no=batch_no,
+             current_segment_ids=[x.segment_id for x in pending],
+             current_unit=_translation_unit_key(pending[0]),
+             deferred_batches=run.deferred_indexes(),
+             failed_segment_ids=[],
+             current_citations=sorted({c for x in pending for c in x.citations}))
+    schema, messages = _batch_request(run, batch_no, pending)
+    unit_kwargs = run.unit_kwargs(batch_no)
+
+    # Isolate every headed/long original before any combined request.
+    for source in list(pending):
+        if len(source.text) <= 2400 and _leading_heading_split(source.text) is None and not _recognized_rating_table(source.text):
+            continue
         try:
-            if len(pending) == 1 and (len(pending[0].text) > 2400 or _leading_heading_split(pending[0].text) is not None):
-                if pending[0].segment_id in adaptive_failures:
-                    # Same unit, same split: defer instead of repeating identical requests.
-                    raise adaptive_failures[pending[0].segment_id]
-                try:
-                    translated_items = [_translate_adaptive_unit(pending[0], gateway, messages,
-                        batch_no=batch_no, total_batches=total_batches, segments=segments,
-                        accepted_by_id=accepted_by_id, max_tokens=max_tokens,
-                        prompt_version=prompt_version, progress_callback=progress_callback, target_language=validation_target_language)]
-                except _RECOVERABLE_ERRORS as exc:
-                    adaptive_failures[pending[0].segment_id] = exc
-                    raise
-            else:
-                translated_items, _ = _request_translation_batch(
-                    gateway, schema, messages, pending, batch_no=batch_no, total_batches=total_batches,
-                    segments=segments, accepted_by_id=accepted_by_id, max_tokens=max_tokens,
-                    prompt_version=prompt_version, progress_callback=progress_callback, attempts=2, target_language=validation_target_language,
-                    deferred_batch_indexes=[item[0] + 1 for item in deferred_batches], checkpoint_batch=batch)
+            translated = _translate_adaptive_unit(source, run.gateway, messages, **unit_kwargs)
+            accepted_by_id[source.segment_id] = translated
+            run.emit("batch_completed" if all(x.segment_id in accepted_by_id for x in batch)
+                     else "batch_partial_completed",
+                     batch_no=batch_no, with_citations=True,
+                     current_segment_ids=[x.segment_id for x in pending if x.segment_id not in accepted_by_id],
+                     current_citations=[],
+                     batch_translations=[accepted_by_id[x.segment_id].model_dump(mode="json")
+                                         for x in batch if x.segment_id in accepted_by_id],
+                     failed_segment_ids=[], recovery_method="adaptive_split")
         except _RECOVERABLE_ERRORS as exc:
-            pending = [source for source in pending if source.segment_id not in accepted_by_id]
-            schema, messages = _translation_request_subset(schema, messages, pending, batch_no=batch_no)
-            retry_feedback = getattr(exc, "feedback_by_id", {})
-            messages = _attach_retry_feedback(messages, retry_feedback)
-            deferred_batches.append((batch_no, batch, pending, schema, messages, exc))
-            if progress_callback is not None:
-                _emit_translation_checkpoint(progress_callback, _checkpoint_payload(
-                    "batch_deferred", segments, accepted_by_id, batch_no=batch_no, total_batches=total_batches,
-                    current_segment_ids=[], current_citations=[],
-                    deferred_batches=[item[0] + 1 for item in deferred_batches],
-                    deferred_units=[_translation_unit_key(item[2][0]) for item in deferred_batches],
-                    failed_segment_ids=[x.segment_id for x in pending],
-                    failed_units=[_segment_failure_record(source, exc, batch_no=batch_no, attempts=2)
-                                  for source in pending],
-                    last_error_type=type(exc).__name__, last_error_reason=_translation_error_reason(exc),
-                ))
-            continue
-        accepted_by_id.update({item.segment_id: item for item in translated_items})
-        if progress_callback is not None:
-            full_batch = [accepted_by_id[x.segment_id] for x in batch]
-            _emit_translation_checkpoint(progress_callback, _checkpoint_payload(
-                "batch_completed", segments, accepted_by_id, batch_no=batch_no, total_batches=total_batches,
-                with_citations=True, current_segment_ids=[],
-                batch_translations=[x.model_dump(mode="json") for x in full_batch],
-                current_citations=[], deferred_batches=[item[0] + 1 for item in deferred_batches],
-                failed_segment_ids=[],
-            ))
-
-    deferred_failures: list[tuple[int, list[SourceSegment], Exception]] = []
-    for batch_no, batch, pending, schema, messages, initial_error in deferred_batches:
-        for source in pending:
-            if source.segment_id in accepted_by_id:
-                continue
-            unit_schema, unit_messages = _translation_request_subset(
-                schema, messages, [source], batch_no=batch_no)
-            recovery_method = "isolated_deferred_retry"
+            # The normal/deferred path still retries this original as a whole unit.
+            run.adaptive_failures[source.segment_id] = exc
+    pending = [source for source in pending if source.segment_id not in accepted_by_id]
+    if not pending:
+        return
+    schema, messages = _translation_request_subset(schema, messages, pending, batch_no=batch_no)
+    try:
+        if len(pending) == 1 and (len(pending[0].text) > 2400 or _leading_heading_split(pending[0].text) is not None):
+            if pending[0].segment_id in run.adaptive_failures:
+                # Same unit, same split: defer instead of repeating identical requests.
+                raise run.adaptive_failures[pending[0].segment_id]
             try:
-                # A timeout/504 has an unknown upstream outcome. Do not repeat the
-                # exact same source payload; proceed directly to bounded splitting.
-                if getattr(initial_error, "outcome_unknown", False):
-                    raise initial_error
-                translated_items, _ = _request_translation_batch(
-                    gateway, unit_schema, unit_messages, [source], batch_no=batch_no,
-                    total_batches=total_batches, segments=segments, accepted_by_id=accepted_by_id,
-                    max_tokens=max_tokens, prompt_version=prompt_version,
-                    progress_callback=progress_callback, attempts=1, deferred=True,
-                    deferred_batch_indexes=[item[0] + 1 for item in deferred_batches],
-                    checkpoint_batch=batch, target_language=validation_target_language)
-                accepted_by_id.update({item.segment_id: item for item in translated_items})
+                translated_items = [_translate_adaptive_unit(pending[0], run.gateway, messages, **unit_kwargs)]
             except _RECOVERABLE_ERRORS as exc:
-                if _is_bibliographic_fragment(source.text):
-                    accepted_by_id[source.segment_id] = TranslatedSegment(
-                        segment_id=source.segment_id, text=source.text)
-                    recovery_method = "source_preserved_reference"
-                elif len(source.text) < 120 and _leading_heading_split(source.text) is None and not _recognized_rating_table(source.text):
-                    deferred_failures.append((batch_no, [source], exc))
-                    continue
-                elif source.segment_id in adaptive_failures:
-                    deferred_failures.append((batch_no, [source], exc))
-                else:
-                    try:
-                        translated = _translate_adaptive_unit(
-                            source, gateway, unit_messages, batch_no=batch_no,
-                            total_batches=total_batches, segments=segments,
-                            accepted_by_id=accepted_by_id, max_tokens=max_tokens,
-                            prompt_version=prompt_version, progress_callback=progress_callback,
-                            target_language=validation_target_language)
-                        accepted_by_id[source.segment_id] = translated
-                        recovery_method = "adaptive_split"
-                    except _RECOVERABLE_ERRORS as adaptive_exc:
-                        adaptive_failures[source.segment_id] = adaptive_exc
-                        deferred_failures.append((batch_no, [source], adaptive_exc))
+                run.adaptive_failures[pending[0].segment_id] = exc
+                raise
+        else:
+            translated_items, _ = _request_translation_batch(
+                run.gateway, schema, messages, pending, attempts=2,
+                deferred_batch_indexes=run.deferred_indexes(), checkpoint_batch=batch, **unit_kwargs)
+    except _RECOVERABLE_ERRORS as exc:
+        pending = [source for source in pending if source.segment_id not in accepted_by_id]
+        schema, messages = _translation_request_subset(schema, messages, pending, batch_no=batch_no)
+        messages = _attach_retry_feedback(messages, getattr(exc, "feedback_by_id", {}))
+        run.deferred_batches.append((batch_no, batch, pending, schema, messages, exc))
+        run.emit("batch_deferred", batch_no=batch_no,
+                 current_segment_ids=[], current_citations=[],
+                 deferred_batches=run.deferred_indexes(),
+                 deferred_units=[_translation_unit_key(item[2][0]) for item in run.deferred_batches],
+                 failed_segment_ids=[x.segment_id for x in pending],
+                 failed_units=[_segment_failure_record(source, exc, batch_no=batch_no, attempts=2)
+                               for source in pending],
+                 last_error_type=type(exc).__name__, last_error_reason=_translation_error_reason(exc))
+        return
+    accepted_by_id.update({item.segment_id: item for item in translated_items})
+    if run.progress_callback is not None:
+        full_batch = [accepted_by_id[x.segment_id] for x in batch]
+        run.emit("batch_completed", batch_no=batch_no, with_citations=True, current_segment_ids=[],
+                 batch_translations=[x.model_dump(mode="json") for x in full_batch],
+                 current_citations=[], deferred_batches=run.deferred_indexes(),
+                 failed_segment_ids=[])
 
-            # A deferred retry is isolated per source unit. Commit each repaired
-            # unit immediately so a later failure or restart cannot replay it.
-            if source.segment_id in accepted_by_id and progress_callback is not None:
-                completed_items = [accepted_by_id[item.segment_id] for item in batch
-                                   if item.segment_id in accepted_by_id]
-                _emit_translation_checkpoint(progress_callback, _checkpoint_payload(
-                    "batch_completed" if len(completed_items) == len(batch) else "batch_partial_completed",
-                    segments, accepted_by_id, batch_no=batch_no, total_batches=total_batches,
-                    with_citations=True, current_segment_ids=[], current_citations=[],
-                    batch_translations=[item.model_dump(mode="json") for item in completed_items],
-                    recovery_method=recovery_method, failed_segment_ids=[],
-                ))
+
+def _recover_deferred_unit(run: _TranslationRun, batch_no: int, batch: list[SourceSegment], source: SourceSegment,
+                           schema, messages, initial_error: Exception) -> None:
+    """Deferred recovery for one original: isolated retry, reference passthrough, or adaptive split."""
+    accepted_by_id = run.accepted_by_id
+    unit_schema, unit_messages = _translation_request_subset(schema, messages, [source], batch_no=batch_no)
+    unit_kwargs = run.unit_kwargs(batch_no)
+    recovery_method = "isolated_deferred_retry"
+    try:
+        # A timeout/504 has an unknown upstream outcome. Do not repeat the
+        # exact same source payload; proceed directly to bounded splitting.
+        if getattr(initial_error, "outcome_unknown", False):
+            raise initial_error
+        translated_items, _ = _request_translation_batch(
+            run.gateway, unit_schema, unit_messages, [source], attempts=1, deferred=True,
+            deferred_batch_indexes=run.deferred_indexes(), checkpoint_batch=batch, **unit_kwargs)
+        accepted_by_id.update({item.segment_id: item for item in translated_items})
+    except _RECOVERABLE_ERRORS as exc:
+        if _is_bibliographic_fragment(source.text):
+            accepted_by_id[source.segment_id] = TranslatedSegment(
+                segment_id=source.segment_id, text=source.text)
+            recovery_method = "source_preserved_reference"
+        elif len(source.text) < 120 and _leading_heading_split(source.text) is None and not _recognized_rating_table(source.text):
+            run.deferred_failures.append((batch_no, [source], exc))
+            return
+        elif source.segment_id in run.adaptive_failures:
+            run.deferred_failures.append((batch_no, [source], exc))
+        else:
+            try:
+                translated = _translate_adaptive_unit(source, run.gateway, unit_messages, **unit_kwargs)
+                accepted_by_id[source.segment_id] = translated
+                recovery_method = "adaptive_split"
+            except _RECOVERABLE_ERRORS as adaptive_exc:
+                run.adaptive_failures[source.segment_id] = adaptive_exc
+                run.deferred_failures.append((batch_no, [source], adaptive_exc))
+
+    # A deferred retry is isolated per source unit. Commit each repaired
+    # unit immediately so a later failure or restart cannot replay it.
+    if source.segment_id in accepted_by_id and run.progress_callback is not None:
+        completed_items = [accepted_by_id[item.segment_id] for item in batch
+                           if item.segment_id in accepted_by_id]
+        run.emit("batch_completed" if len(completed_items) == len(batch) else "batch_partial_completed",
+                 batch_no=batch_no, with_citations=True, current_segment_ids=[], current_citations=[],
+                 batch_translations=[item.model_dump(mode="json") for item in completed_items],
+                 recovery_method=recovery_method, failed_segment_ids=[])
+
+
+def _recover_deferred_batches(run: _TranslationRun) -> None:
+    """Deferred recovery: retry each still-missing original of every deferred batch."""
+    for batch_no, batch, pending, schema, messages, initial_error in run.deferred_batches:
+        for source in pending:
+            if source.segment_id in run.accepted_by_id:
+                continue
+            _recover_deferred_unit(run, batch_no, batch, source, schema, messages, initial_error)
+    deferred_failures = run.deferred_failures
     if deferred_failures:
         failed_segment_ids = [segment.segment_id for _, pending, _ in deferred_failures for segment in pending]
-        if progress_callback is not None:
-            _emit_translation_checkpoint(progress_callback, _checkpoint_payload(
-                "batch_failed", segments, accepted_by_id, batch_no=deferred_failures[-1][0],
-                total_batches=total_batches, current_segment_ids=[], current_citations=[],
-                deferred_batches=[batch_no + 1 for batch_no, _, _ in deferred_failures],
-                deferred_units=[_translation_unit_key(pending[0]) for _, pending, _ in deferred_failures],
-                failed_segment_ids=failed_segment_ids,
-                failed_units=[_segment_failure_record(source, exc, batch_no=batch_no, attempts=1)
-                              for batch_no, pending, exc in deferred_failures for source in pending],
-                last_error_type=type(deferred_failures[-1][2]).__name__,
-                last_error_reason=_translation_error_reason(deferred_failures[-1][2]),
-            ))
+        run.emit("batch_failed", batch_no=deferred_failures[-1][0],
+                 current_segment_ids=[], current_citations=[],
+                 deferred_batches=[batch_no + 1 for batch_no, _, _ in deferred_failures],
+                 deferred_units=[_translation_unit_key(pending[0]) for _, pending, _ in deferred_failures],
+                 failed_segment_ids=failed_segment_ids,
+                 failed_units=[_segment_failure_record(source, exc, batch_no=batch_no, attempts=1)
+                               for batch_no, pending, exc in deferred_failures for source in pending],
+                 last_error_type=type(deferred_failures[-1][2]).__name__,
+                 last_error_reason=_translation_error_reason(deferred_failures[-1][2]))
+
+
+def _finish_translation_run(run: _TranslationRun) -> TranslationPack:
+    """Coverage check, passthrough/suspect accounting, final checkpoint and pack."""
+    accepted_by_id, deferred_failures = run.accepted_by_id, run.deferred_failures
+    ids = [segment.segment_id for segment in run.segments]
     missing_ids = [segment_id for segment_id in ids if segment_id not in accepted_by_id]
     failed_ids = [segment.segment_id for _, pending, _ in deferred_failures for segment in pending]
     if set(missing_ids) != set(failed_ids):
@@ -1427,28 +1467,48 @@ def translate_segments(
     # one) is not a translation. Keep it, but never report the pack as completed:
     # it is surfaced as partial + suspect for review. TranslationPack.status only
     # allows completed/partial, so no new status value is introduced.
-    passthrough_ids = [segment.segment_id for segment in segments
+    passthrough_ids = [segment.segment_id for segment in run.segments
                        if segment.segment_id in accepted_by_id
                        and accepted_by_id[segment.segment_id].text.strip() == segment.text.strip()
                        and _is_bibliographic_fragment(segment.text)]
-    suspect_ids = [detail["segment_id"] for detail in suspect_details if detail["segment_id"] in missing_ids]
+    suspect_ids = [detail["segment_id"] for detail in run.suspect_details if detail["segment_id"] in missing_ids]
     suspect_ids += [segment_id for segment_id in passthrough_ids if segment_id not in suspect_ids]
     incomplete = bool(missing_ids or passthrough_ids)
-    if progress_callback is not None:
-        _emit_translation_checkpoint(progress_callback, _checkpoint_payload(
-            "translation_partial" if incomplete else "translation_completed", segments, accepted_by_id,
-            total_segments=len(ids),
-            missing_segment_ids=missing_ids, retry_segment_ids=missing_ids,
-            failed_segment_ids=failed_ids, suspect_segment_ids=suspect_ids,
-            source_preserved_segment_ids=passthrough_ids,
-            failed_units=[_segment_failure_record(source, exc, batch_no=batch_no, attempts=1)
-                          for batch_no, pending, exc in deferred_failures for source in pending],
-            current_segment_ids=[], current_citations=[]))
-    return TranslationPack(source_language=source_language, target_language=target_language,
-                          model_id=gateway.model_id, segments=accepted,
+    run.emit("translation_partial" if incomplete else "translation_completed",
+             total_segments=len(ids),
+             missing_segment_ids=missing_ids, retry_segment_ids=missing_ids,
+             failed_segment_ids=failed_ids, suspect_segment_ids=suspect_ids,
+             source_preserved_segment_ids=passthrough_ids,
+             failed_units=[_segment_failure_record(source, exc, batch_no=batch_no, attempts=1)
+                           for batch_no, pending, exc in deferred_failures for source in pending],
+             current_segment_ids=[], current_citations=[])
+    return TranslationPack(source_language=run.source_language, target_language=run.target_language,
+                          model_id=run.gateway.model_id, segments=accepted,
                           status="partial" if incomplete else "completed", total_segments=len(ids),
                           missing_segment_ids=missing_ids, failed_segment_ids=failed_ids,
                           suspect_segment_ids=suspect_ids,
                           deterministic_checks={"all_segments_covered": not missing_ids, "number_checks": len(accepted),
-                                                "unclear_table_tokens": sum(len(warning["tokens"]) for warning in source_warnings),
+                                                "unclear_table_tokens": sum(len(warning["tokens"]) for warning in run.source_warnings),
                                                 "source_preserved_references": len(passthrough_ids)})
+
+
+def translate_segments(
+    segments: Sequence[SourceSegment], gateway: TranslationGateway, *,
+    source_language: Literal["en", "ar"], target_language: Literal["en", "ar"],
+    glossary: Mapping[str, str] | None = None, max_tokens: int = 8192,
+    batch_size: int = 4,
+    prompt_version: str = "phase7-translation-v4",
+    progress_callback: Callable[[dict[str, object]], None] | None = None,
+    resume_segments: Sequence[TranslatedSegment] = (), validate_target_language_script: bool = True,
+) -> TranslationPack:
+    """Translate in page/lesson-bounded batches, checkpoint valid work, and retry deferred units."""
+    run = _plan_translation_run(
+        segments, gateway, source_language=source_language, target_language=target_language,
+        glossary=glossary, max_tokens=max_tokens, batch_size=batch_size, prompt_version=prompt_version,
+        progress_callback=progress_callback, resume_segments=resume_segments,
+        validate_target_language_script=validate_target_language_script)
+    _audit_resumed_translations(run)
+    for batch_no, batch in enumerate(run.batches):
+        _run_translation_batch(run, batch_no, batch)
+    _recover_deferred_batches(run)
+    return _finish_translation_run(run)

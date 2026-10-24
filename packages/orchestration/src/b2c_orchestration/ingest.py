@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import os
 import tempfile
@@ -23,6 +24,7 @@ with workflow.unsafe.imports_passed_through():
         OCRRequired, UnsupportedPDF, SuryaUnavailable, parse_pdf_book,
         parse_pdf_with_docling, parse_pdf_with_surya, parse_pdf_with_openrouter,
     )
+    from b2c_ingest.openrouter_ocr import OCR_PROMPT_VERSION
     from b2c_outline import InferredSection, OutlineUnavailable, outline_from_book
 
     from .heartbeat import LONG_ACTIVITY_HEARTBEAT_TIMEOUT, activity_heartbeats
@@ -31,6 +33,14 @@ with workflow.unsafe.imports_passed_through():
 
 STAGE = "ingest-parse-pdf"
 STAGE_VERSION = "6"
+OUTLINE_STAGE = "build-outline"
+OUTLINE_STAGE_VERSION = "4"
+
+
+def _gemini_table_model() -> str:
+    """The Gemini model the table adapter actually calls (its default argument)."""
+    from b2c_ingest import gemini_tables
+    return str(inspect.signature(gemini_tables.transcribe_table_png).parameters["model"].default)
 
 
 @dataclass
@@ -50,15 +60,18 @@ class IngestPDFActivities:
     gemini_api_key_file: str | None = None
     gateway: Any | None = None
 
-    def _record(self, ref: ArtifactRef, source_uri: str) -> None:
+    def _record(self, ref: ArtifactRef, source_uri: str, ocr_engine: str) -> None:
         if self.prov is None:
             return
+        # The agent is the engine this run actually used (inp.ocr_engine may
+        # override the worker default), not the worker environment.
         activity_record = self.prov.start_activity(
             stage=STAGE, stage_version=STAGE_VERSION,
-            agent=(self.gateway.model_id if os.getenv("B2C_OCR_ENGINE", "rapidocr").strip().lower() == "openrouter" and self.gateway else
-                   "surya-2-llama.cpp" if os.getenv("B2C_OCR_ENGINE", "rapidocr").strip().lower() == "surya" else
+            agent=(self.gateway.model_id if ocr_engine == "openrouter" and self.gateway else
+                   "surya-2-llama.cpp" if ocr_engine == "surya" else
                    "docling-rapidocr"),
-            prompt_version=None, activity_id=f"act:{STAGE}:{ref.key[:16]}",
+            prompt_version=OCR_PROMPT_VERSION if ocr_engine == "openrouter" else None,
+            activity_id=f"act:{STAGE}:{ref.key[:16]}",
         )
         self.prov.used(activity_record, source_uri)
         self.prov.derived(ref.uri, source_uri)
@@ -114,6 +127,20 @@ class IngestPDFActivities:
             "upload": upload.model_dump(mode="json"),
             "cache_bust": inp.cache_bust,
         }
+        # Model identities only enter the key when that model is used, so the
+        # default local (rapidocr, no Gemini) cache keys stay unchanged.
+        openrouter_max_tokens = 0
+        if ocr_engine == "openrouter":
+            try:
+                openrouter_max_tokens = int(os.getenv("B2C_OPENROUTER_OCR_MAX_TOKENS", "12000"))
+            except ValueError as exc:
+                raise ApplicationError("B2C_OPENROUTER_OCR_MAX_TOKENS must be an integer",
+                                       type="InvalidOpenRouterOCRConfig", non_retryable=True) from exc
+            config["ocr_model_id"] = getattr(self.gateway, "model_id", None)
+            config["ocr_max_tokens"] = openrouter_max_tokens
+            config["ocr_prompt_version"] = OCR_PROMPT_VERSION
+        if self.gemini_api_key_file and ocr_engine != "surya":
+            config["gemini_table_model"] = _gemini_table_model()
         key = stage_key(STAGE, STAGE_VERSION, [input_sha], config)
 
         def compute() -> dict[str, bytes]:
@@ -146,7 +173,7 @@ class IngestPDFActivities:
                                     type="GeminiKeyUnavailable", non_retryable=True)
                         parsed = parse_pdf_with_openrouter(upload, path, gateway=self.gateway,
                             gemini_api_key=gemini_key,
-                            max_tokens=int(os.getenv("B2C_OPENROUTER_OCR_MAX_TOKENS", "12000")))
+                            max_tokens=openrouter_max_tokens)
                     elif ocr_engine == "surya":
                         try:
                             parsed = parse_pdf_book(upload, path)
@@ -193,7 +220,7 @@ class IngestPDFActivities:
         )
         parsed = ParsedBook.model_validate_json(self.store.read(ref, "parsed-book.json"))
         if not cache_hit:
-            self._record(ref, source.uri)
+            self._record(ref, source.uri, ocr_engine)
         activity.logger.info("PDF parsed", extra={
             "stage": STAGE, "book_id": upload.book_id, "key": ref.key,
             "page_count": parsed.page_count, "blocks": len(parsed.blocks), "cache_hit": cache_hit,
@@ -302,7 +329,7 @@ class OutlineActivities:
         inferred = any(lesson.provenance == "llm_inferred"
                        for module in outline.modules for lesson in module.lessons)
         activity_record = self.prov.start_activity(
-            stage="build-outline", stage_version="3",
+            stage=OUTLINE_STAGE, stage_version=OUTLINE_STAGE_VERSION,
             agent=(getattr(self.gateway, "model_id", "outline-inference") if inferred else "deterministic-outline-v1"),
             prompt_version=OUTLINE_PROMPT_VERSION if inferred else None,
             activity_id=f"act:build-outline:{ref.key[:16]}",
@@ -327,7 +354,7 @@ class OutlineActivities:
                   "cache_bust": inp.cache_bust,
                   "inference_model": inference_model,
                   "prompt_version": OUTLINE_PROMPT_VERSION if inference_model else None}
-        key = stage_key("build-outline", "4", [parsed_ref.sha256], config)
+        key = stage_key(OUTLINE_STAGE, OUTLINE_STAGE_VERSION, [parsed_ref.sha256], config)
 
         def compute() -> dict[str, bytes]:
             try:

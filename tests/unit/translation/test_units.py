@@ -501,6 +501,13 @@ def test_run_of_short_form_notes_is_reference_list():
         assert kinds(pb, f"{BOOK}:370:{i}") == ["reference"]
 
 
+def test_numbered_method_steps_are_not_endnotes():
+    text = ("5. Analyze direct impacts. Document the impact of each variable, starting with the first.\n"
+            "6. Analyze loops and indirect impacts. The matrix shows only the direct effect of one variable.")
+    pb = book(blk(643, 0, text))
+    assert set(kinds(pb, f"{BOOK}:643:0")) <= {"prose", "list_item"}
+
+
 def test_ibid_with_commentary_is_a_footnote():
     pb = book(blk(360, 0, "Ibid., 11. A rich engagement with common sense is offered in this later study of rural life.",
                   "list_item"))
@@ -545,6 +552,34 @@ def test_quantity_enumerations_are_not_markers():
                         "and 2 points for the third."))
     us = units_of(pb, f"{BOOK}:1:0")
     assert [m for u in us for m in u.footnote_markers] == ["1"]
+
+
+def test_two_markers_on_one_spot_and_marker_after_decade():
+    pb = book(blk(1, 0, "Biases were described in the early1970s.1 Analysts focus on the vivid case.2,3 "
+                        "Deceivers know it."))
+    got = markers_and_text(pb, f"{BOOK}:1:0")
+    assert got[0] == ("Biases were described in the early1970s.", ["1"])
+    assert got[1] == ("Analysts focus on the vivid case.", ["2", "3"])
+
+
+def test_example_labels_and_journal_volumes_are_not_markers():
+    pb = book(blk(1, 0, "Claim one.1 Claim two.2 Example 3: Analysts review the data. See the journal "
+                        "Foresight 4, no. 1 (March 2007) and Studies 4 (2012): 24-41."))
+    us = units_of(pb, f"{BOOK}:1:0")
+    assert [m for u in us for m in u.footnote_markers] == ["1", "2"]
+
+
+def test_marker_after_closing_quote_never_leaves_a_quote_only_unit():
+    long = "This sentence is long enough to fill most of the unit budget on its own, " * 4
+    pb = book(blk(1, 0, f"{long}and it ends the quotation here.' 1 Next sentence follows."))
+    us = units_of(pb, f"{BOOK}:1:0", max_unit_chars=320)
+    assert all(re.search(r"\w", u.source_text) for u in us)
+    assert any(u.footnote_markers == ["1"] and u.source_text.endswith("here.'") for u in us)
+
+
+def test_flattened_matrix_cell_coordinates_are_not_markers():
+    pb = book(blk(182, 0, "The scores are as follows: nil; nil; D,1; E,1; F,1; 1;\nand 5. The rest follows."))
+    assert all(u.footnote_markers == [] for u in units_of(pb, f"{BOOK}:182:0"))
 
 
 def test_spaced_marker_after_quote_or_word_only_as_next_number():

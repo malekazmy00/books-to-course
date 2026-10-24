@@ -584,7 +584,10 @@ def _classify(chunks: list[_Chunk]) -> None:
                     break
                 expected += 1
                 j += 1
-            if j - k >= 2:
+            cited = sum(_citation_score(_NOTE_LABEL.sub("", c.text, count=1)) >= 2 for c in flow[k:j])
+            # numbered method steps ("5. Analyze direct impacts.") are sequential too; endnotes
+            # are told apart by their citations
+            if j - k >= 2 and cited * 2 >= j - k:
                 for c in flow[k:j]:
                     c.notes_context = True
                     if c.kind != "reference":
@@ -690,7 +693,7 @@ def _heading_key(text: str) -> str:
 
 # ----------------------------------------------------------------------------- footnote markers
 _GLUED_PUNCT = re.compile(
-    r"(?P<pre>(?:[A-Za-z][’”\"']*|[)\]]))[.,;:!?][’”\"')\]]*(?P<num>\d{1,3})(?=\s|$|[,;])")
+    r"(?P<pre>(?:[A-Za-z][’”\"']*|[)\]]))[.,;:!?][’”\"')\]]*(?P<num>\d{1,3})(?:,(?P<num2>\d{1,3}))?(?=\s|$|[,;])")
 _GLUED_DIGIT = re.compile(r"(?<=\d)[.;,:](?P<num>\d{1,3})(?=\s+[“‘\"'(\[]?[A-Z]|\s*$)")
 _GLUED_LETTER = re.compile(r"(?<![A-Za-z])(?P<word>[A-Za-z]*[a-z]{3})(?P<num>\d{1,3})(?=\s|$|[,;.])")
 _SPACED = re.compile(r"(?P<pre>[A-Za-z’”\"')\]][.!?;:][’”\"')\]]*)(?P<sp>\s)(?P<num>\d{1,3})(?=\s+[“‘\"'(\[]?[A-Z]|\s*$)")
@@ -709,6 +712,8 @@ _NUMBER_CONTEXT_WORDS = frozenset(
     "types system systems model models class grade grades version versions edition editions issue issues "
     "book books note notes footnote ftn appendix q sec art para paras col cols room flight route "
     "year years day days week weeks month months hour hours minute minutes age aged ages "
+    "example examples case cases scenario scenarios option options exercise exercises hypothesis "
+    "zero one two three four five six seven eight nine ten score scores rating ratings value values "
     "january february march april may june july august september october november december".split())
 # "', 10 for the concept" — a note after a clause; only accepted as the very next note number
 _SPACED_CLAUSE = re.compile(r"(?<=[A-Za-z’”\"')\]][,;:])(?:[’”\"')\]]*)(?P<sp>\s)(?P<num>\d{1,3})(?=\s+[a-z])")
@@ -753,10 +758,15 @@ def _marker_candidates(text: str) -> list[tuple[int, int, int, str, bool]]:
     for m in _SUPERSCRIPT.finditer(text):
         add(m.start("num"), m.end("num"), m.group("num"), True)
     for m in _GLUED_PUNCT.finditer(text):
-        word = re.search(r"(?<![A-Za-z])([A-Za-z]+)[’”\"']*$", text[: m.end("pre")])
-        if word and word.group(1).lower() in _ABBREV_BEFORE_NUMBER:
+        word = re.search(r"(?<![A-Za-z0-9])([A-Za-z0-9]+)[’”\"']*$", text[: m.end("pre")])
+        if word and (word.group(1).lower() in _ABBREV_BEFORE_NUMBER or len(word.group(1)) == 1):
+            continue  # "p.12", and cell coordinates such as "D,1; E,1" in flattened matrices
+        end = m.end("num2") if m.group("num2") else m.end("num")
+        if text[end:end + 1] in (",", ";"):
             continue
         add(m.start("num"), m.end("num"), m.group("num"), True)
+        if m.group("num2"):  # "possibility.26,27 Digital" — two notes on one spot
+            add(m.start("num2") - 1, m.end("num2"), m.group("num2"), True)
     for m in _SPACED_WEAK.finditer(text):
         prev_word = re.search(r"([A-Za-z]+|\d+)[^A-Za-z\d]*$", text[: m.start("sp")])
         after = re.match(r"\s+([a-z]+)", text[m.end("num"):])
@@ -766,6 +776,8 @@ def _marker_candidates(text: str) -> list[tuple[int, int, int, str, bool]]:
             continue  # "1992, 1996" lists; only a year closing a clause may carry a note
         if after and after.group(1) in _QUANTITY_WORDS:
             continue
+        if re.match(r"\s*(?::|,\s*no\.|\(\d{4}\)|\.\d)", text[m.end("num"):]):
+            continue  # "Example 3: ...", journal volumes "Foresight 9, no. 1", "Studies 5 (2012)"
         add(m.start("sp"), m.end("num"), m.group("num"), "next")
     for m in _SPACED_CLAUSE.finditer(text):
         before = text[max(0, m.start() - 60): m.start()]
@@ -846,7 +858,9 @@ def _sentence_spans(text: str, start: int, end: int) -> list[tuple[int, int]]:
     merged: list[tuple[int, int]] = []
     for a, b in spans:
         nxt = text[a:b].lstrip()[:1]
-        if merged and _NO_SPLIT_AFTER.search(text[merged[-1][0]:merged[-1][1]]) and (nxt.isdigit() or nxt.islower()):
+        if merged and not re.search(r"\w", text[a:b]):  # a stray closing quote/bracket
+            merged[-1] = (merged[-1][0], b)
+        elif merged and _NO_SPLIT_AFTER.search(text[merged[-1][0]:merged[-1][1]]) and (nxt.isdigit() or nxt.islower()):
             merged[-1] = (merged[-1][0], b)
         else:
             merged.append((a, b))
@@ -1154,7 +1168,7 @@ def _pieces(text: str, kind: str, markers: list[tuple[int, str, str]], limit: in
             continue
         if cur_a is None:
             cur_a, cur_b = a, b
-        elif len(text[cur_a:b].strip()) <= limit:
+        elif len(text[cur_a:b].strip()) <= limit or not re.search(r"\w", text[a:b]):
             cur_b = b
         else:
             yield cur_a, cur_b, [], []

@@ -14,7 +14,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION = "1.2.0"
+SCHEMA_VERSION = "1.2.1"
 
 
 class Contract(BaseModel):
@@ -404,8 +404,8 @@ class UnitTranslation(Contract):
             if self.target_text:
                 raise ValueError("dropped units carry no target text")
             return self
-        if not self.target_text.strip():
-            raise ValueError("target_text must not be blank unless the unit is dropped")
+        if not self.target_text.strip() and self.decision != "rejected":
+            raise ValueError("target_text must not be blank unless the unit is dropped or rejected")
         if self.decision == "accepted":
             if any(issue.severity in ("critical", "major") for issue in self.issues):
                 raise ValueError("accepted translations cannot carry major or critical issues")

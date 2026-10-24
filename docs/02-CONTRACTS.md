@@ -1,6 +1,6 @@
 # 02 — العقود بين الطبقات (Layer Contracts)
 
-المصدر الوحيد للحقيقة هو `packages/contracts/src/b2c_contracts/models.py` (SCHEMA_VERSION 1.2.0).
+المصدر الوحيد للحقيقة هو `packages/contracts/src/b2c_contracts/models.py` (SCHEMA_VERSION 1.2.1).
 الوثيقة دي بتشرح **إزاي** كل طبقة بتسلّم للطبقة اللي بعدها. والتعريفات نفسها موجودة في الكود.
 
 > الكود ده اتشغّل واتختبر: `tests/contract/test_contracts_invariants.py` ونتيجته 8 passed. الاختبارات دي بتتأكد من القيود الأساسية (negative controls).
@@ -89,7 +89,7 @@ s3://artifacts/{course_id}/{stage}/{key}/<files>
 `UnitTranslation` نتيجة الوحدة. ثوابت يفرضها العقد:
 - `accepted` لا يحمل أي `QAIssue` بخطورة major/critical.
 - مخرج المحرك (`origin=engine`) لا يُقبل بقرار `policy` إلا ومعه `qe` (فحص دلالي). بدون QE تكون الحالة `needs_review`.
-- ترجمة بشرية تُقبل بقرار `human` فقط. `dropped` بلا نص.
+- ترجمة بشرية تُقبل بقرار `human` فقط. `dropped` بلا نص، و`rejected` قد يكون بلا نص (1.2.1: المحرك لم يُرجع شيئًا صالحًا).
 ```json
 {"schema_version":"1.2.0","unit_id":"bk_stats:u00412",
  "target_text":"الوسيط أقل تأثرًا بالقيم المتطرفة من الوسط الحسابي.12",

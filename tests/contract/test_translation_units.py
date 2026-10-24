@@ -69,9 +69,13 @@ def test_dropped_units_have_no_target():
         translation(origin="rule", engine=None, qe=None, target_text="x", decision="dropped")
 
 
-def test_non_dropped_units_need_target_text():
+def test_units_for_review_or_acceptance_need_target_text():
     with pytest.raises(ValidationError):
         translation(target_text="  ", decision="needs_review")
+    with pytest.raises(ValidationError):
+        translation(target_text="  ")
+    # a rejection may have nothing usable at all (e.g. the engine returned nothing)
+    translation(target_text="", decision="rejected", qe=None)
 
 
 def test_human_acceptance_is_explicit():

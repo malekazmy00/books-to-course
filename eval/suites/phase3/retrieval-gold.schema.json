@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://b2c.local/eval/retrieval-gold/1.0",
+  "title": "B2C retrieval qrel JSONL row",
+  "description": "Human-adjudicated rows are eligible for gold evaluation. model_auto_validated rows are pseudo-qrels for self-consistency diagnostics only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "query_id", "query", "split", "question_type", "qrels", "query_adjudication"],
+  "properties": {
+    "schema_version": {"const": "b2c-retrieval-gold/1.0"},
+    "query_id": {"type": "string", "minLength": 1},
+    "query": {"type": "string", "minLength": 8},
+    "split": {"enum": ["development", "test"]},
+    "question_type": {"enum": ["direct", "paraphrase", "definition", "formula", "example", "cross_book", "unanswerable"]},
+    "qrels": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["chunk_id", "relevance", "book_id", "role", "pages", "evidence_quote", "adjudication"],
+        "properties": {
+          "chunk_id": {"type": "string", "minLength": 1},
+          "relevance": {"type": "integer", "minimum": 1, "maximum": 3},
+          "book_id": {"type": "string", "minLength": 1},
+          "role": {"enum": ["spine", "supplementary"]},
+          "pages": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "integer", "minimum": 1}},
+          "evidence_quote": {"type": "string", "minLength": 12},
+          "adjudication": {"enum": ["human_adjudicated", "pending", "model_auto_validated"]},
+          "reviewer_id": {"type": "string", "minLength": 1},
+          "review_note": {"type": "string"}
+        }
+      }
+    },
+    "unanswerable_reason": {"type": "string", "minLength": 8},
+    "query_adjudication": {"enum": ["human_adjudicated", "pending", "model_auto_validated"]},
+    "label_origin": {"enum": ["human_adjudication", "phase5_course_qa_auto_validated"]},
+    "generation_scope_id": {"type": "string", "minLength": 1},
+    "generation_model_id": {"type": "string", "minLength": 1},
+    "generation_prompt_version": {"type": "string", "minLength": 1},
+    "generation_course_status": {"enum": ["final", "failed"]},
+    "reviewer_id": {"type": "string", "minLength": 1},
+    "source_manifest_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+  },
+  "allOf": [
+    {"if": {"properties": {"question_type": {"const": "unanswerable"}}}, "then": {"properties": {"qrels": {"maxItems": 0}}, "required": ["unanswerable_reason"]}},
+    {"if": {"properties": {"question_type": {"const": "cross_book"}}}, "then": {"properties": {"qrels": {"minItems": 2}}}}
+  ]
+}

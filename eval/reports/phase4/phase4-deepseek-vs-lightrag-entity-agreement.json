@@ -1,0 +1,47 @@
+{
+  "schema": "b2c-phase4-independent-entity-agreement/1.0",
+  "status": "diagnostic_only",
+  "gold_eligible": false,
+  "reference_labels": "mercury-2 source-grounded automatic labels; exact source quotes validated; not human gold",
+  "candidate_labels": "LightRAG full_entities by source document",
+  "comparison": "normalized exact-name agreement within the same source chunk; normalization=NFKC, casefold, punctuation-to-space",
+  "labels_sha256": "9e1c229fceebbf826960b9ee36b60615dcaffc63d58e6fa38573335b7ac9e7c8",
+  "lightrag_store_file_sha256": {
+    "kv_store_doc_status.json": "b04435e606d7e81302c9c25e9e7f8938270435ea509112c9da964ba49232eeca",
+    "kv_store_full_entities.json": "4aba6732da20fbe3854e08ea8633fd7c53dc40f2d7a743d71c4517121e26acf5"
+  },
+  "reference_label_count": 361,
+  "reference_counts_by_book": {
+    "lane-intro-stats": 107,
+    "think-stats-2e": 42,
+    "openintro-statistics-4e": 212
+  },
+  "graph_candidate_doc_count": 30,
+  "evaluated_chunk_count": 19,
+  "unmatched_reference_chunk_count": 45,
+  "overall": {
+    "precision": 0.29069767441860467,
+    "recall": 0.4807692307692308,
+    "f1": 0.36231884057971014,
+    "tp": 50,
+    "fp": 122,
+    "fn": 54
+  },
+  "by_book": {
+    "lane-intro-stats": {
+      "precision": 0.29069767441860467,
+      "recall": 0.4807692307692308,
+      "f1": 0.36231884057971014,
+      "tp": 50,
+      "fp": 122,
+      "fn": 54,
+      "chunks": 19
+    }
+  },
+  "limits": [
+    "Both reference and graph entities are model outputs; the reference is independent but not human gold.",
+    "Exact normalized name matching does not credit semantic aliases.",
+    "Only chunks present in the saved LightRAG store are scored; nonoverlapping third-book chunks are reported as unavailable.",
+    "This diagnostic cannot support commercial quality claims."
+  ]
+}

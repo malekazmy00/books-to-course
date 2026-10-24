@@ -1,0 +1,68 @@
+{
+  "workflow_id": "b2c-translate-aca542c241dabc0e5af235a3e244b1688b9a80fa9a0b95bc33ce1057db8048aa",
+  "total": 776,
+  "checkpointed": 776,
+  "valid_new_policy": 765,
+  "suspect_new_policy": 11,
+  "suspect_units": [
+    {
+      "segment_id": "book-main:3:0",
+      "reason": "suspiciously_untranslated_english",
+      "english_blocks": 1
+    },
+    {
+      "segment_id": "book-main:170:0",
+      "reason": "suspiciously_untranslated_english",
+      "english_blocks": 1
+    },
+    {
+      "segment_id": "book-main:235:0",
+      "reason": "suspiciously_untranslated_english",
+      "english_blocks": 1
+    },
+    {
+      "segment_id": "book-main:241:0",
+      "reason": "suspiciously_untranslated_english",
+      "english_blocks": 1
+    },
+    {
+      "segment_id": "book-main:289:1",
+      "reason": "suspiciously_untranslated_english",
+      "english_blocks": 1
+    },
+    {
+      "segment_id": "book-main:365:0",
+      "reason": "suspiciously_untranslated_english",
+      "english_blocks": 1
+    },
+    {
+      "segment_id": "book-main:555:0",
+      "reason": "suspiciously_untranslated_english",
+      "english_blocks": 1
+    },
+    {
+      "segment_id": "book-main:556:0",
+      "reason": "suspiciously_untranslated_english",
+      "english_blocks": 1
+    },
+    {
+      "segment_id": "book-main:561:0",
+      "reason": "suspiciously_untranslated_english",
+      "english_blocks": 1
+    },
+    {
+      "segment_id": "book-main:636:0",
+      "reason": "suspiciously_untranslated_english",
+      "english_blocks": 1
+    },
+    {
+      "segment_id": "book-main:643:0",
+      "reason": "suspiciously_untranslated_english",
+      "english_blocks": 1
+    }
+  ],
+  "temporal_running_workflows": 0,
+  "focused_tests": "98 passed",
+  "inference_requests": 0,
+  "workflow_mutations": 0
+}

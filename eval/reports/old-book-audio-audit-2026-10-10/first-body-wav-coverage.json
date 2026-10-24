@@ -1,0 +1,296 @@
+{
+  "total_segments": 83,
+  "cached_segments": 36,
+  "exact_expected_translated_text_keys": true,
+  "saved_audio_seconds": 515.4960000000001,
+  "rows": [
+    {
+      "segment": 0,
+      "characters": 5,
+      "text_cache_key": "cb0374e924b3f3eac744400b9e22e69ea4cd31207d22c9237592bbdf7b065b17",
+      "bytes": 111148,
+      "duration": 2.3146666666666667,
+      "wav_sha256": "456b7cae282c7b6943162e5c0b34cce29be347ba967700f654a37aa5a2f0df03"
+    },
+    {
+      "segment": 1,
+      "characters": 12,
+      "text_cache_key": "7a9247fb038151abf824711fd62ca27d692c6bbd7575ab3e78d1635c7e489a22",
+      "bytes": 86572,
+      "duration": 1.8026666666666666,
+      "wav_sha256": "76158a6c36197b4f76f4ad6e33a6e55c08ddcce96a3e209eae752954a5a20e39"
+    },
+    {
+      "segment": 2,
+      "characters": 160,
+      "text_cache_key": "5ff388be81f5670c4b20207c9205f89652384a6b13ea5c20e942f5c21d78d223",
+      "bytes": 818860,
+      "duration": 17.058666666666667,
+      "wav_sha256": "08809622c3d7040a6b672402064d559537029113802e841081a5e45bea0206ae"
+    },
+    {
+      "segment": 3,
+      "characters": 61,
+      "text_cache_key": "9458ee38cbf1f00c18606a963cfa6845152c488eb48db7edaf6f1cc59b2bde84",
+      "bytes": 298540,
+      "duration": 6.218666666666667,
+      "wav_sha256": "d43d7d4018a76ec2bd3744d705e42013a002f5285c388b0b8e66e538fb2a22db"
+    },
+    {
+      "segment": 4,
+      "characters": 147,
+      "text_cache_key": "ad0827c5b550121b59a7548b1ab7c51c6162a7b3ff5b5247ea6284cfaf5f2c07",
+      "bytes": 651436,
+      "duration": 13.570666666666666,
+      "wav_sha256": "2ffed471d8159b93bdb4460759ded723e0a0bb432d86a1da53b8e4c1d9ab217c"
+    },
+    {
+      "segment": 5,
+      "characters": 121,
+      "text_cache_key": "a0fe74daafa1910db5db8fe2ae13c495f43cd5904693a2ca242bf1faff485878",
+      "bytes": 720556,
+      "duration": 15.010666666666667,
+      "wav_sha256": "bb090b26c8acfb098ac06073f5dd0e70acd28a6a2603b4da1ec741f58145759e"
+    },
+    {
+      "segment": 6,
+      "characters": 134,
+      "text_cache_key": "58436f00da92702db7c2656cff23dbe5572f8c4f05e065df7e806f14eb5455c7",
+      "bytes": 767660,
+      "duration": 15.992,
+      "wav_sha256": "5511f40dd9e00c76f36894a4142063a24d1ea167ad3ca555814ed11c9a5c824d"
+    },
+    {
+      "segment": 7,
+      "characters": 107,
+      "text_cache_key": "f4f93ddb8e020ee2642f81a482f77b48179e0e7b12a0ce51bc54934bba5ad396",
+      "bytes": 594092,
+      "duration": 12.376,
+      "wav_sha256": "1d1a29bf3beacd8988d27aee680af8f6fb0397adb2b25f80e3d2577f45268a5f"
+    },
+    {
+      "segment": 8,
+      "characters": 154,
+      "text_cache_key": "3056567cca64907cbf5c26d63c8795fa7d1491d2cd67df452bd272e1579b5c15",
+      "bytes": 800044,
+      "duration": 16.666666666666668,
+      "wav_sha256": "580aff03f35a622ef2986562ba01e0c9a3c37ca6af507ad95f8009fb7cdff4b5"
+    },
+    {
+      "segment": 9,
+      "characters": 157,
+      "text_cache_key": "7e1595729464167a17cf178df29fbb681623552f1f8194505bc437e168b9793a",
+      "bytes": 842028,
+      "duration": 17.541333333333334,
+      "wav_sha256": "67729b49d27ef5419c2fc1f99a348903c583e65bbec6a6da3ce120f3d265bafe"
+    },
+    {
+      "segment": 10,
+      "characters": 157,
+      "text_cache_key": "d01b2ea05980b681cb13f42cefc82c417591d3e9bad2f3cf189d91368568bff7",
+      "bytes": 987436,
+      "duration": 20.570666666666668,
+      "wav_sha256": "8782c4569938baa18d5fe5fea67fd12c7d38f0599b37752c3b987a48ac58e6b6"
+    },
+    {
+      "segment": 11,
+      "characters": 159,
+      "text_cache_key": "84ca9cb04e92299d359e151cff526c0b9440cb81e9c0da90124ae5f85162b5a6",
+      "bytes": 862508,
+      "duration": 17.968,
+      "wav_sha256": "61b2729121059d017da0e5f9d1cc80899a46bcc7c192cc984d1eee6703c66119"
+    },
+    {
+      "segment": 12,
+      "characters": 119,
+      "text_cache_key": "e3e4d6591249104d1e41692709b4315c5760a6f85545ccf39e05d9de1c221576",
+      "bytes": 669356,
+      "duration": 13.944,
+      "wav_sha256": "92ce1ce6a1b267fc4b4dd09af66aba63acbbb8045926405254c77d2b1c12deb4"
+    },
+    {
+      "segment": 13,
+      "characters": 104,
+      "text_cache_key": "3d03b31865d6e946b57b21dbecc20d129a48eda6f7df2cf35616d7549b5fc338",
+      "bytes": 551084,
+      "duration": 11.48,
+      "wav_sha256": "890b57996bada9773efe3fb0a0726dbd48b995090058dd4fdfe2f83ecf7552da"
+    },
+    {
+      "segment": 14,
+      "characters": 86,
+      "text_cache_key": "c4f3b3be77b193366b1d2aa0b914a253354acbed17807c24ab630f04aa755c2e",
+      "bytes": 436780,
+      "duration": 9.098666666666666,
+      "wav_sha256": "79ab4755135795c14db2062f211aa9bb7330001ee510c576b7c36d53138d2a5b"
+    },
+    {
+      "segment": 15,
+      "characters": 148,
+      "text_cache_key": "1ee7a6965c0dcc7ff9a694ba98e8ce1aa810631d7837384c2d4c92e3eb97f86e",
+      "bytes": 802988,
+      "duration": 16.728,
+      "wav_sha256": "cdbfe127d8b17df36346adced07176f6f0081a84e2ef9ca167a0b9ba72fb4e18"
+    },
+    {
+      "segment": 16,
+      "characters": 159,
+      "text_cache_key": "70dc007e004b5a89ae5605cfe8f694e0d1cbfbebbaf7daa9079bee9707678230",
+      "bytes": 807596,
+      "duration": 16.824,
+      "wav_sha256": "0abcf288738850e2dc5c8cfdace4aade3e753a6598547f6621aeed03d37eabcc"
+    },
+    {
+      "segment": 17,
+      "characters": 156,
+      "text_cache_key": "865946a27d8fff3b211698b38872b9f45c1a6068a40aa45ebec2b8aae3b51968",
+      "bytes": 929068,
+      "duration": 19.354666666666667,
+      "wav_sha256": "f1d5e142843d5d3fa3b22002d64ff5114e4a5c05d8641531a59fdc16e0257e8f"
+    },
+    {
+      "segment": 18,
+      "characters": 154,
+      "text_cache_key": "7931c76a11ef20ce3451a9ac83325849a8a127d5ea43062bbbc8fb122728a420",
+      "bytes": 817452,
+      "duration": 17.029333333333334,
+      "wav_sha256": "52a635d83af0b8069bf80970aa1eba543be15515dccc672dc3cac867a7cfae56"
+    },
+    {
+      "segment": 19,
+      "characters": 157,
+      "text_cache_key": "f9174564a8351e9ef2b03dfad3f05f20e4823c460c7d6df5d3b359ca41fabb42",
+      "bytes": 868652,
+      "duration": 18.096,
+      "wav_sha256": "7286620601ff691bf2151d2c2b4175b70ca1a5d4d4d1507eb251a4a44d1018ef"
+    },
+    {
+      "segment": 20,
+      "characters": 103,
+      "text_cache_key": "2d1730a13ca0537c891f00fad55393ece05d88c83a2e60fc86f0641ef625899e",
+      "bytes": 555692,
+      "duration": 11.576,
+      "wav_sha256": "8652f1f993ce62d460acfca1a58e771a0dec95ca781f8b1487f63799ebac3fed"
+    },
+    {
+      "segment": 21,
+      "characters": 160,
+      "text_cache_key": "1671866014ba5441e708767838ca84ebadb6129df66216de38d3a7df0294713c",
+      "bytes": 809644,
+      "duration": 16.866666666666667,
+      "wav_sha256": "3715d6063b2300b8eea2d2ab495be8ca624ec1afb1a37d08d45fc89a5f10ea78"
+    },
+    {
+      "segment": 22,
+      "characters": 155,
+      "text_cache_key": "3a8b0b7d65a582f41689d30fc077960ef7e49d5cd740243a99ee29be06c8c611",
+      "bytes": 786732,
+      "duration": 16.389333333333333,
+      "wav_sha256": "c842e12d237e02fcee4ae218f0e4914c01f15e2db77b45e87e74c5722408a6ee"
+    },
+    {
+      "segment": 23,
+      "characters": 147,
+      "text_cache_key": "e58e38f0ff3b87de36947302677e960ff99dca807bf263a2982d50f8c3b94a2e",
+      "bytes": 940332,
+      "duration": 19.589333333333332,
+      "wav_sha256": "7a50e8de6ad70a1a0bb510b3f287b6a5a153e25c200bf4d9ad1b7846772f9498"
+    },
+    {
+      "segment": 24,
+      "characters": 156,
+      "text_cache_key": "9016e6599f17c23393bf52265c2cf5df6aa3adad94e1ed104571c4f8f9e85715",
+      "bytes": 931116,
+      "duration": 19.397333333333332,
+      "wav_sha256": "ec7a23e6cabcd5914ada0dd3729b4032376f0b148ef1a88803ea6cf8f19ca2c0"
+    },
+    {
+      "segment": 25,
+      "characters": 82,
+      "text_cache_key": "73b132e1ee27d0d8070cec172ac34a0dd2b65860c2275c971af667bd18950409",
+      "bytes": 448044,
+      "duration": 9.333333333333334,
+      "wav_sha256": "49708bf0c4fb53f1814de38f094c58eda675edcf0a9368bdd104e11fb14ee623"
+    },
+    {
+      "segment": 26,
+      "characters": 16,
+      "text_cache_key": "a67d8acb654a1ca1264b4cda6fff1cf349679d017439515eef65e9b1765f27f1",
+      "bytes": 153644,
+      "duration": 3.2,
+      "wav_sha256": "9ce438255592747f5d9a7259af4565d70a2c8d7b9b1da8d924b19879447926fb"
+    },
+    {
+      "segment": 27,
+      "characters": 158,
+      "text_cache_key": "f2abe67697754db375656810f9a142c7fab997fedddf64e4436f52a3c3254131",
+      "bytes": 882476,
+      "duration": 18.384,
+      "wav_sha256": "f31aa6afa77802c562cf8a33a710496d0a18679d3faf74aecec33ebe753ec464"
+    },
+    {
+      "segment": 28,
+      "characters": 154,
+      "text_cache_key": "b746bd60034f461ab0b38cbc2a5108ef70c3b8e904606e987b9762e4291f8504",
+      "bytes": 895788,
+      "duration": 18.661333333333335,
+      "wav_sha256": "617b4d4cf3fe83a8c332be1c25860d1535887d2fd045543d1f6b0a1df8d378a9"
+    },
+    {
+      "segment": 29,
+      "characters": 160,
+      "text_cache_key": "750c8eac3a4f8d67ea577e1e0d947273355e925394dec8c83e0db587bc23046b",
+      "bytes": 806700,
+      "duration": 16.805333333333333,
+      "wav_sha256": "33e252e58cefe0f151e025354d071bf6430adb17512a09289128ada6fb8c5e2a"
+    },
+    {
+      "segment": 30,
+      "characters": 135,
+      "text_cache_key": "5d37ba41704fb2af8e0034637349d8d27b1dca9c7ec87c85bb5f7a576c6407f1",
+      "bytes": 719148,
+      "duration": 14.981333333333334,
+      "wav_sha256": "ee60d31ba7227fdc6580078ae4303baa9cb071dbb880414076851161fcef92a7"
+    },
+    {
+      "segment": 31,
+      "characters": 146,
+      "text_cache_key": "8844bb60590d6a2b321c0bdef0602e3755d9b89cbe44c7d64c5a8e9cf7577294",
+      "bytes": 770220,
+      "duration": 16.045333333333332,
+      "wav_sha256": "92e99864ea6118d88f747c79b1847a4196de5bb0b4b25b944dba93498dcbe0ab"
+    },
+    {
+      "segment": 32,
+      "characters": 142,
+      "text_cache_key": "8406a2b4b94b895832a9d8785d191941d812ce5cacfc3c05a5b261e93f314ade",
+      "bytes": 645292,
+      "duration": 13.442666666666666,
+      "wav_sha256": "96a30a4beaf72d8a21a8fab0f31bf3b76fd62b28458227eb2f2eb1d0c37e8a2a"
+    },
+    {
+      "segment": 33,
+      "characters": 156,
+      "text_cache_key": "676dfb2de15efbb227e55f28f9ef95f2f3cf8669ad85e8a2407e084535906cfa",
+      "bytes": 830124,
+      "duration": 17.293333333333333,
+      "wav_sha256": "841fa503e1e5535a48f08b9277660344d0a286318898acd72fe80343fcb75c3e"
+    },
+    {
+      "segment": 34,
+      "characters": 73,
+      "text_cache_key": "f0c8a0845104c4e9ac21d4d1fa81f5ee71cb43b6d9f14bfa42d14694d080a0ae",
+      "bytes": 347692,
+      "duration": 7.242666666666667,
+      "wav_sha256": "1e437feb7d6b74db33a51c5d06caffdce0571cd3908c1928dcdd231121ea712f"
+    },
+    {
+      "segment": 35,
+      "characters": 157,
+      "text_cache_key": "00fa5e05c60f6a8a54e97db983d6632af6ca16efc27de5ce2adf7158937a4b56",
+      "bytes": 798892,
+      "duration": 16.642666666666667,
+      "wav_sha256": "c7bb9171cf4b83328e0fb3e3d49b8823d38b7a0284321dea1b9e5eed0960574d"
+    }
+  ]
+}

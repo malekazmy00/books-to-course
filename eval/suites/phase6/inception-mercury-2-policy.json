@@ -1,0 +1,11 @@
+{
+  "provider_type": "inception_mercury",
+  "model_id": "mercury-2",
+  "base_url": "https://api.inceptionlabs.ai/v1",
+  "max_tokens": 4096,
+  "temperature": 0,
+  "fallback_policy": "none",
+  "policy_source_url": "https://www.inceptionlabs.ai/models",
+  "cumulative_token_limit": 10000000,
+  "prior_tokens_used": 367074
+}

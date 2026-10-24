@@ -1,0 +1,28 @@
+{
+  "observed_at_utc": "2026-10-05T12:16:38.850435+00:00",
+  "targets": {
+    "cadvisor": "up",
+    "otel-collector": "up",
+    "prometheus": "up",
+    "temporal": "up"
+  },
+  "rules": {
+    "B2CScrapeTargetDown": {
+      "health": "ok",
+      "state": "inactive"
+    },
+    "B2CContainerMemoryBudgetHigh": {
+      "health": "ok",
+      "state": "inactive"
+    }
+  },
+  "grafana_dashboard_uid": "b2c-ops",
+  "grafana_panel_datasource_uids": [
+    "PBFA97CFB590B2093"
+  ],
+  "b2c_working_set_bytes": 19850215424,
+  "b2c_memory_series_count": 15,
+  "memory_series_projects": [
+    "b2c"
+  ]
+}

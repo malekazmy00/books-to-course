@@ -1,0 +1,32 @@
+{
+  "test_id": "T-KG-06",
+  "date": "2026-10-04",
+  "status": "PASS_SECURITY_BEHAVIOR",
+  "service": "b2c-lightrag-phase4c",
+  "scope": "isolated B2C evaluation container; no host port; not production LightRAG",
+  "image_digest": "sha256:5bdbd524931b011df246fe20888d110cef691e6804c12cde636a2b746d7de27e",
+  "unauthenticated_status_by_operation": {
+    "read_document_counts": 403,
+    "query": 403,
+    "insert_document_invalid_schema_probe": 403,
+    "delete_nonexistent_document": 403,
+    "graph_write_invalid_schema_probe": 403
+  },
+  "authenticated_control": {
+    "read_document_counts": 200,
+    "stored_status_counts": {
+      "processed": 30,
+      "all": 30,
+      "pending": 0,
+      "parsing": 0,
+      "analyzing": 0,
+      "processing": 0,
+      "preprocessed": 0,
+      "failed": 0
+    }
+  },
+  "result": "PASS: authenticated status read returned 200; unauthenticated read, query, insert, nonexistent-document delete, and graph-write probes returned 403; authenticated document counts were identical before and after.",
+  "gate_interpretation": "403 is accepted as an authentication denial equivalent to 401 for this gate. This does not assert auth behavior for every API route; the tested operation classes are explicit.",
+  "secret_values_recorded": false,
+  "interpretation": "401 or 403 is accepted as denial. The insertion and graph-write probes used empty invalid-schema bodies; delete targeted a nonexistent ID. No destructive clear request was issued."
+}

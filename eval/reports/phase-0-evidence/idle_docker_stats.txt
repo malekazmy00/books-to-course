@@ -1,0 +1,18 @@
+# 2026-09-29T21:48:00Z $ docker stats --no-stream (b2c containers only)
+NAME                    CPU %     MEM USAGE / LIMIT    MEM %
+b2c-langfuse-web-1      26.62%    828.8MiB / 2GiB      40.47%
+b2c-worker-1            0.01%     92.73MiB / 1GiB      9.06%
+b2c-llm-1               0.00%     14.82GiB / 26GiB     57.01%
+b2c-temporal-ui-1       0.00%     5.82MiB / 256MiB     2.27%
+b2c-temporal-1          6.20%     115.3MiB / 1.25GiB   9.01%
+b2c-langfuse-worker-1   5.26%     535.1MiB / 1.5GiB    34.84%
+b2c-postgres-1          0.05%     161.9MiB / 4GiB      3.95%
+b2c-redis-1             1.51%     8.402MiB / 512MiB    1.64%
+b2c-clickhouse-1        16.54%    644.4MiB / 3GiB      20.98%
+b2c-cadvisor-1          0.00%     21.75MiB / 256MiB    8.49%
+b2c-prometheus-1        0.38%     70.28MiB / 384MiB    18.30%
+b2c-grafana-1           1.75%     246.8MiB / 384MiB    64.27%
+b2c-minio-1             0.09%     63.7MiB / 1GiB       6.22%
+b2c-otel-collector-1    0.04%     22.63MiB / 256MiB    8.84%
+
+TOTAL b2c memory in use (idle): 17.56 GiB

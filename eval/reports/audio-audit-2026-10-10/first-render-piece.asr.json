@@ -1,0 +1,14 @@
+{
+  "model": "/mnt/wsl/b2cdata/models/phase8-speech/asr-tiny/models--Systran--faster-whisper-tiny/snapshots/d90ca5fe260221311c53c58e660288d3deb8d356",
+  "license": "MIT",
+  "audio_sha256": "336c4794087f49eb6fe4177fb674c08e1c6ebc9b7dfc3dead746f087e734f5aa",
+  "language_detected": "ar",
+  "language_probability": 1,
+  "expected": "الطبعة الثالثة",
+  "hypothesis": "الطبعة الساريسة",
+  "normalization": "casefold; strip Unicode combining marks, punctuation, whitespace",
+  "normalized_character_count": 13,
+  "character_errors": 4,
+  "cer": 0.3076923076923077,
+  "duration_s": 1.8026875
+}

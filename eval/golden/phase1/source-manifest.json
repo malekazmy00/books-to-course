@@ -1,0 +1,91 @@
+{
+  "purpose": "B2C Phase 1 local model evaluation; research and internal testing only; not cleared for public course release",
+  "retrieved_date": "2026-09-29",
+  "topic": "probability and probability mass functions",
+  "data_volume_path": "/mnt/wsl/b2cdata/phase1-sources/",
+  "sources": [
+    {
+      "book_id": "lane-intro-stats",
+      "role": "spine",
+      "title": "Online Statistics Education: A Multimedia Course of Study (Introduction to Statistics)",
+      "authors": "David M. Lane et al.",
+      "selected_section": "Chapter 5: Introduction to Probability",
+      "source_pdf": "https://onlinestatbook.com/2/probability/probability.pdf",
+      "source_html": "https://onlinestatbook.com/2/probability/probability.html",
+      "license": "Public domain; the source states copy and reproduction without limitation; citation requested",
+      "license_reference": "https://open.umn.edu/opentextbooks/textbooks/introduction-to-statistics",
+      "rights_status": "internal_test_only",
+      "pdf_sha256": "acfc690360cd77afe91056451231b53022ad63392123210197a63163da3ccc5d",
+      "text_sha256": "2bbda18fb3b24a043252a7525e662cc6e1a7cdf86579cbaea42ad22e6c3619da",
+      "chunk_file": "lane-primary-30-chunks.jsonl",
+      "chunk_count": 30,
+      "extraction": "Project-owned b2c-ingest.pdf_text using pypdf 6.1.3; 37-page chapter PDF; page markers retained",
+      "physical_pdf_pages": {
+        "start": 1,
+        "end": 37
+      },
+      "chunk_sha256": "1db9b1b426811f93fdf96f362c6c64eeae13a57cec58ea2888c0112ba2ce3f4e"
+    },
+    {
+      "book_id": "think-stats-2e",
+      "role": "supplementary",
+      "title": "Think Stats: Probability and Statistics for Programmers, 2e",
+      "author": "Allen B. Downey",
+      "selected_section": "Chapter 3: Probability mass functions",
+      "source_pdf": "https://greenteapress.com/thinkstats2/thinkstats2.pdf",
+      "source_html": "https://greenteapress.com/thinkstats2/html/thinkstats2004.html",
+      "license": "CC BY-NC-SA 4.0; attribution, noncommercial use, and ShareAlike apply",
+      "license_reference": "https://greenteapress.com/thinkstats2/html/index.html",
+      "rights_status": "internal_test_only",
+      "pdf_sha256": "272d5c33b81447227ac58d37e0343a2e9266714ed13702f1d5d0333c67660f02",
+      "chapter_html_sha256": "cc00af4a7165912a49245b9128e06f31b122525f1134ba32e3f75d516ec03957",
+      "chapter_text_sha256": "b05e64cbdbb4226f5bb730763e874bb47616412d99cd90b6395535afd638444b",
+      "chunk_file": "thinkstats-supplement-7-chunks.jsonl",
+      "chunk_count": 7,
+      "extraction": "Project-owned b2c-ingest.pdf_text using pypdf 6.1.3; extracted physical PDF pages 51-64 from the official PDF; page markers retained",
+      "physical_pdf_pages": {
+        "start": 51,
+        "end": 64
+      },
+      "printed_page_labels": {
+        "start": 31,
+        "end": 43
+      },
+      "chunk_sha256": "210422e6942c8186fc45836caade6cb29c51cc445fb638f873b3ba71d57d9e4b"
+    }
+  ],
+  "limits": [
+    "Keep all licensed source text and generated derivatives on the B2C data volume for internal noncommercial research.",
+    "Preserve attribution and CC BY-NC-SA ShareAlike obligations for Think Stats adaptations.",
+    "Do not publish a CourseRelease or redistribute these texts until rights are reviewed under D-002."
+  ],
+  "extraction_tool": {
+    "package": "b2c-ingest",
+    "command": "python -m b2c_ingest.pdf_text INPUT.pdf OUTPUT.txt",
+    "implementation": "packages/ingest/src/b2c_ingest/pdf_text.py",
+    "pdf_dependency": "pypdf==6.1.3 (pinned in packages/ingest/pyproject.toml and uv.lock)",
+    "chunk_preparation": "eval/suites/phase1/prepare_chunks.py"
+  },
+  "evaluations": [
+    {
+      "test_id": "T-B-02",
+      "model_id": "qwen3-coder-30b",
+      "status": "exploratory_complete",
+      "input_chunks": 30,
+      "valid_json_schema": 30,
+      "invalid": 0,
+      "valid_rate": 1.0,
+      "threshold_initial": 0.95,
+      "total_elapsed_seconds": 2089.9,
+      "mean_seconds_per_chunk": 69.66,
+      "median_seconds_per_chunk": 58.8,
+      "min_seconds_per_chunk": 34.21,
+      "max_seconds_per_chunk": 268.88,
+      "entities_returned": 171,
+      "relations_returned": 126,
+      "output_path": "/mnt/wsl/b2cdata/phase1-sources/phase1-tb02-qwen3-coder-30b.jsonl",
+      "output_sha256": "34c40e6ec7c50a362b08add9e984227b6ee524484f06763f341fcd0d34bdfb66",
+      "scope_note": "JSON schema validity only; not extraction precision/recall or RAG quality; exploratory model, not final D-005 selection"
+    }
+  ]
+}

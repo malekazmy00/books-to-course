@@ -1,0 +1,14 @@
+{
+  "model_id": "deepseek/deepseek-v4-flash-0731",
+  "base_url": "https://openrouter.ai/api/v1",
+  "max_tokens": 4096,
+  "reasoning_effort": "none",
+  "provider": {
+    "sort": "price",
+    "allow_fallbacks": false,
+    "max_price": {
+      "prompt": 0.0152,
+      "completion": 1.28
+    }
+  }
+}

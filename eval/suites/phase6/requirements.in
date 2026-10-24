@@ -1,0 +1,24 @@
+# Isolated HippoRAG 2.0.0a5 evaluation runtime, Python 3.12 only.
+# Pin upgraded direct packages past the advisory ranges found in the upstream
+# snapshot; lock all transitives with `uv pip compile --generate-hashes`.
+openai>=2.20,<3
+litellm==1.104.0
+torch @ https://download-r2.pytorch.org/whl/cpu/torch-2.14.1%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl#sha256=5a6363570c753812540a05eb82380e329469cbe668643e88111414c12627711f
+transformers==5.18.0
+sentence-transformers==6.1.0
+networkx==3.4.2
+pydantic>=2.10.4,<3
+python-igraph==0.11.8
+tenacity==8.5.0
+tiktoken>=0.8,<1
+nest-asyncio
+numpy
+scipy
+tqdm
+einops
+boto3
+pandas
+pyarrow
+requests
+httpx>=0.27,<1
+filelock

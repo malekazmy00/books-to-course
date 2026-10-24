@@ -1,0 +1,26 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "title":"B2C Phase 2 OCR page evaluation record",
+  "type":"object",
+  "required":["page_id","title_id","split","page_no","language","stratum","rights_status","source_sha256","reference_path","reference_source","hypothesis_path","pipeline"],
+  "properties":{
+    "page_id":{"type":"string","minLength":1},
+    "title_id":{"type":"string","minLength":1,"description":"A title must not cross development/validation/test splits."},
+    "split":{"enum":["development","validation","test"]},
+    "page_no":{"type":"integer","minimum":1},
+    "language":{"enum":["en","ar"]},
+    "stratum":{"enum":["digital_text","clean_print","low_resolution","skew","blur","rotation","mixed_page","table","multi_column","other"]},
+    "rights_status":{"enum":["cleared","internal_test_only","pending"]},
+    "source_sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"},
+    "reference_path":{"type":"string","minLength":1},
+    "reference_source":{"enum":["human_adjudicated","source_pdf_text","synthetic_known_text"]},
+    "hypothesis_path":{"type":"string","minLength":1},
+    "pipeline":{"type":"object","required":["engine","version","language","config_hash"],"properties":{"engine":{"type":"string"},"version":{"type":"string"},"model_revision":{"type":"string"},"language":{"enum":["en","ar"]},"config_hash":{"type":"string"}},"additionalProperties":false},
+    "elapsed_seconds":{"type":"number","minimum":0},
+    "peak_rss_mib":{"type":"number","minimum":0},
+    "regions_reference":{"type":"string","description":"Optional PAGE-XML reference for region detection and segmentation scoring."},
+    "reading_order_reference":{"type":"string","description":"Optional ordered region IDs for reading-order scoring."},
+    "table_matrix_reference":{"type":"string","description":"Optional table cell matrix; use pinned GriTS/TEDS evaluator."}
+  },
+  "additionalProperties":false
+}

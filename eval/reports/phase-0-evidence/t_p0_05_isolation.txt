@@ -1,0 +1,29 @@
+# T-P0-05 after-snapshot. captured: 2026-09-29T21:48:05Z
+## docker ps --format '{{.ID}} {{.Names}} {{.Status}}'  (non-b2c only)
+ac1036c94231 /ai-company-web-access-firecrawl-api running
+beaf32ccd8df /infisical-server running
+90048bf95e1a /ai-company-router running
+c1068e85e3dc /ai-company-web-access-searxng running
+30bf2d4197a9 /ai-company-memory-qdrant running
+9597d540b1d3 /ai-company-web-access-firecrawl-redis running
+004113411c99 /ai-company-web-access-firecrawl-rabbitmq running
+76cd9de760fd /ai-company-web-access-firecrawl-nuq-postgres running
+35d8b5ef69ef /ai-company-web-access-firecrawl-playwright running
+9e8bbb5eeb43 /infisical-postgres running
+a249a758125c /infisical-redis running
+## id name StartedAt
+ac1036c94231 /ai-company-web-access-firecrawl-api 2026-09-28T05:15:36.701400203Z
+beaf32ccd8df /infisical-server 2026-09-28T05:14:13.833860601Z
+90048bf95e1a /ai-company-router 2026-09-28T05:14:14.425674173Z
+c1068e85e3dc /ai-company-web-access-searxng 2026-09-28T05:14:14.725938309Z
+30bf2d4197a9 /ai-company-memory-qdrant 2026-09-28T05:14:15.109191156Z
+9597d540b1d3 /ai-company-web-access-firecrawl-redis 2026-09-28T05:14:16.059018172Z
+004113411c99 /ai-company-web-access-firecrawl-rabbitmq 2026-09-28T05:14:10.175187954Z
+76cd9de760fd /ai-company-web-access-firecrawl-nuq-postgres 2026-09-28T05:14:18.300655862Z
+35d8b5ef69ef /ai-company-web-access-firecrawl-playwright 2026-09-28T05:14:14.083549831Z
+9e8bbb5eeb43 /infisical-postgres 2026-09-28T05:14:11.767481448Z
+a249a758125c /infisical-redis 2026-09-28T05:14:12.525356041Z
+
+## diff of (id name StartedAt) before vs after
+identical: 11 containers, same IDs and StartedAt
+RESULT: PASS

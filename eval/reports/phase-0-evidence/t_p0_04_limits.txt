@@ -1,0 +1,22 @@
+# 2026-09-29T21:47:59Z $ docker inspect (all containers with label com.docker.compose.project=b2c)
+container                           Memory     MiB      NanoCpus   cpus  CpuShares  state
+b2c-cadvisor-1                   268435456     256     250000000   0.25       1024  running
+b2c-clickhouse-1                3221225472    3072     800000000   0.80       1024  running
+b2c-grafana-1                    402653184     384     250000000   0.25       1024  running
+b2c-langfuse-web-1              2147483648    2048    1000000000   1.00       1024  running
+b2c-langfuse-worker-1           1610612736    1536     600000000   0.60       1024  running
+b2c-llm-1                      27917287424   26624   24000000000  24.00        512  running
+b2c-minio-1                     1073741824    1024     400000000   0.40       1024  running
+b2c-otel-collector-1             268435456     256     500000000   0.50       1024  running
+b2c-postgres-1                  4294967296    4096    2000000000   2.00       1024  running
+b2c-prometheus-1                 402653184     384     500000000   0.50       1024  running
+b2c-redis-1                      536870912     512     200000000   0.20       1024  running
+b2c-temporal-1                  1342177280    1280     600000000   0.60       1024  running
+b2c-temporal-namespace-1         268435456     256     100000000   0.10       1024  exited
+b2c-temporal-schema-1            268435456     256     200000000   0.20       1024  exited
+b2c-temporal-ui-1                268435456     256     100000000   0.10       1024  running
+b2c-worker-1                    1073741824    1024     500000000   0.50       1024  running
+
+TOTAL Memory = 45365592064 bytes = 42.250 GiB   (limit 61 GiB, D-007 as amended 2026-09-27)
+containers missing Memory/NanoCpus/CpuShares: none
+RESULT: PASS

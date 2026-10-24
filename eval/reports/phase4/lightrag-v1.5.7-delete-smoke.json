@@ -1,0 +1,19 @@
+{
+  "delete_status": "deletion_started",
+  "deleted_documents": 7,
+  "deleted_source_ids": [
+    "think-stats-2e:ch02",
+    "think-stats-2e:ch06",
+    "think-stats-2e:ch04",
+    "think-stats-2e:ch07",
+    "think-stats-2e:ch05",
+    "think-stats-2e:ch03",
+    "think-stats-2e:ch01"
+  ],
+  "remaining_processed": 30,
+  "remaining_total": 30,
+  "supplementary_queries": 11,
+  "query_errors": 0,
+  "deleted_citations_returned": 0,
+  "storage_reference_matches": 0
+}

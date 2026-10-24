@@ -1,0 +1,9 @@
+{
+  "snapshot_sha256": "cde1a71495298610595c5c98e97987ce21e089092d314ff2608295bafce0196e",
+  "restored_public_tables": 11,
+  "verified_database_rows": 519,
+  "per_table_counts_matched": true,
+  "objects_readback": 348,
+  "artifact_refs_readable": 168,
+  "status": "PASS"
+}

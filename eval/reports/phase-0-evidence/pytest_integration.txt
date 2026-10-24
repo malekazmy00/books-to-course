@@ -1,0 +1,25 @@
+# 2026-09-29T21:46:01Z $ make test-integration
+ Container b2c-worker-run-44af3f2a9c75 Creating 
+ Container b2c-worker-run-44af3f2a9c75 Created 
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0 -- /app/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /app
+configfile: pyproject.toml
+plugins: asyncio-1.4.0, anyio-4.15.1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 5 items
+
+tests/integration/test_hello_pipeline.py::test_hello_pipeline_completes_and_second_run_is_cached PASSED [ 20%]
+tests/integration/test_llm_cache_postgres.py::test_put_get_roundtrip_and_idempotent PASSED [ 40%]
+tests/integration/test_llm_live.py::test_live_json_schema_output PASSED  [ 60%]
+tests/integration/test_prov_recorder.py::test_lineage_roundtrip PASSED   [ 80%]
+tests/integration/test_prov_recorder.py::test_record_artifact_is_idempotent PASSED [100%]
+
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/_pytest/cacheprovider.py:469
+  /app/.venv/lib/python3.12/site-packages/_pytest/cacheprovider.py:469: PytestCacheWarning: could not create cache path /app/.pytest_cache/v/cache/nodeids: [Errno 13] Permission denied: '/app/pytest-cache-files-z5ze0dkk'
+    config.cache.set("cache/nodeids", sorted(self.cached_nodeids))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 5 passed, 1 warning in 10.27s =========================

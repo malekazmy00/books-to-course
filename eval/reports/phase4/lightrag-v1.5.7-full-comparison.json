@@ -1,0 +1,6613 @@
+{
+  "status": "diagnostic_only",
+  "gold_eligible": false,
+  "label_provenance": "model_auto_validated_pseudo_qrels",
+  "mode": "mix",
+  "query_count": 50,
+  "top_k": 10,
+  "corpus_sha256": "7d2778a46fd9f92d296765fd20b938d21551af12a6f4e7103c924ede8c2a0d6c",
+  "dataset_sha256": "4361df96655fb0a2ba70466ca16936c67fc409c74368fbc44925270bd19d8b99",
+  "paired_comparison": {
+    "status": "diagnostic_only",
+    "gold_eligible": false,
+    "label_provenance": "model_auto_validated_pseudo_qrels",
+    "corpus_sha256": "7d2778a46fd9f92d296765fd20b938d21551af12a6f4e7103c924ede8c2a0d6c",
+    "dataset_sha256": "4361df96655fb0a2ba70466ca16936c67fc409c74368fbc44925270bd19d8b99",
+    "split": "development",
+    "k": 10,
+    "query_count": 50,
+    "baseline": {
+      "retriever": "project_lexical_bm25_style",
+      "queries": 50,
+      "metrics": {
+        "recall@1": 0.58,
+        "mrr@1": 0.58,
+        "ndcg@1": 0.58,
+        "source_attribution_integrity@1": 1.0,
+        "page_attribution_integrity@1": 1.0,
+        "attributed_relevant_hits@1": 29,
+        "unanswerable_false_positive_rate@1": null,
+        "recall@3": 0.9,
+        "mrr@3": 0.71,
+        "ndcg@3": 0.7583301655000041,
+        "source_attribution_integrity@3": 1.0,
+        "page_attribution_integrity@3": 1.0,
+        "attributed_relevant_hits@3": 45,
+        "unanswerable_false_positive_rate@3": null,
+        "recall@5": 0.96,
+        "mrr@5": 0.7240000000000001,
+        "ndcg@5": 0.7832942839676307,
+        "source_attribution_integrity@5": 1.0,
+        "page_attribution_integrity@5": 1.0,
+        "attributed_relevant_hits@5": 48,
+        "unanswerable_false_positive_rate@5": null,
+        "recall@10": 0.98,
+        "mrr@10": 0.7262222222222222,
+        "ndcg@10": 0.7893148838809103,
+        "source_attribution_integrity@10": 1.0,
+        "page_attribution_integrity@10": 1.0,
+        "attributed_relevant_hits@10": 49,
+        "unanswerable_false_positive_rate@10": null
+      }
+    },
+    "candidate": {
+      "retriever": "lightrag_mix",
+      "queries": 50,
+      "metrics": {
+        "recall@1": 0.7,
+        "mrr@1": 0.7,
+        "ndcg@1": 0.7,
+        "source_attribution_integrity@1": 1.0,
+        "page_attribution_integrity@1": 1.0,
+        "attributed_relevant_hits@1": 35,
+        "unanswerable_false_positive_rate@1": null,
+        "recall@3": 0.88,
+        "mrr@3": 0.78,
+        "ndcg@3": 0.8057115704285749,
+        "source_attribution_integrity@3": 1.0,
+        "page_attribution_integrity@3": 1.0,
+        "attributed_relevant_hits@3": 44,
+        "unanswerable_false_positive_rate@3": null,
+        "recall@5": 0.9,
+        "mrr@5": 0.784,
+        "ndcg@5": 0.8134486265732658,
+        "source_attribution_integrity@5": 1.0,
+        "page_attribution_integrity@5": 1.0,
+        "attributed_relevant_hits@5": 45,
+        "unanswerable_false_positive_rate@5": null,
+        "recall@10": 0.96,
+        "mrr@10": 0.7917777777777778,
+        "ndcg@10": 0.8326139701419853,
+        "source_attribution_integrity@10": 1.0,
+        "page_attribution_integrity@10": 1.0,
+        "attributed_relevant_hits@10": 48,
+        "unanswerable_false_positive_rate@10": null
+      }
+    },
+    "candidate_minus_baseline": {
+      "recall@1": 0.12,
+      "mrr@1": 0.12,
+      "ndcg@1": 0.12,
+      "source_attribution_integrity@1": 0.0,
+      "page_attribution_integrity@1": 0.0,
+      "attributed_relevant_hits@1": 6,
+      "unanswerable_false_positive_rate@1": null,
+      "recall@3": -0.020000000000000018,
+      "mrr@3": 0.07000000000000006,
+      "ndcg@3": 0.04738140492857079,
+      "source_attribution_integrity@3": 0.0,
+      "page_attribution_integrity@3": 0.0,
+      "attributed_relevant_hits@3": -1,
+      "unanswerable_false_positive_rate@3": null,
+      "recall@5": -0.05999999999999994,
+      "mrr@5": 0.05999999999999994,
+      "ndcg@5": 0.0301543426056351,
+      "source_attribution_integrity@5": 0.0,
+      "page_attribution_integrity@5": 0.0,
+      "attributed_relevant_hits@5": -3,
+      "unanswerable_false_positive_rate@5": null,
+      "recall@10": -0.020000000000000018,
+      "mrr@10": 0.06555555555555559,
+      "ndcg@10": 0.04329908626107504,
+      "source_attribution_integrity@10": 0.0,
+      "page_attribution_integrity@10": 0.0,
+      "attributed_relevant_hits@10": -1,
+      "unanswerable_false_positive_rate@10": null
+    },
+    "limits": [
+      "auto-generated source labels are diagnostics, never human gold",
+      "retrieval-only comparison; does not establish entity extraction quality, durability, isolation, or security",
+      "metric improvement alone does not accept a graph candidate"
+    ]
+  },
+  "by_relevant_source_role": {
+    "spine": {
+      "query_count": 39,
+      "baseline": {
+        "queries": 39,
+        "metrics": {
+          "recall@1": 0.48717948717948717,
+          "mrr@1": 0.48717948717948717,
+          "ndcg@1": 0.48717948717948717,
+          "source_attribution_integrity@1": 1.0,
+          "page_attribution_integrity@1": 1.0,
+          "attributed_relevant_hits@1": 19,
+          "unanswerable_false_positive_rate@1": null,
+          "recall@3": 0.8717948717948718,
+          "mrr@3": 0.6410256410256411,
+          "ndcg@3": 0.699630218498173,
+          "source_attribution_integrity@3": 1.0,
+          "page_attribution_integrity@3": 1.0,
+          "attributed_relevant_hits@3": 34,
+          "unanswerable_false_positive_rate@3": null,
+          "recall@5": 0.9487179487179487,
+          "mrr@5": 0.658974358974359,
+          "ndcg@5": 0.7316354985848736,
+          "source_attribution_integrity@5": 1.0,
+          "page_attribution_integrity@5": 1.0,
+          "attributed_relevant_hits@5": 37,
+          "unanswerable_false_positive_rate@5": null,
+          "recall@10": 0.9743589743589743,
+          "mrr@10": 0.6618233618233618,
+          "ndcg@10": 0.7393542164224117,
+          "source_attribution_integrity@10": 1.0,
+          "page_attribution_integrity@10": 1.0,
+          "attributed_relevant_hits@10": 38,
+          "unanswerable_false_positive_rate@10": null
+        }
+      },
+      "candidate": {
+        "queries": 39,
+        "metrics": {
+          "recall@1": 0.6410256410256411,
+          "mrr@1": 0.6410256410256411,
+          "ndcg@1": 0.6410256410256411,
+          "source_attribution_integrity@1": 1.0,
+          "page_attribution_integrity@1": 1.0,
+          "attributed_relevant_hits@1": 25,
+          "unanswerable_false_positive_rate@1": null,
+          "recall@3": 0.8717948717948718,
+          "mrr@3": 0.7435897435897436,
+          "ndcg@3": 0.77655329542125,
+          "source_attribution_integrity@3": 1.0,
+          "page_attribution_integrity@3": 1.0,
+          "attributed_relevant_hits@3": 34,
+          "unanswerable_false_positive_rate@3": null,
+          "recall@5": 0.8974358974358975,
+          "mrr@5": 0.7487179487179487,
+          "ndcg@5": 0.7864725981708535,
+          "source_attribution_integrity@5": 1.0,
+          "page_attribution_integrity@5": 1.0,
+          "attributed_relevant_hits@5": 35,
+          "unanswerable_false_positive_rate@5": null,
+          "recall@10": 0.9487179487179487,
+          "mrr@10": 0.7544159544159543,
+          "ndcg@10": 0.8019100338459294,
+          "source_attribution_integrity@10": 1.0,
+          "page_attribution_integrity@10": 1.0,
+          "attributed_relevant_hits@10": 37,
+          "unanswerable_false_positive_rate@10": null
+        }
+      }
+    },
+    "supplementary": {
+      "query_count": 11,
+      "baseline": {
+        "queries": 11,
+        "metrics": {
+          "recall@1": 0.9090909090909091,
+          "mrr@1": 0.9090909090909091,
+          "ndcg@1": 0.9090909090909091,
+          "source_attribution_integrity@1": 1.0,
+          "page_attribution_integrity@1": 1.0,
+          "attributed_relevant_hits@1": 10,
+          "unanswerable_false_positive_rate@1": null,
+          "recall@3": 1.0,
+          "mrr@3": 0.9545454545454546,
+          "ndcg@3": 0.966448159415587,
+          "source_attribution_integrity@3": 1.0,
+          "page_attribution_integrity@3": 1.0,
+          "attributed_relevant_hits@3": 11,
+          "unanswerable_false_positive_rate@3": null,
+          "recall@5": 1.0,
+          "mrr@5": 0.9545454545454546,
+          "ndcg@5": 0.966448159415587,
+          "source_attribution_integrity@5": 1.0,
+          "page_attribution_integrity@5": 1.0,
+          "attributed_relevant_hits@5": 11,
+          "unanswerable_false_positive_rate@5": null,
+          "recall@10": 1.0,
+          "mrr@10": 0.9545454545454546,
+          "ndcg@10": 0.966448159415587,
+          "source_attribution_integrity@10": 1.0,
+          "page_attribution_integrity@10": 1.0,
+          "attributed_relevant_hits@10": 11,
+          "unanswerable_false_positive_rate@10": null
+        }
+      },
+      "candidate": {
+        "queries": 11,
+        "metrics": {
+          "recall@1": 0.9090909090909091,
+          "mrr@1": 0.9090909090909091,
+          "ndcg@1": 0.9090909090909091,
+          "source_attribution_integrity@1": 1.0,
+          "page_attribution_integrity@1": 1.0,
+          "attributed_relevant_hits@1": 10,
+          "unanswerable_false_positive_rate@1": null,
+          "recall@3": 0.9090909090909091,
+          "mrr@3": 0.9090909090909091,
+          "ndcg@3": 0.9090909090909091,
+          "source_attribution_integrity@3": 1.0,
+          "page_attribution_integrity@3": 1.0,
+          "attributed_relevant_hits@3": 10,
+          "unanswerable_false_positive_rate@3": null,
+          "recall@5": 0.9090909090909091,
+          "mrr@5": 0.9090909090909091,
+          "ndcg@5": 0.9090909090909091,
+          "source_attribution_integrity@5": 1.0,
+          "page_attribution_integrity@5": 1.0,
+          "attributed_relevant_hits@5": 10,
+          "unanswerable_false_positive_rate@5": null,
+          "recall@10": 1.0,
+          "mrr@10": 0.9242424242424242,
+          "ndcg@10": 0.9414733806461839,
+          "source_attribution_integrity@10": 1.0,
+          "page_attribution_integrity@10": 1.0,
+          "attributed_relevant_hits@10": 11,
+          "unanswerable_false_positive_rate@10": null
+        }
+      }
+    }
+  },
+  "by_question_type": {
+    "direct": {
+      "query_count": 50,
+      "baseline": {
+        "queries": 50,
+        "metrics": {
+          "recall@1": 0.58,
+          "mrr@1": 0.58,
+          "ndcg@1": 0.58,
+          "source_attribution_integrity@1": 1.0,
+          "page_attribution_integrity@1": 1.0,
+          "attributed_relevant_hits@1": 29,
+          "unanswerable_false_positive_rate@1": null,
+          "recall@3": 0.9,
+          "mrr@3": 0.71,
+          "ndcg@3": 0.7583301655000041,
+          "source_attribution_integrity@3": 1.0,
+          "page_attribution_integrity@3": 1.0,
+          "attributed_relevant_hits@3": 45,
+          "unanswerable_false_positive_rate@3": null,
+          "recall@5": 0.96,
+          "mrr@5": 0.7240000000000001,
+          "ndcg@5": 0.7832942839676307,
+          "source_attribution_integrity@5": 1.0,
+          "page_attribution_integrity@5": 1.0,
+          "attributed_relevant_hits@5": 48,
+          "unanswerable_false_positive_rate@5": null,
+          "recall@10": 0.98,
+          "mrr@10": 0.7262222222222222,
+          "ndcg@10": 0.7893148838809103,
+          "source_attribution_integrity@10": 1.0,
+          "page_attribution_integrity@10": 1.0,
+          "attributed_relevant_hits@10": 49,
+          "unanswerable_false_positive_rate@10": null
+        }
+      },
+      "candidate": {
+        "queries": 50,
+        "metrics": {
+          "recall@1": 0.7,
+          "mrr@1": 0.7,
+          "ndcg@1": 0.7,
+          "source_attribution_integrity@1": 1.0,
+          "page_attribution_integrity@1": 1.0,
+          "attributed_relevant_hits@1": 35,
+          "unanswerable_false_positive_rate@1": null,
+          "recall@3": 0.88,
+          "mrr@3": 0.78,
+          "ndcg@3": 0.8057115704285749,
+          "source_attribution_integrity@3": 1.0,
+          "page_attribution_integrity@3": 1.0,
+          "attributed_relevant_hits@3": 44,
+          "unanswerable_false_positive_rate@3": null,
+          "recall@5": 0.9,
+          "mrr@5": 0.784,
+          "ndcg@5": 0.8134486265732658,
+          "source_attribution_integrity@5": 1.0,
+          "page_attribution_integrity@5": 1.0,
+          "attributed_relevant_hits@5": 45,
+          "unanswerable_false_positive_rate@5": null,
+          "recall@10": 0.96,
+          "mrr@10": 0.7917777777777778,
+          "ndcg@10": 0.8326139701419853,
+          "source_attribution_integrity@10": 1.0,
+          "page_attribution_integrity@10": 1.0,
+          "attributed_relevant_hits@10": 48,
+          "unanswerable_false_positive_rate@10": null
+        }
+      }
+    }
+  },
+  "citation_metadata_by_query": {
+    "autoqa:ce17491a78ba0dd997fa": [
+      {
+        "chunk_id": "lane-intro-stats:ch27",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch28",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35,
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch08",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          9,
+          10
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch05",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          6,
+          7
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch11",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          12,
+          13,
+          14
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch26",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          33,
+          34,
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch16",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          18,
+          19,
+          20
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch17",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          20,
+          21
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:88f4ac379f7ac3693801": [
+      {
+        "chunk_id": "lane-intro-stats:ch08",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          9,
+          10
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch26",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          33,
+          34,
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch18",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          21,
+          22
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch16",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          18,
+          19,
+          20
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch17",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          20,
+          21
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch11",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          12,
+          13,
+          14
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch28",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35,
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch27",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:04659c0583123a57aab8": [
+      {
+        "chunk_id": "lane-intro-stats:ch05",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          6,
+          7
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch03",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          3,
+          4,
+          5
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch07",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          8,
+          9
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch08",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          9,
+          10
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch06",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          7,
+          8
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch11",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          12,
+          13,
+          14
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch09",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          10,
+          11
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch01",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          1,
+          2
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:d80fcbe00f7297023446": [
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch27",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch08",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          9,
+          10
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch28",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35,
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch26",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          33,
+          34,
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch11",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          12,
+          13,
+          14
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch16",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          18,
+          19,
+          20
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch09",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          10,
+          11
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch17",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          20,
+          21
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:d94e1e78a8e0a6582980": [
+      {
+        "chunk_id": "lane-intro-stats:ch02",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          2,
+          3
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch01",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          1,
+          2
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch03",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          3,
+          4,
+          5
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch05",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          6,
+          7
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch07",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          62,
+          63,
+          64
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch01",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          51,
+          52,
+          53
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch07",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          8,
+          9
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch17",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          20,
+          21
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch06",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          7,
+          8
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:07aeb3e85e0f11c7dc5a": [
+      {
+        "chunk_id": "lane-intro-stats:ch09",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          10,
+          11
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch10",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          11,
+          12
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch21",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          26,
+          27
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch06",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          7,
+          8
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch20",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          24,
+          25,
+          26
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch24",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          30,
+          31,
+          32
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch26",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          33,
+          34,
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch11",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          12,
+          13,
+          14
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:1762b40e674bf0f9fa49": [
+      {
+        "chunk_id": "lane-intro-stats:ch10",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          11,
+          12
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch09",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          10,
+          11
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch21",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          26,
+          27
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch28",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35,
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch26",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          33,
+          34,
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch06",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          7,
+          8
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch20",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          24,
+          25,
+          26
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch11",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          12,
+          13,
+          14
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:4a23f9bf4538793aef1c": [
+      {
+        "chunk_id": "lane-intro-stats:ch10",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          11,
+          12
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch11",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          12,
+          13,
+          14
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch29",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch06",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          7,
+          8
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch17",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          20,
+          21
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch26",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          33,
+          34,
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch07",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          8,
+          9
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch03",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          3,
+          4,
+          5
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:e86e764223672977c826": [
+      {
+        "chunk_id": "lane-intro-stats:ch12",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          14,
+          15
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch13",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          15,
+          16
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch14",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          16,
+          17,
+          18
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch05",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          6,
+          7
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch29",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch30",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          36,
+          37
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch15",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          18
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch21",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          26,
+          27
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch16",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          18,
+          19,
+          20
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:1aec2c6f91ad5bd445e4": [
+      {
+        "chunk_id": "lane-intro-stats:ch11",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          12,
+          13,
+          14
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch26",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          33,
+          34,
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch10",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          11,
+          12
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch06",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          7,
+          8
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch09",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          10,
+          11
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch03",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          3,
+          4,
+          5
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch17",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          20,
+          21
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch08",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          9,
+          10
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:6a35fc9f864c45f6550e": [
+      {
+        "chunk_id": "lane-intro-stats:ch11",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          12,
+          13,
+          14
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch10",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          11,
+          12
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch26",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          33,
+          34,
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch06",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          7,
+          8
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch08",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          9,
+          10
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch29",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch17",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          20,
+          21
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch07",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          8,
+          9
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:d703be5a81709fa5fa82": [
+      {
+        "chunk_id": "lane-intro-stats:ch16",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          18,
+          19,
+          20
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch17",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          20,
+          21
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch03",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          3,
+          4,
+          5
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch05",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          6,
+          7
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch20",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          24,
+          25,
+          26
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch07",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          8,
+          9
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch26",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          33,
+          34,
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch01",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          1,
+          2
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch06",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          7,
+          8
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:a3675deb4f9f5e068503": [
+      {
+        "chunk_id": "lane-intro-stats:ch20",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          24,
+          25,
+          26
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch26",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          33,
+          34,
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch21",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          26,
+          27
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch06",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          7,
+          8
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch30",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          36,
+          37
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch09",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          10,
+          11
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch28",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35,
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch10",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          11,
+          12
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:db32b2b0782169093442": [
+      {
+        "chunk_id": "think-stats-2e:ch01",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          51,
+          52,
+          53
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch05",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          58,
+          59,
+          60,
+          61
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch20",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          24,
+          25,
+          26
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch19",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          22,
+          23,
+          24
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch17",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          20,
+          21
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch23",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          28,
+          29,
+          30
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch01",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          1,
+          2
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch06",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          61,
+          62
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch02",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          2,
+          3
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch16",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          18,
+          19,
+          20
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:e7761deb9ed3b1bfde1b": [
+      {
+        "chunk_id": "lane-intro-stats:ch18",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          21,
+          22
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch16",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          18,
+          19,
+          20
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch11",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          12,
+          13,
+          14
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch26",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          33,
+          34,
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch17",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          20,
+          21
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch27",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch28",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35,
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch06",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          7,
+          8
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:3b9d0061797d6a318346": [
+      {
+        "chunk_id": "lane-intro-stats:ch16",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          18,
+          19,
+          20
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch17",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          20,
+          21
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch20",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          24,
+          25,
+          26
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch05",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          6,
+          7
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch07",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          8,
+          9
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch03",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          3,
+          4,
+          5
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch19",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          22,
+          23,
+          24
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch18",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          21,
+          22
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch08",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          9,
+          10
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:ff1c1d235769156e9260": [
+      {
+        "chunk_id": "lane-intro-stats:ch21",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          26,
+          27
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch09",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          10,
+          11
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch10",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          11,
+          12
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch20",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          24,
+          25,
+          26
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch26",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          33,
+          34,
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch06",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          7,
+          8
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch18",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          21,
+          22
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch24",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          30,
+          31,
+          32
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:494af97e1cfd9e240208": [
+      {
+        "chunk_id": "lane-intro-stats:ch22",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          27,
+          28
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch23",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          28,
+          29,
+          30
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch24",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          30,
+          31,
+          32
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch26",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          33,
+          34,
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch21",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          26,
+          27
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch19",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          22,
+          23,
+          24
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch27",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch01",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          1,
+          2
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch10",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          11,
+          12
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:cb2b2f39ff7f87ecd2f6": [
+      {
+        "chunk_id": "think-stats-2e:ch02",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          53,
+          54,
+          55
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch01",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          51,
+          52,
+          53
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch03",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          55,
+          56
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch04",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          56,
+          57,
+          58
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch06",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          61,
+          62
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch05",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          58,
+          59,
+          60,
+          61
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch07",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          62,
+          63,
+          64
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch16",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          18,
+          19,
+          20
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch17",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          20,
+          21
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch24",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          30,
+          31,
+          32
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:deb10cbedfc9433a670d": [
+      {
+        "chunk_id": "think-stats-2e:ch02",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          53,
+          54,
+          55
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch01",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          51,
+          52,
+          53
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch03",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          55,
+          56
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch04",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          56,
+          57,
+          58
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch06",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          61,
+          62
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch07",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          62,
+          63,
+          64
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch05",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          58,
+          59,
+          60,
+          61
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch19",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          22,
+          23,
+          24
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch17",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          20,
+          21
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch16",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          18,
+          19,
+          20
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:e2e6a6f3fedc4e85658e": [
+      {
+        "chunk_id": "think-stats-2e:ch04",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          56,
+          57,
+          58
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch03",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          55,
+          56
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch06",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          61,
+          62
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch01",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          51,
+          52,
+          53
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch02",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          53,
+          54,
+          55
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch07",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          62,
+          63,
+          64
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch05",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          58,
+          59,
+          60,
+          61
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch20",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          24,
+          25,
+          26
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch22",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          27,
+          28
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch21",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          26,
+          27
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:ebfd272945c7c6a4676c": [
+      {
+        "chunk_id": "think-stats-2e:ch04",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          56,
+          57,
+          58
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch03",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          55,
+          56
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch06",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          61,
+          62
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch30",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          36,
+          37
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch27",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch07",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          62,
+          63,
+          64
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch29",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch22",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          27,
+          28
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch24",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          30,
+          31,
+          32
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:34c1dea206c4485beec5": [
+      {
+        "chunk_id": "think-stats-2e:ch04",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          56,
+          57,
+          58
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch03",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          55,
+          56
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch06",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          61,
+          62
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch01",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          51,
+          52,
+          53
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch02",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          53,
+          54,
+          55
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch07",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          62,
+          63,
+          64
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch05",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          58,
+          59,
+          60,
+          61
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch20",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          24,
+          25,
+          26
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch22",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          27,
+          28
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch21",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          26,
+          27
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:91a5c55ad14b731530f1": [
+      {
+        "chunk_id": "lane-intro-stats:ch18",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          21,
+          22
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch17",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          20,
+          21
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch16",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          18,
+          19,
+          20
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch06",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          7,
+          8
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch11",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          12,
+          13,
+          14
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch26",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          33,
+          34,
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch08",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          9,
+          10
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch07",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          8,
+          9
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch28",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35,
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:c226fd2d1aed804f58a0": [
+      {
+        "chunk_id": "lane-intro-stats:ch12",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          14,
+          15
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch14",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          16,
+          17,
+          18
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch13",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          15,
+          16
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch29",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch30",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          36,
+          37
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch15",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          18
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch21",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          26,
+          27
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch16",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          18,
+          19,
+          20
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:8b7e722e237aa33a2ee7": [
+      {
+        "chunk_id": "lane-intro-stats:ch12",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          14,
+          15
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch14",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          16,
+          17,
+          18
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch13",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          15,
+          16
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch29",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch30",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          36,
+          37
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch15",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          18
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch21",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          26,
+          27
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch05",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          6,
+          7
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:e0ddd02ee8684ee3a632": [
+      {
+        "chunk_id": "lane-intro-stats:ch15",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          18
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch12",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          14,
+          15
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch14",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          16,
+          17,
+          18
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch13",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          15,
+          16
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch30",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          36,
+          37
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch29",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch11",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          12,
+          13,
+          14
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch28",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35,
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:0a1e872c3f288975bd6f": [
+      {
+        "chunk_id": "lane-intro-stats:ch17",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          20,
+          21
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch16",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          18,
+          19,
+          20
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch18",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          21,
+          22
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch11",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          12,
+          13,
+          14
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch06",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          7,
+          8
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch26",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          33,
+          34,
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch08",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          9,
+          10
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch01",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          1,
+          2
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch19",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          22,
+          23,
+          24
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:ca6a02fc6e9d900a77f3": [
+      {
+        "chunk_id": "lane-intro-stats:ch19",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          22,
+          23,
+          24
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch03",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          55,
+          56
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch24",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          30,
+          31,
+          32
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch04",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          56,
+          57,
+          58
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch22",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          27,
+          28
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch01",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          51,
+          52,
+          53
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch07",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          62,
+          63,
+          64
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch11",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          12,
+          13,
+          14
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch17",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          20,
+          21
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:ab00437a9c5820c640af": [
+      {
+        "chunk_id": "lane-intro-stats:ch22",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          27,
+          28
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch23",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          28,
+          29,
+          30
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch24",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          30,
+          31,
+          32
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch26",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          33,
+          34,
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch27",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch19",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          22,
+          23,
+          24
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch21",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          26,
+          27
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch06",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          61,
+          62
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch28",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35,
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:8a56c76e166c1a4e6bf1": [
+      {
+        "chunk_id": "lane-intro-stats:ch22",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          27,
+          28
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch23",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          28,
+          29,
+          30
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch24",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          30,
+          31,
+          32
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch26",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          33,
+          34,
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch19",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          22,
+          23,
+          24
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch09",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          10,
+          11
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch21",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          26,
+          27
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch28",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35,
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch01",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          1,
+          2
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:9a2ef91ecb60e55ccec0": [
+      {
+        "chunk_id": "lane-intro-stats:ch29",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch14",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          16,
+          17,
+          18
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch26",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          33,
+          34,
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch12",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          14,
+          15
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch21",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          26,
+          27
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch28",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35,
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch27",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch17",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          20,
+          21
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:2c728895187c68869ccf": [
+      {
+        "chunk_id": "lane-intro-stats:ch30",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          36,
+          37
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch26",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          33,
+          34,
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch05",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          6,
+          7
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch19",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          22,
+          23,
+          24
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch27",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch24",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          30,
+          31,
+          32
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch29",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch17",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          20,
+          21
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:3af0232a75e03132a41a": [
+      {
+        "chunk_id": "think-stats-2e:ch01",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          51,
+          52,
+          53
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch02",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          53,
+          54,
+          55
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch07",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          62,
+          63,
+          64
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch11",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          12,
+          13,
+          14
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch06",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          7,
+          8
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch22",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          27,
+          28
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch06",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          61,
+          62
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch19",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          22,
+          23,
+          24
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch26",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          33,
+          34,
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch05",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          6,
+          7
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:873a3c2d30e18e0a9a45": [
+      {
+        "chunk_id": "think-stats-2e:ch01",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          51,
+          52,
+          53
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch02",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          53,
+          54,
+          55
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch03",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          55,
+          56
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch06",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          61,
+          62
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch04",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          56,
+          57,
+          58
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch05",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          58,
+          59,
+          60,
+          61
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch15",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          18
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch07",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          62,
+          63,
+          64
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch13",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          15,
+          16
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch06",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          7,
+          8
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:5c035f45ee614d428fbf": [
+      {
+        "chunk_id": "think-stats-2e:ch05",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          58,
+          59,
+          60,
+          61
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch07",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          62,
+          63,
+          64
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch01",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          51,
+          52,
+          53
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch03",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          55,
+          56
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch02",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          53,
+          54,
+          55
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch19",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          22,
+          23,
+          24
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch27",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch04",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          56,
+          57,
+          58
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch17",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          20,
+          21
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch11",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          12,
+          13,
+          14
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:b6259d04cede05a287b0": [
+      {
+        "chunk_id": "think-stats-2e:ch01",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          51,
+          52,
+          53
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch04",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          56,
+          57,
+          58
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch02",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          53,
+          54,
+          55
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch03",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          55,
+          56
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch07",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          62,
+          63,
+          64
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch06",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          61,
+          62
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch19",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          22,
+          23,
+          24
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch24",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          30,
+          31,
+          32
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch01",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          1,
+          2
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:846edae4da52b0876baf": [
+      {
+        "chunk_id": "think-stats-2e:ch07",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          62,
+          63,
+          64
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch06",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          7,
+          8
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch17",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          20,
+          21
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch28",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35,
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch06",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          61,
+          62
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch07",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          8,
+          9
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch08",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          9,
+          10
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch03",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          3,
+          4,
+          5
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch02",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          2,
+          3
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:6470f3514e7507fee9be": [
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch28",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35,
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch27",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch09",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          10,
+          11
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch24",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          30,
+          31,
+          32
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch21",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          26,
+          27
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch08",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          9,
+          10
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch29",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch19",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          22,
+          23,
+          24
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:defcbcce11e288dddcb7": [
+      {
+        "chunk_id": "lane-intro-stats:ch08",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          9,
+          10
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch09",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          10,
+          11
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch27",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch26",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          33,
+          34,
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch11",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          12,
+          13,
+          14
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch28",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35,
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch05",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          6,
+          7
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch18",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          21,
+          22
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:bb964a6b0da7b4a6e9c6": [
+      {
+        "chunk_id": "lane-intro-stats:ch12",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          14,
+          15
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch13",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          15,
+          16
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch14",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          16,
+          17,
+          18
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch15",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          18
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch30",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          36,
+          37
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch29",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch05",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          6,
+          7
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch16",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          18,
+          19,
+          20
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch21",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          26,
+          27
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:b682d17694267c229234": [
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch08",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          9,
+          10
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch27",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch26",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          33,
+          34,
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch05",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          6,
+          7
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch09",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          10,
+          11
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch28",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35,
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch11",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          12,
+          13,
+          14
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch16",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          18,
+          19,
+          20
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:df4b11b3f128c18155fe": [
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch08",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          9,
+          10
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch27",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch09",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          10,
+          11
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch05",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          6,
+          7
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch26",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          33,
+          34,
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch28",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35,
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch24",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          30,
+          31,
+          32
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch16",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          18,
+          19,
+          20
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:d3344e5e3fdcda898db2": [
+      {
+        "chunk_id": "lane-intro-stats:ch20",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          24,
+          25,
+          26
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch09",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          10,
+          11
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch06",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          7,
+          8
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch21",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          26,
+          27
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch08",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          9,
+          10
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch30",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          36,
+          37
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch26",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          33,
+          34,
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch05",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          6,
+          7
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:a71b1615e260d1ece4b9": [
+      {
+        "chunk_id": "think-stats-2e:ch01",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          51,
+          52,
+          53
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch19",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          22,
+          23,
+          24
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch20",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          24,
+          25,
+          26
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch17",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          20,
+          21
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch01",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          1,
+          2
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch05",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          6,
+          7
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch05",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          58,
+          59,
+          60,
+          61
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch07",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          8,
+          9
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch02",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          2,
+          3
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch03",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          3,
+          4,
+          5
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:767051b95e9956d851d4": [
+      {
+        "chunk_id": "think-stats-2e:ch04",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          56,
+          57,
+          58
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch03",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          55,
+          56
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch24",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          30,
+          31,
+          32
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch30",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          36,
+          37
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch07",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          62,
+          63,
+          64
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch21",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          26,
+          27
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch19",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          22,
+          23,
+          24
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch06",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          61,
+          62
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch22",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          27,
+          28
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch29",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:53f00df5d350e5a17314": [
+      {
+        "chunk_id": "lane-intro-stats:ch01",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          1,
+          2
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch02",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          2,
+          3
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch03",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          3,
+          4,
+          5
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch07",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          8,
+          9
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch05",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          6,
+          7
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch06",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          7,
+          8
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch01",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          51,
+          52,
+          53
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch17",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          20,
+          21
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch09",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          10,
+          11
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:c8e725a0131cabd22f1e": [
+      {
+        "chunk_id": "lane-intro-stats:ch02",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          2,
+          3
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch01",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          1,
+          2
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch03",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          3,
+          4,
+          5
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch05",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          6,
+          7
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch22",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          27,
+          28
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch24",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          30,
+          31,
+          32
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch17",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          20,
+          21
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch07",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          8,
+          9
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch23",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          28,
+          29,
+          30
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch08",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          9,
+          10
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ],
+    "autoqa:35c7c0ee3f742414fca7": [
+      {
+        "chunk_id": "lane-intro-stats:ch03",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          3,
+          4,
+          5
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch02",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          2,
+          3
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch01",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          1,
+          2
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch06",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          7,
+          8
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch22",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          27,
+          28
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch24",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          30,
+          31,
+          32
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch19",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          22,
+          23,
+          24
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch17",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          20,
+          21
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "think-stats-2e:ch07",
+        "book_id": "think-stats-2e",
+        "role": "supplementary",
+        "pages": [
+          62,
+          63,
+          64
+        ],
+        "section_path": [
+          "3. Probability mass functions"
+        ]
+      }
+    ],
+    "autoqa:0b3bdeb3982b300b0518": [
+      {
+        "chunk_id": "lane-intro-stats:ch10",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          11,
+          12
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch25",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          32,
+          33
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch21",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          26,
+          27
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch09",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          10,
+          11
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch06",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          7,
+          8
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch26",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          33,
+          34,
+          35
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch04",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          5,
+          6
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch28",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          35,
+          36
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch24",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          30,
+          31,
+          32
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      },
+      {
+        "chunk_id": "lane-intro-stats:ch11",
+        "book_id": "lane-intro-stats",
+        "role": "spine",
+        "pages": [
+          12,
+          13,
+          14
+        ],
+        "section_path": [
+          "5. Probability"
+        ]
+      }
+    ]
+  },
+  "candidate_query_latency_seconds": {
+    "mean": 1.115,
+    "p50": 0.693,
+    "p95": 1.996,
+    "max": 14.669
+  },
+  "candidate_failures": [],
+  "empty_candidate_results": [],
+  "citation_id_validation": {
+    "unknown_source_ids": 0,
+    "resolved_metadata_fields": [
+      "book_id",
+      "role",
+      "pages",
+      "section_path"
+    ]
+  },
+  "limits": [
+    "Qrels are model-auto-validated and are not gold labels.",
+    "Per-role slices may overlap when one question has qrels in both roles.",
+    "LightRAG references use file_path=source chunk ID and are resolved against the frozen chunk corpus.",
+    "Retrieval-only comparison does not adjudicate generated entities or relations."
+  ]
+}

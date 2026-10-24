@@ -1,0 +1,73 @@
+# 2026-09-29T21:46:19Z $ uv run lint-imports
+
+╔══╗─────────▶╔╗ ╔╗      ╔╗◀───┐
+╚╣╠╝◀─────┐  ╔╝╚╗║║────▶╔╝╚╗   │
+ ║║   ╔══╦══╦╩╗╔╝║║  ╔╦═╩╗╔╝╔═╦══╗
+ ║║╔══╣╔╗║╔╗║╔╣║ ║║ ╔╬╣╔╗║║ ║│║╔═╝
+╔╣╠╣║║║╚╝║╚╝║║║╚╗║╚═╝║║║║║╚╗║═╣║
+╚══╩╩╩╣╔═╩══╩╝╚═╝╚═══╩╩╝╚╩═╩╩═╩╝
+  └──▶║║                    ▲ 
+      ╚╝────────────────────┘
+
+
+---------
+Contracts
+---------
+
+Analyzed 59 files, 103 dependencies.
+------------------------------------
+
+contracts imports no other project package KEPT
+core depends only on contracts KEPT
+llm_gateway depends only on contracts + core KEPT
+layer packages are independent of each other KEPT
+layer packages never import orchestration or api KEPT
+LLM access only through llm_gateway (no direct HTTP clients to model servers) KEPT
+
+Contracts: 6 kept, 0 broken.
+exit=0
+
+## negative control: plant 'import b2c_kg' inside b2c_ingest, expect BROKEN + non-zero exit
+# 2026-09-29T21:46:20Z $ uv run lint-imports
+
+╔══╗─────────▶╔╗ ╔╗      ╔╗◀───┐
+╚╣╠╝◀─────┐  ╔╝╚╗║║────▶╔╝╚╗   │
+ ║║   ╔══╦══╦╩╗╔╝║║  ╔╦═╩╗╔╝╔═╦══╗
+ ║║╔══╣╔╗║╔╗║╔╣║ ║║ ╔╬╣╔╗║║ ║│║╔═╝
+╔╣╠╣║║║╚╝║╚╝║║║╚╗║╚═╝║║║║║╚╗║═╣║
+╚══╩╩╩╣╔═╩══╩╝╚═╝╚═══╩╩╝╚╩═╩╩═╩╝
+  └──▶║║                    ▲ 
+      ╚╝────────────────────┘
+
+
+---------
+Contracts
+---------
+
+Analyzed 60 files, 104 dependencies.
+------------------------------------
+
+contracts imports no other project package KEPT
+core depends only on contracts KEPT
+llm_gateway depends only on contracts + core KEPT
+layer packages are independent of each other BROKEN
+layer packages never import orchestration or api KEPT
+LLM access only through llm_gateway (no direct HTTP clients to model servers) KEPT
+
+Contracts: 5 kept, 1 broken.
+
+
+----------------
+Broken contracts
+----------------
+
+layer packages are independent of each other
+--------------------------------------------
+
+b2c_ingest is not allowed to import b2c_kg:
+
+- b2c_ingest._negative_control -> b2c_kg (l.1)
+
+
+exit=1
+NEGATIVE CONTROL OK (violation detected)

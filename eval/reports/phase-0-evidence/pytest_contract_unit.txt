@@ -1,0 +1,64 @@
+# 2026-09-29T21:45:55Z $ uv run pytest tests/contract tests/unit -v
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0 -- /root/projects/book2course/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /root/projects/book2course
+configfile: pyproject.toml
+plugins: asyncio-1.4.0, anyio-4.15.1
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=function, asyncio_default_test_loop_scope=function
+collecting ... collected 52 items
+
+tests/contract/test_contracts_invariants.py::test_stage_key_is_deterministic_and_order_independent PASSED [  1%]
+tests/contract/test_contracts_invariants.py::test_cloned_voice_requires_consent PASSED [  3%]
+tests/contract/test_contracts_invariants.py::test_sentence_requires_citation PASSED [  5%]
+tests/contract/test_contracts_invariants.py::test_naive_datetime_rejected PASSED [  7%]
+tests/contract/test_contracts_invariants.py::test_release_blocks_uncleared_books PASSED [  9%]
+tests/contract/test_contracts_invariants.py::test_mcq_shape PASSED       [ 11%]
+tests/contract/test_contracts_invariants.py::test_inferred_outline_requires_review PASSED [ 13%]
+tests/contract/test_contracts_invariants.py::test_extra_fields_forbidden PASSED [ 15%]
+tests/unit/core/test_artifact_store.py::test_put_returns_ref_with_contract_uri PASSED [ 17%]
+tests/unit/core/test_artifact_store.py::test_roundtrip_and_exists PASSED [ 19%]
+tests/unit/core/test_artifact_store.py::test_sha256_is_deterministic_over_content PASSED [ 21%]
+tests/unit/core/test_artifact_store.py::test_put_is_idempotent_and_does_not_overwrite PASSED [ 23%]
+tests/unit/core/test_artifact_store.py::test_get_or_compute_runs_once PASSED [ 25%]
+tests/unit/core/test_artifact_store.py::test_rejects_unsafe_path_components[../x-s-dd7a2221d26a6ddb1378c44f6bb1379a951ee0d23e05a440da87026612ec42d7-f] PASSED [ 26%]
+tests/unit/core/test_artifact_store.py::test_rejects_unsafe_path_components[c-a/b-dd7a2221d26a6ddb1378c44f6bb1379a951ee0d23e05a440da87026612ec42d7-f] PASSED [ 28%]
+tests/unit/core/test_artifact_store.py::test_rejects_unsafe_path_components[c-s-not-a-sha-f] PASSED [ 30%]
+tests/unit/core/test_artifact_store.py::test_rejects_unsafe_path_components[c-s-dd7a2221d26a6ddb1378c44f6bb1379a951ee0d23e05a440da87026612ec42d7-../escape] PASSED [ 32%]
+tests/unit/core/test_artifact_store.py::test_rejects_unsafe_path_components[c-s-dd7a2221d26a6ddb1378c44f6bb1379a951ee0d23e05a440da87026612ec42d7-_manifest.json] PASSED [ 34%]
+tests/unit/core/test_artifact_store.py::test_empty_artifact_rejected PASSED [ 36%]
+tests/unit/core/test_core_basics.py::test_stage_key_is_reexported_from_contracts PASSED [ 38%]
+tests/unit/core/test_core_basics.py::test_settings_read_b2c_env PASSED   [ 40%]
+tests/unit/core/test_core_basics.py::test_settings_have_no_cloud_llm_keys PASSED [ 42%]
+tests/unit/core/test_core_basics.py::test_settings_reject_unknown_llm_scheme PASSED [ 44%]
+tests/unit/core/test_core_basics.py::test_json_logging_emits_one_json_object_per_line PASSED [ 46%]
+tests/unit/core/test_core_basics.py::test_json_logging_includes_exception PASSED [ 48%]
+tests/unit/llm_gateway/test_gateway.py::test_chat_sends_openai_request_with_temperature_zero_default PASSED [ 50%]
+tests/unit/llm_gateway/test_gateway.py::test_structured_uses_json_schema_response_format_and_validates PASSED [ 51%]
+tests/unit/llm_gateway/test_gateway.py::test_invalid_output_is_retried_twice_then_raises PASSED [ 53%]
+tests/unit/llm_gateway/test_gateway.py::test_retry_recovers_when_second_attempt_is_valid PASSED [ 55%]
+tests/unit/llm_gateway/test_gateway.py::test_cache_hit_skips_server_and_invalid_outputs_are_not_cached PASSED [ 57%]
+tests/unit/llm_gateway/test_gateway.py::test_cache_key_depends_on_model_prompt_and_params PASSED [ 59%]
+tests/unit/llm_gateway/test_gateway.py::test_nondeterministic_calls_bypass_cache PASSED [ 61%]
+tests/unit/llm_gateway/test_gateway.py::test_span_has_genai_attributes PASSED [ 63%]
+tests/unit/llm_gateway/test_gateway.py::test_failed_structured_call_marks_span_error PASSED [ 65%]
+tests/unit/llm_gateway/test_gateway.py::test_cloud_endpoints_rejected[https://api.openai.com/v1] PASSED [ 67%]
+tests/unit/llm_gateway/test_gateway.py::test_cloud_endpoints_rejected[https://api.anthropic.com/v1] PASSED [ 69%]
+tests/unit/llm_gateway/test_gateway.py::test_cloud_endpoints_rejected[https://generativelanguage.googleapis.com/v1beta/openai] PASSED [ 71%]
+tests/unit/llm_gateway/test_gateway.py::test_cloud_endpoints_rejected[http://8.8.8.8:8080/v1] PASSED [ 73%]
+tests/unit/llm_gateway/test_gateway.py::test_local_endpoints_allowed[http://llm:8080/v1] PASSED [ 75%]
+tests/unit/llm_gateway/test_gateway.py::test_local_endpoints_allowed[http://localhost:8080/v1] PASSED [ 76%]
+tests/unit/llm_gateway/test_gateway.py::test_local_endpoints_allowed[http://127.0.0.1:8080/v1] PASSED [ 78%]
+tests/unit/llm_gateway/test_gateway.py::test_local_endpoints_allowed[http://10.0.0.5:8080/v1] PASSED [ 80%]
+tests/unit/llm_gateway/test_gateway.py::test_local_endpoints_allowed[http://172.18.0.3:8080/v1] PASSED [ 82%]
+tests/unit/llm_gateway/test_gateway.py::test_local_endpoints_allowed[http://llm-mock:8080/v1] PASSED [ 84%]
+tests/unit/llm_gateway/test_gateway.py::test_http_error_raises_llm_unavailable PASSED [ 86%]
+tests/unit/llm_gateway/test_mock_server.py::test_mock_returns_schema_valid_json PASSED [ 88%]
+tests/unit/llm_gateway/test_mock_server.py::test_mock_invalid_model_forces_invalid_output PASSED [ 90%]
+tests/unit/orchestration/test_hello_activities.py::test_pipeline_activities_chain_and_produce_correct_result PASSED [ 92%]
+tests/unit/orchestration/test_hello_activities.py::test_rerun_is_all_cache_hits_and_no_llm_call PASSED [ 94%]
+tests/unit/orchestration/test_hello_activities.py::test_different_input_gets_different_keys PASSED [ 96%]
+tests/unit/orchestration/test_hello_activities.py::test_heavy_queue_runs_one_activity_at_a_time PASSED [ 98%]
+tests/unit/orchestration/test_hello_activities.py::test_default_retry_policy_matches_contract PASSED [100%]
+
+============================== 52 passed in 5.55s ==============================

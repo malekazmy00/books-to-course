@@ -1,0 +1,133 @@
+# 2026-09-29T21:46:20Z $ b2c-hello run --name Trace144620 --course-id crs_p0_trace
+ Container b2c-worker-run-bd54378b4d6e Creating 
+ Container b2c-worker-run-bd54378b4d6e Created 
+{
+  "cache_hits": [
+    false,
+    false,
+    false
+  ],
+  "refs": [
+    {
+      "created_at": "2026-09-29T21:46:28.273178Z",
+      "key": "07fd762aba65ab7781694e6ea9c31c39da29fdadf1859ef1cad0a35232b343cf",
+      "schema_version": "1.0.0",
+      "sha256": "bbf5f2f14053760b200203e67159087c0c7014cbb31759ae5afcf42a7115f77b",
+      "stage": "hello-prepare",
+      "uri": "s3://artifacts/crs_p0_trace/hello-prepare/07fd762aba65ab7781694e6ea9c31c39da29fdadf1859ef1cad0a35232b343cf/"
+    },
+    {
+      "created_at": "2026-09-29T21:46:31.622325Z",
+      "key": "b19b74c0f26893f50b40ca3d1c9844cbdc8d28e11666defeadaf708c1505fee9",
+      "schema_version": "1.0.0",
+      "sha256": "dbb6cb81c3b4f9e76131725fcb8c9510a501244f2cb78e92f89c54a2a71cdb54",
+      "stage": "hello-greet",
+      "uri": "s3://artifacts/crs_p0_trace/hello-greet/b19b74c0f26893f50b40ca3d1c9844cbdc8d28e11666defeadaf708c1505fee9/"
+    },
+    {
+      "created_at": "2026-09-29T21:46:32.172152Z",
+      "key": "66f1f240c2fe98c1ac3ae81b21eb440520e190064f1e12236f54ec0830fdafb5",
+      "schema_version": "1.0.0",
+      "sha256": "a5c72308c7a04f62b7ae35abb0e7fdd9127198e2e2752d17a50fb206ae5634b5",
+      "stage": "hello-finalize",
+      "uri": "s3://artifacts/crs_p0_trace/hello-finalize/66f1f240c2fe98c1ac3ae81b21eb440520e190064f1e12236f54ec0830fdafb5/"
+    }
+  ],
+  "result": {
+    "greeting": "Hey Trace144620! Nice to meet you! 😊",
+    "name": "Trace144620"
+  },
+  "trace_id": "c93543f35688f89a23e837d9d392b33d"
+}
+
+trace_id=c93543f35688f89a23e837d9d392b33d — waiting 20s for collector batch + Langfuse ingestion
+# 2026-09-29T21:46:55Z $ GET /api/public/v2/observations?traceId=c93543f35688f89a23e837d9d392b33d (from inside b2c network)
+ Container b2c-worker-run-7d82266c20e4 Creating 
+ Container b2c-worker-run-7d82266c20e4 Created 
+HTTP 200
+observations in trace c93543f35688f89a23e837d9d392b33d: 11
+  2026-09-29T21:46:27.908Z  SPAN        b2c-hello run
+  2026-09-29T21:46:27.969Z  SPAN        StartWorkflow:HelloPipeline
+  2026-09-29T21:46:28.038Z  SPAN        StartActivity:hello_prepare
+  2026-09-29T21:46:28.038Z  SPAN        RunWorkflow:HelloPipeline
+  2026-09-29T21:46:28.190Z  SPAN        RunActivity:hello_prepare
+  2026-09-29T21:46:28.547Z  SPAN        StartActivity:hello_greet
+  2026-09-29T21:46:28.639Z  SPAN        RunActivity:hello_greet
+  2026-09-29T21:46:28.654Z  GENERATION  chat qwen3-coder-30b
+  2026-09-29T21:46:32.005Z  SPAN        StartActivity:hello_finalize
+  2026-09-29T21:46:32.104Z  SPAN        RunActivity:hello_finalize
+  2026-09-29T21:46:32.439Z  SPAN        CompleteWorkflow:HelloPipeline
+
+=== GENERATION observation(s) (raw JSON) ===
+[
+  {
+    "id": "2e2ea0340b50b139",
+    "traceId": "c93543f35688f89a23e837d9d392b33d",
+    "startTime": "2026-09-29T21:46:28.654Z",
+    "endTime": "2026-09-29T21:46:31.553Z",
+    "projectId": "b2c-dev",
+    "parentObservationId": "4386ed21122ae346",
+    "type": "GENERATION",
+    "name": "chat qwen3-coder-30b",
+    "level": "DEFAULT",
+    "statusMessage": "",
+    "version": "",
+    "environment": "default",
+    "input": "[{\"role\": \"system\", \"content\": \"You write one short friendly greeting.\"}, {\"role\": \"user\", \"content\": \"Greet the person named 'Trace144620'. Return JSON with `name` set exactly to 'Trace144620' and `greeting`.\"}]",
+    "output": "{\n  \"name\": \"Trace144620\",\n  \"greeting\": \"Hey Trace144620! Nice to meet you! 😊\"\n}",
+    "metadata": {
+      "scope.name": "b2c_llm_gateway",
+      "resourceAttributes.service.name": "b2c-worker",
+      "resourceAttributes.service.instance.id": "cb06a738-ef09-44fc-98f3-8e62baa9c1a7",
+      "resourceAttributes.telemetry.sdk.version": "1.45.0",
+      "resourceAttributes.telemetry.sdk.name": "opentelemetry",
+      "resourceAttributes.telemetry.sdk.language": "python",
+      "attributes.b2c.attempts": 1,
+      "attributes.b2c.cache_hit": false,
+      "attributes.gen_ai.usage.output_tokens": 39,
+      "attributes.gen_ai.usage.input_tokens": 57,
+      "attributes.gen_ai.response.model": "qwen3-coder-30b",
+      "attributes.gen_ai.request.max_tokens": 64,
+      "attributes.b2c.cache_key": "8371c0c3e1c488579ba1301f98a4dc1396750dcd9727b191ef4e377402d1c53e",
+      "attributes.b2c.prompt_version": "hello-v1",
+      "attributes.gen_ai.output.type": "json",
+      "attributes.gen_ai.request.temperature": 0,
+      "attributes.gen_ai.request.model": "qwen3-coder-30b",
+      "attributes.gen_ai.provider.name": "llama.cpp",
+      "attributes.gen_ai.operation.name": "chat"
+    },
+    "model": "qwen3-coder-30b",
+    "internalModelId": "",
+    "modelParameters": {
+      "temperature": 0,
+      "max_tokens": 64
+    },
+    "usageDetails": {
+      "input": 57,
+      "output": 39,
+      "total": 96
+    },
+    "inputUsage": 57,
+    "outputUsage": 39,
+    "totalUsage": 96,
+    "costDetails": {},
+    "inputCost": null,
+    "outputCost": null,
+    "totalCost": null,
+    "usagePricingTierId": null,
+    "usagePricingTierName": null,
+    "latency": 2.899,
+    "timeToFirstToken": null,
+    "userId": "",
+    "sessionId": "",
+    "isRootObservation": false,
+    "bookmarked": false,
+    "public": false,
+    "modelId": null,
+    "inputPrice": null,
+    "outputPrice": null,
+    "totalPrice": null
+  }
+]
+
+RESULT: PASS (generation span from llm_gateway present with model)

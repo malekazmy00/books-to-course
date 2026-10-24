@@ -1,0 +1,15 @@
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -12,4 +12,4 @@
+-    "torch==2.5.1",
+-    "transformers==4.45.2",
+-    "openai>=3.3.1,<4",
+-    "litellm==1.73.1",
++    "torch==2.14.1",
++    "transformers==5.18.0",
++    "openai>=2.20,<3",
++    "litellm==1.104.0",
+@@ -18,1 +18,2 @@
+-    "tiktoken==0.7.0",
++    "tiktoken>=0.8,<1",
++    "sentence-transformers==6.1.0",

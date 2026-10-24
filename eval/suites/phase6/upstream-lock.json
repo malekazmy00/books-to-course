@@ -1,0 +1,35 @@
+{
+  "project": "OSU-NLP-Group/HippoRAG",
+  "source_url": "https://github.com/OSU-NLP-Group/HippoRAG",
+  "source_ref": "main",
+  "commit": "2bfd831417202b49cda9da7973e141a456e16872",
+  "package_version": "2.0.0a5",
+  "archive_url": "https://codeload.github.com/OSU-NLP-Group/HippoRAG/tar.gz/2bfd831417202b49cda9da7973e141a456e16872",
+  "archive_sha256": "cd8b241c3d8e1ccca69b47618a651cb38dcac1a0b84ec495794c69686278f64d",
+  "archive_copy": "/mnt/wsl/b2cdata/phase6-assets/hipporag-2.0.0a5-2bfd831417202b49cda9da7973e141a456e16872.tar.gz",
+  "license": "MIT",
+  "pypi_latest_published_prerelease_at_audit": "2.0.0a4",
+  "direct_dependency_locking": "partial; pyproject pins torch, transformers, litellm, networkx, python-igraph, tiktoken, tenacity; requirements leave several packages unpinned and there is no complete transitive lock",
+  "static_security_review": {
+    "python_builtin_eval_or_exec": "no direct call identified in tracked Python source; model.eval() is used for inference mode",
+    "pickle_deserialization": "present: HippoRAG.initialize_graph loads graph.pickle via igraph.Graph.Read_Pickle",
+    "pickle_provenance": "igraph/python-igraph 0.11.8 documents Read_Pickle as Python pickled format; only load fresh private trial artifacts",
+    "source_execution": "not run",
+    "package_installation": "not run"
+  },
+  "dependency_audit": {
+    "tool": "pip-audit",
+    "target_python": "3.12",
+    "status": "completed_with_findings",
+    "audit_exit_code": 1,
+    "advisory_rows": 95,
+    "affected_direct_dependencies": {
+      "litellm": {"version": "1.73.1", "advisory_rows": 30},
+      "torch": {"version": "2.5.1", "advisory_rows": 22},
+      "transformers": {"version": "4.45.2", "advisory_rows": 43}
+    },
+    "result_file": "/mnt/wsl/b2cdata/phase6-assets/pip-audit-columns.txt",
+    "result_sha256": "ae07fda14a2987f31a5aa84fa546b4fcb526cc67211889ad3348b6929b7983fb",
+    "interpretation": "Advisory rows include aliases/overlap and do not equal distinct exploit paths; compatibility review is required before choosing patched overrides. Do not execute upstream with its pinned dependencies."
+  }
+}

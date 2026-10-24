@@ -1,0 +1,129 @@
+# 2026-09-29T21:47:03Z $ b2c-hello start --name Durable144703 --delay 40
+ Container b2c-worker-run-3279e379f8af Creating 
+ Container b2c-worker-run-3279e379f8af Created 
+workflow_id=hello-Durable144703-6b776c1c
+waiting for hello_greet to start on the heavy queue...
+
+# 2026-09-29T21:47:27Z $ kill -9 3757797   # host PID of the worker process (b2c-worker-1), mid hello_greet
+kill exit=0
+b2c-worker-1 state=running exitCode=0 oomKilled=false
+# 2026-09-29T21:47:29Z $ docker compose -p b2c --env-file .env -f docker/compose.yml -f docker/compose.observability.yml up -d --no-deps worker
+ Container b2c-worker-1 Running 
+b2c-worker-1 state=running startedAt=2026-09-29T21:47:28.924530015Z restartCount=1
+
+# 2026-09-29T21:47:31Z $ b2c-hello wait hello-Durable144703-6b776c1c
+ Container b2c-worker-run-5fe163d6eb48 Creating 
+ Container b2c-worker-run-5fe163d6eb48 Created 
+{
+  "cache_hits": [
+    false,
+    false,
+    false
+  ],
+  "refs": [
+    {
+      "created_at": "2026-09-29T21:47:11.171380Z",
+      "key": "f71f91d765236578d118a82dd117fd9cea348e7f0ddac5fb79d8f2a7a7515f7b",
+      "schema_version": "1.0.0",
+      "sha256": "bab53edf22c03e5c72fd6c30caa553f4bb1173c19706ee1490ae9bd1b902c106",
+      "stage": "hello-prepare",
+      "uri": "s3://artifacts/crs_p0_durable/hello-prepare/f71f91d765236578d118a82dd117fd9cea348e7f0ddac5fb79d8f2a7a7515f7b/"
+    },
+    {
+      "created_at": "2026-09-29T21:47:46.130274Z",
+      "key": "0d8e795566aff60116b1975aa767c9c4e98af555f4c6dd7fed401acc06b59c99",
+      "schema_version": "1.0.0",
+      "sha256": "693f756f6aa2b7f4203beb2e41b2720cb4399f9af044e4c3d99a6183866f2c6f",
+      "stage": "hello-greet",
+      "uri": "s3://artifacts/crs_p0_durable/hello-greet/0d8e795566aff60116b1975aa767c9c4e98af555f4c6dd7fed401acc06b59c99/"
+    },
+    {
+      "created_at": "2026-09-29T21:47:46.629921Z",
+      "key": "1a3e562c29a37b913ae6c0d42c0309d047b66f0d0401fda835ffd1c1d04b01e1",
+      "schema_version": "1.0.0",
+      "sha256": "7ec793cc9b2125bd685403880e5e310fdf9ff43e07ff747525f657adef8812ec",
+      "stage": "hello-finalize",
+      "uri": "s3://artifacts/crs_p0_durable/hello-finalize/1a3e562c29a37b913ae6c0d42c0309d047b66f0d0401fda835ffd1c1d04b01e1/"
+    }
+  ],
+  "result": {
+    "greeting": "Hello Durable144703! Nice to meet you!",
+    "name": "Durable144703"
+  }
+}
+
+# 2026-09-29T21:47:49Z $ b2c-hello history hello-Durable144703-6b776c1c   # activity attempts / worker identities
+ Container b2c-worker-run-6a008fa2381b Creating 
+ Container b2c-worker-run-6a008fa2381b Created 
+[
+  {
+    "id": 1,
+    "time": "2026-09-29T21:47:10.868509568Z",
+    "event": "WORKFLOW_EXECUTION_STARTED"
+  },
+  {
+    "id": 5,
+    "time": "2026-09-29T21:47:11.033900754Z",
+    "event": "ACTIVITY_TASK_SCHEDULED",
+    "activity": "hello_prepare",
+    "queue": "io"
+  },
+  {
+    "id": 6,
+    "time": "2026-09-29T21:47:11.072780351Z",
+    "event": "ACTIVITY_TASK_STARTED",
+    "attempt": 1,
+    "identity": "1@c7ccecf966be"
+  },
+  {
+    "id": 7,
+    "time": "2026-09-29T21:47:11.372963126Z",
+    "event": "ACTIVITY_TASK_COMPLETED"
+  },
+  {
+    "id": 11,
+    "time": "2026-09-29T21:47:11.471576017Z",
+    "event": "ACTIVITY_TASK_SCHEDULED",
+    "activity": "hello_greet",
+    "queue": "heavy"
+  },
+  {
+    "id": 12,
+    "time": "2026-09-29T21:47:42.592248282Z",
+    "event": "ACTIVITY_TASK_STARTED",
+    "attempt": 2,
+    "identity": "1@c7ccecf966be"
+  },
+  {
+    "id": 13,
+    "time": "2026-09-29T21:47:46.372499837Z",
+    "event": "ACTIVITY_TASK_COMPLETED"
+  },
+  {
+    "id": 17,
+    "time": "2026-09-29T21:47:46.514418845Z",
+    "event": "ACTIVITY_TASK_SCHEDULED",
+    "activity": "hello_finalize",
+    "queue": "light"
+  },
+  {
+    "id": 18,
+    "time": "2026-09-29T21:47:46.514489345Z",
+    "event": "ACTIVITY_TASK_STARTED",
+    "attempt": 1,
+    "identity": "1@c7ccecf966be"
+  },
+  {
+    "id": 19,
+    "time": "2026-09-29T21:47:46.884115449Z",
+    "event": "ACTIVITY_TASK_COMPLETED"
+  },
+  {
+    "id": 23,
+    "time": "2026-09-29T21:47:46.978338654Z",
+    "event": "WORKFLOW_EXECUTION_COMPLETED"
+  }
+]
+
+## worker log lines after restart (stage/cache_hit/attempt)
+{"ts": "2026-09-29T21:47:36.799Z", "level": "INFO", "logger": "b2c.worker", "msg": "worker started", "pid": 1, "queues": ["light", "heavy", "io"], "llm": "http://llm:8080/v1", "model": "qwen3-coder-30b"}

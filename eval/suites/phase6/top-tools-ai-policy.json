@@ -1,0 +1,12 @@
+{
+  "provider_type": "top_tools_ai",
+  "model_id": "Top-Tools-Ai",
+  "base_url": "https://top-tools-ai.com/api/v1",
+  "max_tokens": 4096,
+  "temperature": 0,
+  "fallback_policy": "none",
+  "daily_token_limit": 8000000,
+  "policy_source_url": "https://top-tools-ai.com/docs",
+  "prior_tokens_used": 543,
+  "quota_window_id": "2026-10-04"
+}

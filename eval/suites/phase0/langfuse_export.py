@@ -6,7 +6,7 @@ import time
 
 import httpx
 
-BASE = "http://langfuse-web:3000"
+BASE = "http://langfuse-internal:3000"
 auth = (os.environ["LF_PK"], os.environ["LF_SK"])
 tid = os.environ["TID"]
 

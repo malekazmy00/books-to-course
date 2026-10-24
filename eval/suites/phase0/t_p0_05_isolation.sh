@@ -6,8 +6,11 @@ after="$ROOT/eval/reports/phase-0-external-after.txt"
 {
   echo "# T-P0-05 after-snapshot. captured: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "## docker ps --format '{{.ID}} {{.Names}} {{.Status}}'  (non-b2c only)"
-  docker ps --filter "label!=com.docker.compose.project=b2c" --format '{{.ID}} {{.Names}} {{.Status}}' \
-    | grep -v ' b2c-'
+  for id in $(docker ps -q); do
+    p=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$id")
+    [ "$p" = "b2c" ] && continue
+    docker inspect --format '{{.Id | printf "%.12s"}} {{.Name}} {{.State.Status}}' "$id"
+  done
   echo "## id name StartedAt"
   for id in $(docker ps -q); do
     p=$(docker inspect --format '{{index .Config.Labels "com.docker.compose.project"}}' "$id")

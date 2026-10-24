@@ -10,6 +10,13 @@ from typing import Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
+from .term_tables import (
+    RATING_CELL_ARABIC_ALIASES,
+    RATING_CELL_GLOSSARY,
+    RATING_TABLE_LITERALS,
+    TERMINOLOGY_EQUIVALENTS,
+)
+
 from b2c_core.arabic_text import strip_arabic_marks
 from b2c_llm_gateway import (
     InvalidLLMOutput,
@@ -41,15 +48,9 @@ def terminology_violations(source: str, target: str, glossary: Mapping[str, str]
         # Diacritics/tatweel only; alef variants stay distinct here (unchanged policy).
         return " ".join(strip_arabic_marks(unicodedata.normalize("NFKC", text).casefold()).split())
     normalized_source, normalized_target = normalize(source), normalize(target)
-    # Explicit equivalents of selected Arabic targets, not domain inference.
-    # Definite forms and noun/adjective realizations preserve the selected sense.
-    # Do not use root stemming: it would admit unrelated senses and compounds.
-    equivalents = {
-        "استخبارات": ("استخبارات", "استخباراتي", "استخباراتية"),
-        "تحليل استخباراتي": ("تحليل استخباراتي", "التحليل الاستخباراتي", "تحليل الاستخبارات",
-                              "التحليل الاستخباراتي", "للتحليل الاستخباراتي"),
-        "تقنيات التحليل المنظم": ("تقنيات التحليل المنظم", "التقنيات التحليلية المنظمة"),
-    }
+    # Explicit equivalents of selected Arabic targets, not domain inference
+    # (data in term_tables.TERMINOLOGY_EQUIVALENTS).
+    equivalents = TERMINOLOGY_EQUIVALENTS
     def contains_expected(expected):
         alternatives = equivalents.get(normalize(expected), (normalize(expected),))
         for alternative in alternatives:
@@ -200,27 +201,14 @@ def _protect_numeric_tokens(text: str) -> str:
     return "".join(pieces)
 
 
-_CELL_GLOSSARY = {
-    "strong positive and strong negative": "إيجابي قوي وسلبي قوي",
-    "medium positive and medium negative": "إيجابي متوسط وسلبي متوسط",
-    "weak positive and weak negative": "إيجابي ضعيف وسلبي ضعيف",
-    "strong positive": "إيجابي قوي", "strong negative": "سلبي قوي",
-    "medium positive": "إيجابي متوسط", "medium negative": "سلبي متوسط",
-    "weak positive": "إيجابي ضعيف", "weak negative": "سلبي ضعيف",
-    "negligible": "ضئيل", "substantial": "كبير", "moderate": "متوسط",
-    "low": "منخفض", "strong": "قوي", "nil": "لا شيء",
-}
+_CELL_GLOSSARY = RATING_CELL_GLOSSARY
 _CELL_NAMES = sorted(_CELL_GLOSSARY, key=len, reverse=True)
 _CELL_PATTERN = re.compile(r"(?:" + "|".join(
     r"\s*".join(re.escape(word) for word in name.split()) for name in _CELL_NAMES
 ) + r")", re.IGNORECASE)
-_TABLE_LITERAL = re.compile(r"(?:Strongpositiveandstrongnegativ|Mediumpositiveandmediumnegativ|Weakpositiveandweaknegativ|Strongnegativ|Mediumnegativ|Weaknegativ|Mpamn|Mn)(?![A-Za-z])")
-_CELL_ARABIC_ALIASES = {
-    "منخفضة": "low", "معتدل": "moderate", "معتدلة": "moderate", "متوسطة": "moderate",
-    "مهمل": "negligible", "مهملة": "negligible", "ضئيلة": "negligible", "لا يذكر": "negligible", "لايذكر": "negligible",
-    "كبيرة": "substantial", "جوهري": "substantial", "جوهريّة": "substantial", "جوهرية": "substantial", "ملحوظ": "substantial",
-    "قوية": "strong", "منعدم": "nil",
-}
+_TABLE_LITERAL = re.compile("(?:" + "|".join(re.escape(literal) for literal in RATING_TABLE_LITERALS)
+                            + r")(?![A-Za-z])")
+_CELL_ARABIC_ALIASES = RATING_CELL_ARABIC_ALIASES
 _ARABIC_CELLS = sorted(list((value, name) for name, value in _CELL_GLOSSARY.items()) + list(_CELL_ARABIC_ALIASES.items()), key=lambda pair: len(pair[0]), reverse=True)
 _ARABIC_CELL_PATTERN = re.compile(r"(?:" + "|".join(re.escape(value) for value, _ in _ARABIC_CELLS) + r")")
 

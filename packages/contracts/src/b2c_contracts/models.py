@@ -14,7 +14,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "1.1.0"
 
 
 class Contract(BaseModel):
@@ -78,6 +78,7 @@ class BookUpload(Contract):
     ]
     title: str
     rights_status: RightsStatus  # D-002
+    ocr_language: Literal["en", "ar"] = "en"
 
 
 class PageRef(Contract):
@@ -137,12 +138,32 @@ class Module(Contract):
     lessons: list[Lesson] = Field(min_length=1)
 
 
+class OutlineApprovalProvenance(Contract):
+    """Who approved an outline and whether review was human or policy-based."""
+    review_type: Literal["human", "system"]
+    reviewer_id: str | None = Field(default=None, min_length=1, max_length=120)
+    system_id: str | None = Field(default=None, min_length=1, max_length=120)
+    policy_version: str | None = None
+    evidence_sha256: str | None = None
+
+    @model_validator(mode="after")
+    def _reviewer_kind(self) -> "OutlineApprovalProvenance":
+        if self.review_type == "human":
+            if not self.reviewer_id or any((self.system_id, self.policy_version, self.evidence_sha256)):
+                raise ValueError("human review requires reviewer_id and forbids system provenance")
+        elif self.reviewer_id is not None or not all((self.system_id, self.policy_version, self.evidence_sha256)):
+            raise ValueError("system review requires policy provenance and forbids reviewer_id")
+        return self
+
+
 class CourseOutline(Contract):
     course_id: str
     spine_book_id: str
     supplementary_book_ids: list[str]
     modules: list[Module] = Field(min_length=1)
-    requires_review: bool  # True if any lesson provenance == llm_inferred
+    requires_review: bool  # True until a human or approved system policy accepts structure; inferred lessons always require human review
+    excluded_prefix_block_ids: list[str] = Field(default_factory=list)
+    excluded_prefix_policy: Literal["publisher-front-matter-v1"] | None = None
 
     @model_validator(mode="after")
     def _review_flag(self) -> "CourseOutline":
@@ -251,6 +272,7 @@ class Question(Contract):
     answer_text: str | None = None
     rationale: str
     evidence_sids: list[str] = Field(min_length=1)
+    option_evidence_sids: list[list[str]] | None = None  # source anchors aligned to options
     validation: dict[str, Any]  # solver results + linter findings
 
     @model_validator(mode="after")
@@ -260,6 +282,9 @@ class Question(Contract):
                 raise ValueError("mcq needs 3-5 options")
             if self.answer_index is None or not (0 <= self.answer_index < len(self.options)):
                 raise ValueError("mcq needs valid answer_index")
+            if self.option_evidence_sids is not None:
+                if len(self.option_evidence_sids) != len(self.options) or any(not refs for refs in self.option_evidence_sids):
+                    raise ValueError("mcq option evidence must provide nonempty citations for each option")
         elif self.answer_text is None:
             raise ValueError("non-mcq needs answer_text")
         return self

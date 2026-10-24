@@ -10,6 +10,7 @@ import hashlib
 import json
 import re
 from collections.abc import Callable, Mapping
+from typing import BinaryIO
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -34,12 +35,17 @@ def _check_name(name: str) -> None:
         raise ValueError(f"unsafe file name: {name!r}")
 
 
-def content_sha256(files: Mapping[str, bytes]) -> str:
+def _content_sha256_from_hashes(file_hashes: Mapping[str, str]) -> str:
     """Order-independent digest over (name, sha256(content)) pairs."""
     h = hashlib.sha256()
-    for name in sorted(files):
-        h.update(name.encode("utf-8") + b"\0" + hashlib.sha256(files[name]).digest())
+    for name in sorted(file_hashes):
+        h.update(name.encode("utf-8") + b"\0" + bytes.fromhex(file_hashes[name]))
     return h.hexdigest()
+
+
+def content_sha256(files: Mapping[str, bytes]) -> str:
+    return _content_sha256_from_hashes({name: hashlib.sha256(data).hexdigest()
+                                        for name, data in files.items()})
 
 
 class ArtifactStore:
@@ -115,6 +121,39 @@ class ArtifactStore:
             self.recorder.record_artifact(course_id, ref)
         return ref
 
+    def put_stream(self, course_id: str, stage: str, key: str,
+                   files: Mapping[str, BinaryIO], file_hashes: Mapping[str, str]) -> ArtifactRef:
+        """Upload file-like objects without buffering their contents in process memory.
+
+        The caller supplies SHA-256 digests computed while streaming each file. The
+        manifest is still written last, preserving the same immutable/idempotent contract
+        as `put`.
+        """
+        if not files or set(files) != set(file_hashes):
+            raise ValueError("stream files and file_hashes must have the same non-empty names")
+        prefix = self._prefix(course_id, stage, key)
+        for name in files:
+            _check_name(name)
+        for digest in file_hashes.values():
+            if not re.fullmatch(r"[0-9a-f]{64}", digest):
+                raise ValueError("file hashes must be lowercase SHA-256 hex digests")
+        existing = self.exists(course_id, stage, key)
+        if existing is not None:
+            return existing
+        for name, stream in files.items():
+            stream.seek(0)
+            self.s3.upload_fileobj(stream, self.bucket, prefix + name)
+        ref = ArtifactRef(
+            stage=stage, key=key, uri=f"s3://{self.bucket}/{prefix}",
+            sha256=_content_sha256_from_hashes(file_hashes),
+            created_at=datetime.now(timezone.utc),
+        )
+        self.s3.put_object(Bucket=self.bucket, Key=prefix + MANIFEST,
+                           Body=ref.model_dump_json().encode("utf-8"))
+        if self.recorder is not None:
+            self.recorder.record_artifact(course_id, ref)
+        return ref
+
     def get_or_compute(self, course_id: str, stage: str, key: str,
                        compute: Callable[[], Mapping[str, bytes]]) -> tuple[ArtifactRef, bool]:
         """Return (ref, cache_hit). `compute` runs only when the artifact does not exist yet."""
@@ -127,6 +166,11 @@ class ArtifactStore:
         _check_name(name)
         obj = self.s3.get_object(Bucket=self.bucket, Key=self._prefix_of(ref) + name)
         return obj["Body"].read()
+
+    def download_to_path(self, ref: ArtifactRef, name: str, path: str) -> None:
+        """Download an artifact without buffering the complete object in memory."""
+        _check_name(name)
+        self.s3.download_file(self.bucket, self._prefix_of(ref) + name, path)
 
     def read_json(self, ref: ArtifactRef, name: str) -> Any:
         return json.loads(self.read(ref, name))

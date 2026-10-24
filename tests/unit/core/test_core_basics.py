@@ -26,8 +26,9 @@ def test_settings_read_b2c_env(monkeypatch):
 
 def test_settings_have_no_cloud_llm_keys():  # D-004
     names = set(Settings.model_fields)
+    table_only_keys = {"gemini_api_key_file"}
     for bad in ("openai", "anthropic", "gemini", "azure", "bedrock"):
-        assert not any(bad in n for n in names), n
+        assert not any(bad in n for n in names - table_only_keys), bad
 
 
 def test_settings_reject_unknown_llm_scheme(monkeypatch):

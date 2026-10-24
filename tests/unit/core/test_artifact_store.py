@@ -1,5 +1,7 @@
 """ArtifactStore: s3://artifacts/{course_id}/{stage}/{key}/<files>, idempotent (docs/02 §1.1-1.2)."""
 import boto3
+import hashlib
+import io
 import pytest
 from moto import mock_aws
 
@@ -77,3 +79,29 @@ def test_rejects_unsafe_path_components(store, course, stage, key, name):
 def test_empty_artifact_rejected(store):
     with pytest.raises(ValueError):
         store.put("c", "s", KEY, {})
+
+
+def test_put_stream_roundtrip_and_digest_matches_byte_put(store):
+    payload = b"streamed book content"
+    metadata = b"{\"title\":\"book\"}"
+    files = {"source.pdf": io.BytesIO(payload), "book.json": io.BytesIO(metadata)}
+    hashes = {name: hashlib.sha256(stream.getvalue()).hexdigest() for name, stream in files.items()}
+    streamed = store.put_stream("crs_01", "upload", KEY, files, hashes)
+    byte_put = store.put("crs_02", "upload", KEY, {"source.pdf": payload, "book.json": metadata})
+    assert streamed.sha256 == byte_put.sha256
+    assert store.read(streamed, "source.pdf") == payload
+    assert store.read(streamed, "book.json") == metadata
+
+
+def test_put_stream_rejects_missing_or_invalid_hashes(store):
+    with pytest.raises(ValueError):
+        store.put_stream("crs_01", "upload", KEY, {"x": io.BytesIO(b"x")}, {})
+    with pytest.raises(ValueError):
+        store.put_stream("crs_01", "upload", KEY, {"x": io.BytesIO(b"x")}, {"x": "bad"})
+
+
+def test_download_to_path_writes_artifact_without_read_api(store, tmp_path):
+    ref = store.put("crs_01", "source", KEY, {"source.pdf": b"%PDF-1.7 test"})
+    destination = tmp_path / "source.pdf"
+    store.download_to_path(ref, "source.pdf", str(destination))
+    assert destination.read_bytes() == b"%PDF-1.7 test"

@@ -28,10 +28,56 @@ from .audio import MP3Activities, GenerateMP3Workflow
 from .ingest import IngestPDFActivities, IngestPDFWorkflow, OutlineActivities
 from .qa import CourseQAActivities, GenerateCourseQAWorkflow
 from .translation import TranslationActivities, TranslateContentWorkflow, RetranslateSegmentWorkflow
-from .queues import AUDIO, HEAVY, IO, LIGHT, max_concurrent_activities
+from .queues import AUDIO, HEAVY, IO, LIGHT, TRANSLATE_BOOK, max_concurrent_activities
+from .translate_book import AssembleBookTranslationWorkflow, TranslateBookActivities, TranslateBookWorkflow
+from .translation_profiles import ProfileRuntime, UnknownProfile, load_translation_profiles
+from .translation_store import TranslationResultStore
 from .telemetry import setup_tracing
 
 log = get_logger("b2c.worker")
+
+
+def translation_gateway_factory(cache):
+    """llm_gateway client per translation/QE profile (rule 5); local unless the profile opts in."""
+    def make(profile):
+        api_key = None
+        if profile.api_key_file:
+            from pathlib import Path
+            api_key = Path(profile.api_key_file).read_text(encoding="utf-8").strip() or None
+        return LLMGateway(profile.base_url, profile.model_id, cache=cache, timeout_s=profile.timeout_s,
+                          allow_remote=profile.allow_remote, api_key=api_key,
+                          reasoning_effort=profile.reasoning_effort)
+    return make
+
+
+class _UnavailableProfiles:
+    """Stands in when the profiles file is invalid: the other queues keep running and every
+    translate-book batch fails non-retryably with the reason."""
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+
+    def fingerprint(self, *_args):
+        raise UnknownProfile(f"translation profiles unavailable: {self.reason}")
+
+    engine = estimator = fingerprint
+
+
+def translate_book_worker(client, s, *, store, cache, executor) -> Worker:
+    """Rebuilt book translation (D-028 part D) on its own queue, beside the old workflows."""
+    from b2c_translation.memory import TranslationMemory
+
+    try:
+        runtime = ProfileRuntime(load_translation_profiles(s), gateway_factory=translation_gateway_factory(cache))
+    except Exception as exc:  # a bad profiles file must not take the other queues down
+        log.error("translation profiles unavailable", extra={"error": type(exc).__name__})
+        runtime = _UnavailableProfiles(type(exc).__name__)
+    acts = TranslateBookActivities(artifact_store=store, result_store=TranslationResultStore(s.pg_dsn),
+                                   runtime=runtime, memory=TranslationMemory(s.pg_dsn))
+    return Worker(client, task_queue=TRANSLATE_BOOK,
+                  workflows=[TranslateBookWorkflow, AssembleBookTranslationWorkflow],
+                  activities=[acts.prepare, acts.translate_batch, acts.assemble],
+                  activity_executor=executor, max_concurrent_activities=max_concurrent_activities(TRANSLATE_BOOK))
 
 
 async def connect(settings: Settings) -> Client:
@@ -133,7 +179,8 @@ async def run_worker() -> None:
             executor.shutdown(wait=False)
             provider.shutdown()
         return
-    executor = ThreadPoolExecutor(max_workers=sum(max_concurrent_activities(q) for q in (LIGHT, HEAVY, IO)))
+    executor = ThreadPoolExecutor(max_workers=sum(max_concurrent_activities(q)
+                                                  for q in (LIGHT, HEAVY, IO, TRANSLATE_BOOK)))
     workers = [
         Worker(client, task_queue=LIGHT, workflows=[HelloPipeline, IngestPDFWorkflow, IndexApprovedBookWorkflow], activities=[acts.finalize, outline_acts.build, index_acts.index_approved_book],
                activity_executor=executor, max_concurrent_activities=max_concurrent_activities(LIGHT)),
@@ -144,8 +191,9 @@ async def run_worker() -> None:
                activity_executor=executor, max_concurrent_activities=max_concurrent_activities(HEAVY)),
         Worker(client, task_queue=IO, activities=[acts.prepare],
                activity_executor=executor, max_concurrent_activities=max_concurrent_activities(IO)),
+        translate_book_worker(client, s, store=store, cache=cache, executor=executor),
     ]
-    log.info("worker started", extra={"pid": os.getpid(), "queues": [LIGHT, HEAVY, IO],
+    log.info("worker started", extra={"pid": os.getpid(), "queues": [LIGHT, HEAVY, IO, TRANSLATE_BOOK],
                                       "llm": s.llm_base_url, "model": s.llm_model_id})
     try:
         await asyncio.gather(*(w.run() for w in workers))

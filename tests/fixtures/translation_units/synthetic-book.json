@@ -1,0 +1,401 @@
+{
+ "note": "Synthetic text written for tests; no real book content.",
+ "book": {
+  "book_id": "syn",
+  "title": "Synthetic fixture",
+  "role": "spine",
+  "page_count": 240,
+  "toc_source": "headings",
+  "blocks": [
+   {
+    "block_id": "syn:1:0",
+    "type": "page_header",
+    "level": null,
+    "text": "SYNTHETIC PRESS RUNNING HEAD",
+    "refs": [
+     {
+      "book_id": "syn",
+      "page_no": 1
+     }
+    ],
+    "section_path": [
+     "Part One"
+    ],
+    "ocr": false
+   },
+   {
+    "block_id": "syn:1:1",
+    "type": "heading",
+    "level": 1,
+    "text": "c o n t e n t s",
+    "refs": [
+     {
+      "book_id": "syn",
+      "page_no": 1
+     }
+    ],
+    "section_path": [
+     "Part One"
+    ],
+    "ocr": false
+   },
+   {
+    "block_id": "syn:1:2",
+    "type": "list_item",
+    "level": null,
+    "text": "The Method of Lanterns 12",
+    "refs": [
+     {
+      "book_id": "syn",
+      "page_no": 1
+     }
+    ],
+    "section_path": [
+     "Part One"
+    ],
+    "ocr": false
+   },
+   {
+    "block_id": "syn:1:3",
+    "type": "list_item",
+    "level": null,
+    "text": "The Harbour of Clocks 48",
+    "refs": [
+     {
+      "book_id": "syn",
+      "page_no": 1
+     }
+    ],
+    "section_path": [
+     "Part One"
+    ],
+    "ocr": false
+   },
+   {
+    "block_id": "syn:1:4",
+    "type": "paragraph",
+    "level": null,
+    "text": "Notes 201 Bibliography 230 Index 240",
+    "refs": [
+     {
+      "book_id": "syn",
+      "page_no": 1
+     }
+    ],
+    "section_path": [
+     "Part One"
+    ],
+    "ocr": false
+   },
+   {
+    "block_id": "syn:3:0",
+    "type": "heading",
+    "level": 2,
+    "text": "1.1 Lanterns and Clocks",
+    "refs": [
+     {
+      "book_id": "syn",
+      "page_no": 3
+     }
+    ],
+    "section_path": [
+     "Part One"
+    ],
+    "ocr": false
+   },
+   {
+    "block_id": "syn:3:1",
+    "type": "paragraph",
+    "level": null,
+    "text": "1.1 LANTERNS AND CLOCKS\nThe lantern keepers met every winter to compare their clocks and\ntheir careful records.1 Each keeper wrote the hour in a ledger, e.g. at dusk,\nand the ledgers were later bound together. 2 The binding took the\n",
+    "refs": [
+     {
+      "book_id": "syn",
+      "page_no": 3
+     }
+    ],
+    "section_path": [
+     "Part One"
+    ],
+    "ocr": false
+   },
+   {
+    "block_id": "syn:4:0",
+    "type": "paragraph",
+    "level": null,
+    "text": "whole season, and the keepers called it the long stitch.3 Nobody minded.\nValue Added\nThe ledger shows how lanterns and clocks were kept in step.",
+    "refs": [
+     {
+      "book_id": "syn",
+      "page_no": 4
+     }
+    ],
+    "section_path": [
+     "Part One"
+    ],
+    "ocr": false
+   },
+   {
+    "block_id": "syn:4:1",
+    "type": "caption",
+    "level": null,
+    "text": "Figure 1.2 Ledger of the Harbour Clocks",
+    "refs": [
+     {
+      "book_id": "syn",
+      "page_no": 4
+     }
+    ],
+    "section_path": [
+     "Part One"
+    ],
+    "ocr": false
+   },
+   {
+    "block_id": "syn:5:0",
+    "type": "table",
+    "level": null,
+    "text": "| Keeper | Lanterns |\n|---|---|\n| North | 12 |\n| South | 9 |",
+    "refs": [
+     {
+      "book_id": "syn",
+      "page_no": 5
+     }
+    ],
+    "section_path": [
+     "Part One"
+    ],
+    "ocr": false
+   },
+   {
+    "block_id": "syn:200:0",
+    "type": "paragraph",
+    "level": null,
+    "text": "N O T ES\n1. Ana Example, The Lantern Book (Harbourtown: Example Press, 1999), 14.\n2. Ibid., 15.\n3. The long stitch is still remembered by the keepers of the\nsouthern harbour.",
+    "refs": [
+     {
+      "book_id": "syn",
+      "page_no": 200
+     }
+    ],
+    "section_path": [
+     "Part One"
+    ],
+    "ocr": false
+   },
+   {
+    "block_id": "syn:240:0",
+    "type": "paragraph",
+    "level": null,
+    "text": "clocks, 3, 12-14 harbour, 48 keepers: of lanterns, 7, 9; of clocks, 21",
+    "refs": [
+     {
+      "book_id": "syn",
+      "page_no": 240
+     }
+    ],
+    "section_path": [
+     "Part One"
+    ],
+    "ocr": false
+   },
+   {
+    "block_id": "syn:240:1",
+    "type": "paragraph",
+    "level": null,
+    "text": "lanterns, 1, 5-8",
+    "refs": [
+     {
+      "book_id": "syn",
+      "page_no": 240
+     }
+    ],
+    "section_path": [
+     "Part One"
+    ],
+    "ocr": false
+   }
+  ],
+  "parser": {
+   "name": "synthetic",
+   "version": "0",
+   "options_hash": "fixture"
+  }
+ },
+ "expected_units": [
+  {
+   "kind": "noise",
+   "text": "SYNTHETIC PRESS RUNNING HEAD",
+   "markers": [],
+   "blocks": 1
+  },
+  {
+   "kind": "heading",
+   "text": "contents",
+   "markers": [],
+   "blocks": 1
+  },
+  {
+   "kind": "toc",
+   "text": "The Method of Lanterns 12",
+   "markers": [],
+   "blocks": 1
+  },
+  {
+   "kind": "toc",
+   "text": "The Harbour of Clocks 48",
+   "markers": [],
+   "blocks": 1
+  },
+  {
+   "kind": "toc",
+   "text": "Notes 201 Bibliography 230 Index 240",
+   "markers": [],
+   "blocks": 1
+  },
+  {
+   "kind": "heading",
+   "text": "1.1 Lanterns and Clocks",
+   "markers": [],
+   "blocks": 1
+  },
+  {
+   "kind": "noise",
+   "text": "1.1 LANTERNS AND CLOCKS",
+   "markers": [],
+   "blocks": 1
+  },
+  {
+   "kind": "prose",
+   "text": "The lantern keepers met every winter to compare their clocks and their careful records.",
+   "markers": [
+    "1"
+   ],
+   "blocks": 1
+  },
+  {
+   "kind": "prose",
+   "text": "Each keeper wrote the hour in a ledger, e.g. at dusk, and the ledgers were later bound together.",
+   "markers": [
+    "2"
+   ],
+   "blocks": 1
+  },
+  {
+   "kind": "prose",
+   "text": "The binding took the whole season, and the keepers called it the long stitch.",
+   "markers": [
+    "3"
+   ],
+   "blocks": 2
+  },
+  {
+   "kind": "prose",
+   "text": "Nobody minded.",
+   "markers": [],
+   "blocks": 1
+  },
+  {
+   "kind": "heading",
+   "text": "Value Added",
+   "markers": [],
+   "blocks": 1
+  },
+  {
+   "kind": "prose",
+   "text": "The ledger shows how lanterns and clocks were kept in step.",
+   "markers": [],
+   "blocks": 1
+  },
+  {
+   "kind": "caption",
+   "text": "Figure 1.2 Ledger of the Harbour Clocks",
+   "markers": [],
+   "blocks": 1
+  },
+  {
+   "kind": "table_cell",
+   "text": "Keeper",
+   "markers": [],
+   "blocks": 1
+  },
+  {
+   "kind": "table_cell",
+   "text": "Lanterns",
+   "markers": [],
+   "blocks": 1
+  },
+  {
+   "kind": "table_cell",
+   "text": "North",
+   "markers": [],
+   "blocks": 1
+  },
+  {
+   "kind": "table_cell",
+   "text": "12",
+   "markers": [],
+   "blocks": 1
+  },
+  {
+   "kind": "table_cell",
+   "text": "South",
+   "markers": [],
+   "blocks": 1
+  },
+  {
+   "kind": "table_cell",
+   "text": "9",
+   "markers": [],
+   "blocks": 1
+  },
+  {
+   "kind": "heading",
+   "text": "NOTES",
+   "markers": [],
+   "blocks": 1
+  },
+  {
+   "kind": "reference",
+   "text": "1. Ana Example, The Lantern Book (Harbourtown: Example Press, 1999), 14.",
+   "markers": [],
+   "blocks": 1
+  },
+  {
+   "kind": "reference",
+   "text": "2. Ibid., 15.",
+   "markers": [],
+   "blocks": 1
+  },
+  {
+   "kind": "footnote",
+   "text": "3. The long stitch is still remembered by the keepers of the southern harbour.",
+   "markers": [],
+   "blocks": 1
+  },
+  {
+   "kind": "index",
+   "text": "clocks, 3, 12-14",
+   "markers": [],
+   "blocks": 1
+  },
+  {
+   "kind": "index",
+   "text": "harbour, 48",
+   "markers": [],
+   "blocks": 1
+  },
+  {
+   "kind": "index",
+   "text": "keepers: of lanterns, 7, 9; of clocks, 21",
+   "markers": [],
+   "blocks": 1
+  },
+  {
+   "kind": "index",
+   "text": "lanterns, 1, 5-8",
+   "markers": [],
+   "blocks": 1
+  }
+ ]
+}

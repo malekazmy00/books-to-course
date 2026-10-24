@@ -2,12 +2,14 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from typing import Any
 
 from fastapi import HTTPException
 from starlette.concurrency import run_in_threadpool
 
+log = logging.getLogger("b2c.api")
 NOT_FOUND_CODES = frozenset({"NoSuchKey", "404", "NotFound"})
 
 # Every server-issued workflow ID is a fixed prefix plus a lowercase SHA-256
@@ -38,6 +40,28 @@ async def describe_or_404(client: Any, workflow_id: str,
         raise
     except Exception as exc:
         raise HTTPException(status_code=503, detail="Temporal is unavailable") from exc
+
+
+async def verified_ref(store: Any, course_id: str, ref: Any, stage: str, label: str) -> Any:
+    """Accept a client-supplied ArtifactRef only if it is the committed manifest.
+
+    The ref must name ``stage``, live at the canonical
+    ``s3://{bucket}/{course_id}/{stage}/{key}/`` prefix, and match the stored
+    manifest's sha256 and URI (same rule as ingestion recovery).
+    """
+    from b2c_api.ingestion_recovery import checked_ref
+
+    if ref.stage != stage:
+        raise HTTPException(status_code=422, detail=f"{label} has the wrong artifact stage")
+    try:
+        await checked_ref(store, course_id, ref.model_dump(mode="json"), stage)
+    except ValueError as exc:
+        raise HTTPException(status_code=422,
+                            detail=f"{label} is not a committed artifact of this course") from exc
+    except Exception as exc:
+        log.exception("could not verify %s", label)
+        raise HTTPException(status_code=503, detail=f"{label} could not be verified") from exc
+    return ref
 
 
 def is_workflow_id(kind: str, workflow_id: str) -> bool:

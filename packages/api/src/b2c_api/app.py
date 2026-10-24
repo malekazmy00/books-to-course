@@ -77,6 +77,7 @@ from b2c_api.deps import (
     describe_or_404,
     s3_bytes,
     s3_json,
+    verified_ref,
 )
 from b2c_api.workflow_resume import (
     FAILED as RETRY_STATUSES,
@@ -388,6 +389,11 @@ def create_app(
         if not isinstance(principal, str) or not principal or len(principal) > 120:
             raise HTTPException(status_code=401, detail="authenticated learner identity is missing")
         return principal
+
+    def get_store() -> Any:
+        if app.state.artifact_store is None:
+            app.state.artifact_store = ArtifactStore.from_settings(settings)
+        return app.state.artifact_store
 
     async def get_temporal_client() -> Any:
         if app.state.temporal_client is None:
@@ -1399,6 +1405,7 @@ def create_app(
             raise HTTPException(status_code=422, detail="source artifact is outside this course or has the wrong stage")
         if request.source_language == request.target_language:
             raise HTTPException(status_code=422, detail="source and target language must differ")
+        await verified_ref(get_store(), course_id, source, expected_stage, "source artifact")
         try:
             if request.resume_from_workflow_id:
                 previous = await original_translation_input(request.resume_from_workflow_id)
@@ -2017,6 +2024,17 @@ def create_app(
             if (request.source_book_ref is None or request.source_book_ref.stage != "ingest-parse-pdf" or
                     not request.source_book_ref.uri.startswith(f"s3://{settings.s3_bucket}/{course_id}/")):
                 raise HTTPException(status_code=422, detail="lesson-split book audio requires the original parsed book")
+        if request.source_qa_artifact_ref is not None and (
+                request.source_qa_artifact_ref.stage != "generate-course-qa" or
+                not request.source_qa_artifact_ref.uri.startswith(f"s3://{settings.s3_bucket}/{course_id}/")):
+            raise HTTPException(status_code=422, detail="source QA artifact must belong to this course")
+        store = get_store()
+        for label, supplied in (("source artifact", source), ("approved outline", outline_ref),
+                                ("source book", request.source_book_ref),
+                                ("source book translation", request.source_book_translation_ref),
+                                ("source QA artifact", request.source_qa_artifact_ref)):
+            if supplied is not None:
+                await verified_ref(store, course_id, supplied, supplied.stage, label)
         try:
             client = await get_temporal_client()
             digest = hashlib.sha256((course_id + source.sha256 + request.source_kind + request.language +
@@ -2330,6 +2348,7 @@ def create_app(
         approved_ref = request.approved_outline_ref
         if approved_ref.stage != "approve-outline" or not approved_ref.uri.startswith(f"s3://{settings.s3_bucket}/{course_id}/"):
             raise HTTPException(status_code=422, detail="approved outline is outside the requested course")
+        await verified_ref(get_store(), course_id, approved_ref, "approve-outline", "approved outline")
         try:
             client = await get_temporal_client()
             saved_index = await indexing_status(request.index_workflow_id, recovery_course_id=course_id)

@@ -32,6 +32,7 @@ class Temporal:
 
 
 class Store:
+    bucket = "artifacts"
     def __init__(self, original=None):
         self.s3 = self
         self.original = original
@@ -43,9 +44,12 @@ class Store:
     def read(self, *args):
         # Book attribution is tested separately; this does not mutate any book.
         raise ValueError("no parsed book fixture")
+    def exists(self, course_id, stage, key):
+        # The source parsed book is a committed artifact of course "c".
+        return SOURCE if (course_id, stage, key) == ("c", SOURCE.stage, SOURCE.key) else None
 
 
-SOURCE = ArtifactRef(stage="ingest-parse-pdf", key="source", uri="s3://artifacts/c/source",
+SOURCE = ArtifactRef(stage="ingest-parse-pdf", key="1"*64, uri="s3://artifacts/c/ingest-parse-pdf/"+"1"*64+"/",
     sha256="a"*64, created_at=datetime.now(UTC))
 
 

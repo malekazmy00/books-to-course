@@ -253,12 +253,78 @@ class TruncatedGateway:
         raise LLMOutputTruncated("this test message must not be recorded")
 
 
-def test_chunk_level_model_failure_is_sanitized_and_remaining_chunks_reported():
+def test_chunk_level_output_failure_is_sanitized_and_does_not_stop_the_scope():
     service = ConceptExtractionService(TruncatedGateway(), InMemoryConceptRelationStore(), scope_id="course-a")
     result = service.extract([chunk("chunk-a"), chunk("chunk-b")])
     assert result.chunks_processed == 0
-    assert result.chunks_skipped == 1
+    assert result.chunks_skipped == 2
     assert [(item.chunk_id, item.item_kind, item.item_index, item.reason_code) for item in result.rejections] == [
-        ("chunk-a", "chunk", None, "model_output_truncated")
+        ("chunk-a", "chunk", None, "model_output_truncated"),
+        ("chunk-b", "chunk", None, "model_output_truncated"),
     ]
     assert "this test message must not be recorded" not in repr(result.rejections)
+
+
+class InvalidLLMOutput(Exception):
+    pass
+
+
+class LLMUnavailable(Exception):
+    pass
+
+
+class ScriptedGateway:
+    model_id = "injected-test-model"
+
+    def __init__(self, *steps):
+        self.steps = list(steps)
+        self.calls = 0
+
+    def structured(self, *args, **kwargs):
+        self.calls += 1
+        step = self.steps.pop(0)
+        if isinstance(step, Exception):
+            raise step
+        return step
+
+
+def test_invalid_output_skips_only_that_chunk():
+    store = InMemoryConceptRelationStore()
+    gateway = ScriptedGateway(InvalidLLMOutput("bad json"), output())
+    result = ConceptExtractionService(gateway, store, scope_id="course-a").extract(
+        [chunk("chunk-a"), chunk("chunk-b")])
+    assert gateway.calls == 2
+    assert result.chunks_processed == 1
+    assert result.chunks_skipped == 1
+    assert [(r.chunk_id, r.reason_code) for r in result.rejections] == [("chunk-a", "model_output_invalid")]
+    assert store.list_relations("course-a")[0].edge.evidence_chunk_ids == ["chunk-b"]
+
+
+def test_pydantic_validation_error_skips_only_that_chunk():
+    gateway = ScriptedGateway({"entities": "not-a-list"}, output())
+    result = ConceptExtractionService(gateway, InMemoryConceptRelationStore(), scope_id="course-a").extract(
+        [chunk("chunk-a"), chunk("chunk-b")])
+    assert result.chunks_processed == 1
+    assert [(r.chunk_id, r.reason_code) for r in result.rejections] == [("chunk-a", "model_output_invalid")]
+
+
+def test_unavailable_provider_stops_the_scope_and_counts_unprocessed_chunks():
+    gateway = ScriptedGateway(output(), LLMUnavailable("down"), output())
+    result = ConceptExtractionService(gateway, InMemoryConceptRelationStore(), scope_id="course-a").extract(
+        [chunk("chunk-a"), chunk("chunk-b"), chunk("chunk-c")])
+    assert gateway.calls == 2
+    assert result.chunks_processed == 1
+    assert result.chunks_skipped == 2
+    assert [(r.chunk_id, r.reason_code) for r in result.rejections] == [("chunk-b", "model_unavailable")]
+
+
+def test_entity_name_must_match_whole_words_in_quote():
+    text = "The part of the cart was art."
+    bad = ConceptExtractionOutput(entities=[
+        ExtractedEntity(name="art", entity_type="concept", evidence_quote="The part of the cart"),
+        ExtractedEntity(name="art", entity_type="concept", evidence_quote="was art."),
+    ], relations=[])
+    result = ConceptExtractionService(FakeGateway(bad), InMemoryConceptRelationStore(), scope_id="s").extract(
+        [chunk("chunk-a", text=text)])
+    assert [(r.item_index, r.reason_code) for r in result.rejections] == [(0, "entity_name_not_in_quote")]
+    assert [e.name for e in result.entities] == ["art"]

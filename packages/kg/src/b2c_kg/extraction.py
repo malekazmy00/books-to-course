@@ -102,8 +102,20 @@ class ConceptExtractionResult:
     entities: tuple[GroundedConceptEntity, ...]
     relations: tuple[EvidenceBackedRelation, ...]
     chunks_processed: int
+    # Chunks with no accepted model output (output errors + chunks left after the
+    # provider became unavailable); chunks_processed + chunks_skipped == input chunks.
     chunks_skipped: int = 0
     rejections: tuple[ExtractionRejection, ...] = ()
+
+
+# Gateway/pydantic failures matched by class name (the layer must not import the
+# gateway's exception types). Output errors skip one chunk; unavailability stops.
+_CHUNK_ERROR_CODES = {
+    "LLMOutputTruncated": "model_output_truncated",
+    "InvalidLLMOutput": "model_output_invalid",
+    "ValidationError": "model_output_invalid",
+    "LLMUnavailable": "model_unavailable",
+}
 
 
 def _normalized_name(name: str) -> str:
@@ -111,7 +123,12 @@ def _normalized_name(name: str) -> str:
 
 
 def _quote_contains_name(name: str, quote: str) -> bool:
-    return _normalized_name(name) in _normalized_name(quote)
+    """Whole-word match: "art" must not be found inside "part" or "cart"."""
+    normalized_name = _normalized_name(name)
+    if not normalized_name:
+        return False
+    pattern = r"\s+".join(re.escape(part) for part in normalized_name.split())
+    return re.search(rf"(?<!\w){pattern}(?!\w)", _normalized_name(quote)) is not None
 
 
 def _entity_id(entity_type: EntityType, name: str) -> str:
@@ -194,21 +211,20 @@ class ConceptExtractionService:
                 )
                 output = ConceptExtractionOutput.model_validate(response)
             except Exception as exc:
-                error_codes = {
-                    "LLMOutputTruncated": "model_output_truncated",
-                    "InvalidLLMOutput": "model_output_invalid",
-                    "LLMUnavailable": "model_unavailable",
-                    "ValidationError": "model_output_invalid",
-                }
-                reason = error_codes.get(type(exc).__name__)
+                reason = _CHUNK_ERROR_CODES.get(type(exc).__name__)
                 if reason is None:
                     raise
                 rejections.append(ExtractionRejection(
                     chunk_id=chunk.chunk_id, item_kind="chunk", item_index=None,
                     reason_code=reason,
                 ))
-                chunks_skipped = len(ordered_chunks) - chunk_index - 1
-                break
+                if reason == "model_unavailable":
+                    # The provider is down: every remaining chunk would fail too.
+                    chunks_skipped += len(ordered_chunks) - chunk_index
+                    break
+                # A bad/truncated output is specific to this chunk; keep going.
+                chunks_skipped += 1
+                continue
             chunks_processed += 1
             accepted_entities: set[str] = set()
             for index, entity in enumerate(output.entities):

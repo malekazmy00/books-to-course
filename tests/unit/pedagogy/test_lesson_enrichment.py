@@ -547,3 +547,22 @@ def test_numbered_procedure_questions_never_trigger_proposal_repair_calls(monkey
     with pytest.raises(ValueError, match="q001"):
         generate_lesson_enrichments(outline, book, chunks, gateway, question_count=3, question_repair_limit=3)
     assert [call[0] for call in gateway.calls] == ["ExactQuestions"]
+
+
+def test_resumed_enrichment_reruns_mcq_evidence_consistency():
+    outline, book, chunks = _sources()
+    [lesson] = generate_lesson_enrichments(outline, book, chunks, _Gateway(), question_count=3)
+    first = lesson.questions[0]
+    tampered_question = first.model_copy(update={"stem": "After calling stats.chance(x), " + first.stem})
+    tampered = lesson.model_copy(update={"questions": [tampered_question, *lesson.questions[1:]]})
+
+    class NoCalls:
+        model_id = "fixture"
+
+        def structured(self, *args, **kwargs):  # pragma: no cover - must not be called
+            raise AssertionError("resumed lesson must not call the model")
+
+    assert generate_lesson_enrichments(outline, book, chunks, NoCalls(), question_count=3,
+                                       precompleted=[lesson]) == [lesson]
+    with pytest.raises(ValueError, match="precompleted enrichment failed revalidation: l1: .*code premise"):
+        generate_lesson_enrichments(outline, book, chunks, NoCalls(), question_count=3, precompleted=[tampered])

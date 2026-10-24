@@ -727,6 +727,11 @@ def generate_lesson_enrichments(
         bloom_findings = list(lint_bloom_distribution(saved.questions).findings) if saved.questions else []
         if citations.findings or assets.findings or lint_findings or bloom_findings:
             raise ValueError(f"precompleted enrichment failed revalidation: {saved.lesson_id}")
+        try:
+            # Same fail-closed MCQ evidence checks a fresh enrichment must pass.
+            _validate_mcq_evidence_consistency(saved.draft, saved.questions, scope.chunks)
+        except ValueError as exc:
+            raise ValueError(f"precompleted enrichment failed revalidation: {saved.lesson_id}: {exc}") from exc
         precompleted_by_id[saved.lesson_id] = saved
 
     result: list[LessonEnrichment] = []

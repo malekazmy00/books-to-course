@@ -34,6 +34,8 @@ from temporalio.exceptions import WorkflowAlreadyStartedError
 from temporalio.service import RPCError, RPCStatusCode
 from b2c_api.ingestion_recovery import recover_extraction
 from b2c_api.deps import (
+    TERMINAL_FAILURE_STATUSES,
+    workflow_failure,
     is_workflow_id,
     require_course_id,
     require_workflow_id,
@@ -124,12 +126,9 @@ def ingestion_router(ctx: ApiContext, router: Any = None) -> Any:
             except Exception as exc:
                 log.exception("failed to read completed ingestion result")
                 raise HTTPException(status_code=503, detail="ingestion result is unavailable") from exc
-        elif status_name in {"FAILED", "CANCELED", "TERMINATED", "TIMED_OUT"}:
-            try:
-                await handle.result()
-            except Exception as exc:
-                cause = getattr(exc, "cause", None)
-                response["failure"] = {"type": getattr(cause, "type", type(cause or exc).__name__)}
+        elif status_name in TERMINAL_FAILURE_STATUSES:
+            if failure := await workflow_failure(handle):
+                response["failure"] = failure
         return response
 
     @router.get("/v1/ingestions/{workflow_id}/processing-plan")

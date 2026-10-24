@@ -20,6 +20,8 @@ from starlette.concurrency import run_in_threadpool
 from temporalio.exceptions import WorkflowAlreadyStartedError
 from b2c_translation.generation import validate_manual_translation
 from b2c_api.deps import (
+    TERMINAL_FAILURE_STATUSES,
+    workflow_failure,
     require_workflow_id,
     PROGRESS_WARNING,
     describe_or_404,
@@ -256,7 +258,7 @@ def translations_router(ctx: ApiContext, router: Any = None) -> Any:
             except Exception as exc:
                 log.exception("failed to read completed translation artifact")
                 raise HTTPException(status_code=503, detail="translation artifact is unavailable") from exc
-        elif status_name in {"FAILED", "CANCELED", "TERMINATED", "TIMED_OUT"}:
+        elif status_name in TERMINAL_FAILURE_STATUSES:
             store = get_store()
             try:
                 progress_key = f"_system/translation-progress/{workflow_id}.json"
@@ -277,11 +279,8 @@ def translations_router(ctx: ApiContext, router: Any = None) -> Any:
                     raise HTTPException(status_code=503, detail="translation progress is unavailable") from progress_error
                 response["progress"] = {"progress_state": "not_reported", "completed_segments": 0,
                                          "total_segments": 0, "message": "لا توجد نقاط تقدم محفوظة لهذا التشغيل."}
-            try:
-                await handle.result()
-            except Exception as exc:
-                cause = getattr(exc, "cause", None)
-                response["failure"] = {"type": getattr(cause, "type", type(cause or exc).__name__)}
+            if failure := await workflow_failure(handle):
+                response["failure"] = failure
         try:
             original = await original_translation_input(workflow_id)
             from temporalio.api.enums.v1 import PendingActivityState

@@ -19,6 +19,8 @@ from b2c_api.audio_exports import audio_progress, ordered_audio_tracks, validate
 from starlette.concurrency import run_in_threadpool
 from temporalio.exceptions import WorkflowAlreadyStartedError
 from b2c_api.deps import (
+    TERMINAL_FAILURE_STATUSES,
+    workflow_failure,
     require_course_id,
     require_workflow_id,
     PROGRESS_WARNING,
@@ -198,16 +200,15 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
                 out["manifest"] = result.get("manifest")
                 if out["manifest"]: out["progress"] = audio_progress(out["manifest"], status)
             else: out["file_url"] = f"/v1/audio/{workflow_id}/file"
-        elif status in {"FAILED", "CANCELED", "TERMINATED", "TIMED_OUT"}:
+        elif status in TERMINAL_FAILURE_STATUSES:
             try:
                 partial = await partial_audio_manifest(workflow_id)
                 out["manifest"] = partial
                 out["progress"] = audio_progress(partial, status)
             except HTTPException as exc:
                 if exc.status_code != 409: raise
-            try: await handle.result()
-            except Exception as exc:
-                cause = getattr(exc, "cause", None); out["failure"] = {"type": getattr(cause, "type", type(cause or exc).__name__)}
+            if failure := await workflow_failure(handle):
+                out["failure"] = failure
         return out
 
     @router.get("/v1/audio/{workflow_id}/manifest")

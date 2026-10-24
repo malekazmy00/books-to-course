@@ -18,6 +18,8 @@ from starlette.concurrency import run_in_threadpool
 from temporalio.exceptions import WorkflowAlreadyStartedError
 from temporalio.service import RPCError, RPCStatusCode
 from b2c_api.deps import (
+    TERMINAL_FAILURE_STATUSES,
+    workflow_failure,
     require_book_id,
     require_course_id,
     require_workflow_id,
@@ -244,7 +246,7 @@ def qa_router(ctx: ApiContext, router: Any = None) -> Any:
             except Exception as exc:
                 log.exception("failed to read completed question generation")
                 raise HTTPException(status_code=503, detail="question generation result is unavailable") from exc
-        elif status_name in {"FAILED", "CANCELED", "TERMINATED", "TIMED_OUT"}:
+        elif status_name in TERMINAL_FAILURE_STATUSES:
             store = get_store()
             try:
                 progress_key = f"_system/qa-progress/{workflow_id}.json"
@@ -257,11 +259,8 @@ def qa_router(ctx: ApiContext, router: Any = None) -> Any:
             else:
                 response["progress"] = {"progress_state": "not_reported", "completed_scopes": 0,
                                          "total_scopes": 0, "message": "لا توجد نقاط تقدم محفوظة لهذا التشغيل."}
-            try:
-                await handle.result()
-            except Exception as exc:
-                cause = getattr(exc, "cause", None)
-                response["failure"] = {"type": getattr(cause, "type", type(cause or exc).__name__)}
+            if failure := await workflow_failure(handle):
+                response["failure"] = failure
         return response
 
     @router.post("/v1/course-qa/{workflow_id}/pause")

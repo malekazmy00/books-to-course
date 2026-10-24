@@ -18,8 +18,13 @@ from b2c_contracts import GlossaryTerm, TermbaseEntry
 
 AGROVOC_RELEASE = "2026-09-07"
 AGROVOC_LICENSE = "CC BY IGO 3.0"
+# SHA-256 of the upstream release archive (agrovoc_core.rdf.zip): provenance only.
 AGROVOC_DATA_SHA256 = (
     "521087c43c2046aec42a1e4f8e7eb059441e18c202d9efb7dc7e0b7c81bddf9a"
+)
+# SHA-256 of the derived agrovoc_en_ar_candidates.jsonl that the loader actually reads.
+AGROVOC_CANDIDATE_SHA256 = (
+    "125888420889ee22746cf740b6c74aaf985f112bd81c573eb853b4150b25ed43"
 )
 POLICY_ID = "g3-policy-agrovoc-en-ar-v1"
 DEFAULT_TERMBASE_DIR = Path("/mnt/wsl/b2cdata/eval-datasets/termbases")
@@ -109,7 +114,7 @@ class AgrovocIndex:
 
     @classmethod
     def from_jsonl(
-        cls, path: str | Path | None = None, *, expected_sha256: str | None = AGROVOC_DATA_SHA256,
+        cls, path: str | Path | None = None, *, expected_sha256: str | None = AGROVOC_CANDIDATE_SHA256,
     ) -> "AgrovocIndex":
         """Load the dataset and verify it against the stamped release hash.
 

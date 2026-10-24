@@ -6,7 +6,7 @@ unit suite stays hermetic. Location follows B2C_TERMBASE_DIR (same default as ru
 import pytest
 
 from b2c_contracts import GlossaryTerm
-from b2c_translation.agrovoc import AGROVOC_DATA_SHA256, default_agrovoc_dataset
+from b2c_translation.agrovoc import AGROVOC_CANDIDATE_SHA256, default_agrovoc_dataset
 from b2c_translation.multisource_terms import WIKIDATA_CANDIDATE_SHA256, default_wikidata_dataset
 from b2c_translation.pipeline import (
     AgrovocIndex,
@@ -26,8 +26,8 @@ def _require(path):
 
 def test_real_agrovoc_matches_stamped_hash_and_resolves_soil():
     _require(default_agrovoc_dataset())
-    index = AgrovocIndex.from_jsonl()  # verifies AGROVOC_DATA_SHA256
-    assert index.source_sha256 == AGROVOC_DATA_SHA256
+    index = AgrovocIndex.from_jsonl()  # verifies AGROVOC_CANDIDATE_SHA256
+    assert index.source_sha256 == AGROVOC_CANDIDATE_SHA256
     glossary = [GlossaryTerm(
         term_en="soil",
         definition_en="Loose and unconsolidated outer layer of the earth crust made up of small particles.",

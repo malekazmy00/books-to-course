@@ -14,6 +14,8 @@ from typing import Any
 
 from b2c_contracts import GlossaryTerm, TermbaseEntry
 
+# Fallback hash, used only when an AGROVOC index does not report what it loaded.
+from .agrovoc import AGROVOC_CANDIDATE_SHA256 as _LEGACY_AGROVOC_CANDIDATE_SHA256
 from .agrovoc import termbase_dir, verify_sha256
 
 WIKIDATA_RELEASE = "2026-09-30"
@@ -22,9 +24,6 @@ WIKIDATA_CANDIDATE_SHA256 = "523aa61b81b51787816a02c394c5f753a17c01d497c23f31694
 WIKIDATA_LICENSE = "CC0 1.0 (Wikidata structured data)"
 MULTISOURCE_POLICY_ID = "g3-policy-wikidata-agrovoc-context-v1"
 WIKIDATA_RELATIVE_PATH = Path("wikidata-lexemes/wikidata_concept_en_ar_candidates.jsonl")
-# Hash previously hard-coded for AGROVOC candidates; used only when the AGROVOC
-# index object does not report the hash of what it actually loaded.
-_LEGACY_AGROVOC_CANDIDATE_SHA256 = "125888420889ee22746cf740b6c74aaf985f112bd81c573eb853b4150b25ed43"
 
 
 def default_wikidata_dataset() -> Path:

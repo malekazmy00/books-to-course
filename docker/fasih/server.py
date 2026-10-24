@@ -25,14 +25,13 @@ import sys
 import time
 import threading
 from functools import wraps
-from pathlib import Path
 
 import numpy as np
 import soundfile as sf
 import torch
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, Field
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

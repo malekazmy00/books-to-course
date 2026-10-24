@@ -1,5 +1,20 @@
-"""L7 Translation: termbase, QE routing, review queue.
+"""L7 Translation deterministic pipeline primitives."""
+from .pipeline import (
+    TextChunk,
+    build_termbase,
+    chunk_text,
+    deterministic_translation_check,
+    render_term_instructions,
+    term_injection_block,
+    termbase_gate,
+    translation_needs_review,
+    word_count,
+)
 
-Placeholder created in Phase 0 so layer boundaries are enforced from day one (import-linter).
-Implemented in Phase 7. May import only b2c_contracts, b2c_core, b2c_llm_gateway.
-"""
+__all__ = [
+    "TextChunk", "build_termbase", "chunk_text", "deterministic_translation_check",
+    "render_term_instructions", "term_injection_block", "termbase_gate",
+    "translation_needs_review", "word_count", "plan_translation_batches",
+]
+
+from .generation import (SourceSegment, TranslatedSegment, TranslationPack, plan_translation_batches, translate_segments)

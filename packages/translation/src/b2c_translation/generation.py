@@ -775,30 +775,44 @@ def _translation_request_subset(schema, messages: list[dict[str, str]], pending:
     return narrowed_schema, narrowed_messages
 
 
+_CITATION_YEAR = re.compile(r"[(\[]\s*(?:1[5-9]\d\d|20\d\d)[a-z]?\s*(?:[,;:][^)\]]{0,40})?[)\]]")
+_CITATION_LOCATOR = re.compile(r"(?:https?://|www\.|doi\.org/|\bdoi\s*:\s*\S)|\b(?:vol|vols|pp|no|nos)\.\s*\d|\bp\.\s*\d",
+                               re.IGNORECASE)
+_CITATION_QUOTED_TITLE = re.compile(
+    r"(?:^|[\s,(:;])(?:'[^'\n]{3,}'|\"[^\"\n]{3,}\"|“[^”\n]{3,}”|‘[^’\n]{3,}’)")
+
+
+def _has_strong_citation_cue(value: str) -> bool:
+    """Bracketed year, DOI/URL, volume/page locator, or a quoted title."""
+    return bool(_CITATION_YEAR.search(value) or _CITATION_LOCATOR.search(value)
+                or _CITATION_QUOTED_TITLE.search(value))
+
+
 def _is_bibliographic_fragment(text: str) -> bool:
-    """Recognize short references whose titles and names should stay verbatim."""
+    """Recognize short references whose titles and names should stay verbatim.
+
+    Only explicit citation cues qualify: a capitalised opener, a comma, a bare
+    year or a short title-like tail also describe ordinary English prose
+    ("However, in 1998 the agency changed its policy."), which must never be
+    passed through as a translation.
+    """
     value = " ".join(text.split()).strip()
     if not value or len(value) > 240:
         return False
-    if re.match(r"^(?:cited in|quoted in|see also|see|cf\.)\s+", value, re.IGNORECASE):
-        return True
     if re.fullmatch(r"(?:ibid|idem)\.?", value, re.IGNORECASE):
+        return True
+    if not _has_strong_citation_cue(value):
+        return False
+    if re.match(r"^(?:cited in|quoted in|see also|see|cf\.)\s+", value, re.IGNORECASE):
         return True
     if "," not in value:
         return False
-    author, tail = (part.strip() for part in value.split(",", 1))
-    author_tokens = author.split()
+    author_tokens = value.split(",", 1)[0].split()
     if not 1 <= len(author_tokens) <= 5:
         return False
-    if not all(token[:1].isupper() and token.replace(".", "").replace("'", "").replace("’", "").replace("-", "").isalpha()
-               for token in author_tokens):
-        return False
-    lowered = value.casefold()
-    cue = any(marker in value for marker in ("'", '"', "“", "”", "‘", "’")) or any(
-        marker in lowered for marker in ("http://", "https://", "doi.org", " vol.", " no.", " pp.", " thesis", " journal", " review", " press", " university")
-    ) or bool(re.search(r"\b\d{4}\b|\b[ivxlcdm]{2,}\b", value, re.IGNORECASE))
-    title_like = bool(tail) and len(tail.split()) <= 10 and tail.endswith((".", ")", ";"))
-    return cue or title_like
+    return all(token[:1].isupper()
+               and token.replace(".", "").replace("'", "").replace("’", "").replace("-", "").isalpha()
+               for token in author_tokens)
 
 
 def _attach_page_context(messages: list[dict[str, str]], segments: Sequence[SourceSegment],
@@ -1164,7 +1178,6 @@ def translate_segments(
                            "suspect_segments": len(suspect_details), "suspect_details": suspect_details,
                            "completeness_policy": "English prose blocks in Arabic output are rejected; source_chars>=200 and target/source<0.45; conservative triage"})
     number_checks = 0
-    preserved_reference_count = 0
 
     for batch_no, batch in enumerate(batches):
         resumed_items: list[TranslatedSegment] = []
@@ -1339,7 +1352,6 @@ def translate_segments(
                     accepted_by_id[source.segment_id] = TranslatedSegment(
                         segment_id=source.segment_id, text=source.text)
                     number_checks += 1
-                    preserved_reference_count += 1
                     recovery_method = "source_preserved_reference"
                 elif len(source.text) < 120 and _leading_heading_split(source.text) is None and not _recognized_rating_table(source.text):
                     deferred_failures.append((batch_no, [source], exc))
@@ -1401,21 +1413,32 @@ def translate_segments(
     if set(missing_ids) != set(failed_ids):
         raise ValueError("translation output coverage mismatch outside exhausted units")
     accepted = [accepted_by_id[segment_id] for segment_id in ids if segment_id in accepted_by_id]
+    # A verbatim source passthrough (exhausted reference retry or a resumed copy of
+    # one) is not a translation. Keep it, but never report the pack as completed:
+    # it is surfaced as partial + suspect for review. TranslationPack.status only
+    # allows completed/partial, so no new status value is introduced.
+    passthrough_ids = [segment.segment_id for segment in segments
+                       if segment.segment_id in accepted_by_id
+                       and accepted_by_id[segment.segment_id].text.strip() == segment.text.strip()
+                       and _is_bibliographic_fragment(segment.text)]
     suspect_ids = [detail["segment_id"] for detail in suspect_details if detail["segment_id"] in missing_ids]
+    suspect_ids += [segment_id for segment_id in passthrough_ids if segment_id not in suspect_ids]
+    incomplete = bool(missing_ids or passthrough_ids)
     if progress_callback is not None:
-        _emit_translation_checkpoint(progress_callback, {"event": "translation_partial" if missing_ids else "translation_completed",
+        _emit_translation_checkpoint(progress_callback, {"event": "translation_partial" if incomplete else "translation_completed",
                            "completed_segments": len(accepted), "total_segments": len(ids),
                            "completed_segment_ids": [item.segment_id for item in accepted],
                            "missing_segment_ids": missing_ids, "retry_segment_ids": missing_ids,
                            "failed_segment_ids": failed_ids, "suspect_segment_ids": suspect_ids,
+                           "source_preserved_segment_ids": passthrough_ids,
                            "failed_units": [_segment_failure_record(source, exc, batch_no=batch_no, attempts=1)
                                             for batch_no, pending, exc in deferred_failures for source in pending],
                            "current_segment_ids": [], "current_citations": []})
     return TranslationPack(source_language=source_language, target_language=target_language,
                           model_id=gateway.model_id, segments=accepted,
-                          status="partial" if missing_ids else "completed", total_segments=len(ids),
+                          status="partial" if incomplete else "completed", total_segments=len(ids),
                           missing_segment_ids=missing_ids, failed_segment_ids=failed_ids,
                           suspect_segment_ids=suspect_ids,
                           deterministic_checks={"all_segments_covered": not missing_ids, "number_checks": len(accepted),
                                                 "unclear_table_tokens": sum(len(warning["tokens"]) for warning in source_warnings),
-                                                "source_preserved_references": preserved_reference_count})
+                                                "source_preserved_references": len(passthrough_ids)})

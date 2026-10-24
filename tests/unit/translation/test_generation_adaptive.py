@@ -685,8 +685,11 @@ def test_retry_feedback_keeps_reason_specific_evidence_bounded_and_typed():
 @pytest.mark.parametrize("text", [
     "Ibid.",
     "Gill, 'Postmodern Prince'.",
-    "Gurr, Why Men Rebel.",
-    "Cited in Philip Roberts, Political Change.",
+    "Gurr, Why Men Rebel (1970).",
+    "Cited in Philip Roberts, Political Change (1999), pp. 12-14.",
+    "Smith, J., Journal of Soils, vol. 4, pp. 1-9.",
+    "Brown, https://doi.org/10.1000/xyz123",
+    "Cf. Lee, \u201cRain and Rivers\u201d.",
 ])
 def test_bibliographic_fragments_are_recognized_and_kept_out_of_page_context(text):
     assert _is_bibliographic_fragment(text)
@@ -702,8 +705,18 @@ def test_bibliographic_fragments_are_recognized_and_kept_out_of_page_context(tex
     assert "context_segments" not in json.loads(enriched[1]["content"])["segments"][0]
 
 
-def test_ordinary_short_phrase_is_not_classified_as_bibliography():
-    assert not _is_bibliographic_fragment("The political system changed rapidly.")
+@pytest.mark.parametrize("text", [
+    "The political system changed rapidly.",
+    # Bare years, capitalised openers and short title-like tails are prose, not citations.
+    "However, in 1998 the agency changed its policy.",
+    "Meanwhile, farmers planted wheat in 2001.",
+    "Gurr, Why Men Rebel.",
+    "See the chapter on soils.",
+    "Cited in Philip Roberts, Political Change.",
+    "Today, the press reported strong harvests.",
+])
+def test_ordinary_short_phrase_is_not_classified_as_bibliography(text):
+    assert not _is_bibliographic_fragment(text)
 
 
 def test_exhausted_bibliography_retry_preserves_exact_source_and_checkpoints_it():
@@ -714,13 +727,48 @@ def test_exhausted_bibliography_retry_preserves_exact_source_and_checkpoints_it(
             requested = json.loads(messages[1]["content"])["segments"]
             return schema(segments=[{"segment_id": item["segment_id"], "text": "999"} for item in requested])
 
-    source = SourceSegment(segment_id="ref", text="Gurr, Why Men Rebel 3.", citations=["book:p349"])
+    source = SourceSegment(segment_id="ref", text="Gurr, Why Men Rebel (1970), p. 3.", citations=["book:p349"])
     events = []
     pack = translate_segments([source], BadReferenceGateway(), source_language="en", target_language="ar",
                               progress_callback=events.append)
-    assert pack.status == "completed"
+    # A verbatim source passthrough is not a translation: never report it as completed.
+    assert pack.status == "partial"
+    assert pack.suspect_segment_ids == ["ref"]
+    assert pack.missing_segment_ids == []
     assert pack.segments == [TranslatedSegment(segment_id="ref", text=source.text)]
     assert pack.deterministic_checks["source_preserved_references"] == 1
+    assert events[-1]["event"] == "translation_partial"
+    assert events[-1]["source_preserved_segment_ids"] == ["ref"]
     saved = [event for event in events if event.get("recovery_method") == "source_preserved_reference"]
     assert len(saved) == 1
     assert saved[0]["batch_translations"][0]["text"] == source.text
+
+
+def test_english_prose_is_never_passed_through_as_arabic_translation():
+    class BadGateway:
+        model_id = "fake-bad-gateway"
+
+        def structured(self, messages, schema, *, prompt_version, **kwargs):
+            requested = json.loads(messages[1]["content"])["segments"]
+            return schema(segments=[{"segment_id": item["segment_id"], "text": "999"} for item in requested])
+
+    source = SourceSegment(segment_id="prose", text="However, in 1998 the agency changed its policy.")
+    pack = translate_segments([source], BadGateway(), source_language="en", target_language="ar")
+    assert pack.status == "partial"
+    assert pack.segments == []
+    assert pack.failed_segment_ids == ["prose"]
+    assert pack.deterministic_checks["source_preserved_references"] == 0
+
+
+def test_resumed_reference_passthrough_stays_non_completed():
+    class NoCallGateway:
+        model_id = "fake"
+
+        def structured(self, *args, **kwargs):  # pragma: no cover - must not be called
+            raise AssertionError("resumed segment must not be re-requested")
+
+    source = SourceSegment(segment_id="ref", text="Gill, 'Postmodern Prince'.")
+    pack = translate_segments([source], NoCallGateway(), source_language="en", target_language="ar",
+                              resume_segments=[TranslatedSegment(segment_id="ref", text=source.text)])
+    assert pack.status == "partial"
+    assert pack.suspect_segment_ids == ["ref"]

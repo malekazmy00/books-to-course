@@ -20,10 +20,17 @@ from b2c_core import Settings
 
 
 class FakeStore:
-    def __init__(self):
+    bucket = "artifacts"
+
+    def __init__(self, committed=()):
         self.ensure_calls = 0
         self.put_calls = []
         self.s3 = FakeProgressS3()
+        # Committed manifests, keyed like ArtifactStore.exists().
+        self.committed = {(ref.uri.split("/")[3], ref.stage, ref.key): ref for ref in committed}
+
+    def exists(self, course_id, stage, key):
+        return self.committed.get((course_id, stage, key))
 
     def ensure_bucket(self):
         self.ensure_calls += 1
@@ -338,14 +345,13 @@ async def test_force_reprocess_creates_new_workflow_and_bypasses_cached_generati
 
 
 async def test_course_qa_generation_requires_matching_completed_index_and_queues_heavy_work():
-    store = FakeStore()
     temporal = FakeTemporal()
     temporal.status_name = "COMPLETED"
     approved_ref = ArtifactRef(stage="approve-outline", key="a" * 64,
         uri="s3://artifacts/course-1/approve-outline/" + "a" * 64 + "/",
         sha256="b" * 64, created_at=datetime.now(UTC))
     temporal.result_value = {"course_id": "course-1", "outline_sha256": approved_ref.sha256}
-    app = create_app(settings=Settings(), artifact_store=store,
+    app = create_app(settings=Settings(), artifact_store=FakeStore([approved_ref]),
         temporal_connect=lambda settings: _resolved(temporal))
     payload = {"approved_outline_ref": approved_ref.model_dump(mode="json"),
         "index_workflow_id": "b2c-index-" + "1" * 64,
@@ -369,7 +375,7 @@ async def test_course_qa_generation_rejects_index_for_another_approved_outline()
         uri="s3://artifacts/course-1/approve-outline/" + "a" * 64 + "/",
         sha256="b" * 64, created_at=datetime.now(UTC))
     temporal.result_value = {"course_id": "course-1", "outline_sha256": "c" * 64}
-    app = create_app(settings=Settings(), artifact_store=FakeStore(),
+    app = create_app(settings=Settings(), artifact_store=FakeStore([approved_ref]),
         temporal_connect=lambda settings: _resolved(temporal))
     payload = {"approved_outline_ref": approved_ref.model_dump(mode="json"),
         "index_workflow_id": "b2c-index-" + "1" * 64}
@@ -404,7 +410,7 @@ async def test_course_qa_generation_waits_for_completed_index():
     approved_ref = ArtifactRef(stage="approve-outline", key="a" * 64,
         uri="s3://artifacts/course-1/approve-outline/" + "a" * 64 + "/",
         sha256="b" * 64, created_at=datetime.now(UTC))
-    app = create_app(settings=Settings(), artifact_store=FakeStore(),
+    app = create_app(settings=Settings(), artifact_store=FakeStore([approved_ref]),
         temporal_connect=lambda settings: _resolved(temporal))
     payload = {"approved_outline_ref": approved_ref.model_dump(mode="json"),
         "index_workflow_id": "b2c-index-" + "1" * 64}
@@ -493,7 +499,7 @@ async def test_course_qa_hybrid_configuration_flows_to_temporal_input():
     temporal.result_value = {"course_id": "course-1", "outline_sha256": approved_ref.sha256}
     settings = Settings(retrieval_mode="hybrid", embedding_base_url="http://bge-embed:8000/v1",
                         retrieval_top_k=12)
-    app = create_app(settings=settings, artifact_store=FakeStore(),
+    app = create_app(settings=settings, artifact_store=FakeStore([approved_ref]),
         temporal_connect=lambda settings: _resolved(temporal))
     payload = {"approved_outline_ref": approved_ref.model_dump(mode="json"),
         "index_workflow_id": "b2c-index-" + "1" * 64}

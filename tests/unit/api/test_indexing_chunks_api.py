@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import httpx
 import pytest
-from b2c_api import app as api_module
+from b2c_api.routers import indexing as api_module
 from b2c_api.app import create_app
 from b2c_core import Settings
 
@@ -10,6 +10,8 @@ WORKFLOW_ID = "b2c-index-" + "1" * 64
 
 
 class FakeChunk:
+    chunk_id = "book-main:chunk:1"
+
     def model_dump(self, *, mode: str) -> dict:
         assert mode == "json"
         return {"chunk_id": "book-main:chunk:1", "book_id": "book-main",
@@ -20,8 +22,9 @@ class FakeChunkStore:
     def __init__(self, connect):
         self.connect = connect
 
-    def list_chunks(self, course_id: str):
+    def list_chunks(self, course_id: str, *, book_ids=None):
         assert course_id == "b2c-demo"
+        assert book_ids == {"book-main"}
         return [FakeChunk()]
 
 

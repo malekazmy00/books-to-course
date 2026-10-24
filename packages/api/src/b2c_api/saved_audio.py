@@ -1,13 +1,12 @@
 """Read-only discovery of independently committed audio with exact book lineage."""
 from __future__ import annotations
 
-import io
 import json
 import re
 from typing import Any, Callable
 from fastapi import APIRouter, HTTPException
 from starlette.concurrency import run_in_threadpool
-from starlette.responses import StreamingResponse
+from b2c_api.deps import stream_artifact_file
 from b2c_contracts import ArtifactRef
 
 
@@ -102,8 +101,11 @@ def saved_audio_router(store_provider: Callable, book_progress: Callable, list_c
         entry = next((r for r in rows if r["artifact_key"] == artifact_key), None)
         if entry is None:
             raise HTTPException(404, "saved audio track not found for this book")
-        data = await run_in_threadpool(store.read, ArtifactRef.model_validate(entry["artifact_ref"]), "track.mp3")
-        return StreamingResponse(io.BytesIO(data), media_type="audio/mpeg",
-            headers={"Content-Disposition": f'attachment; filename="{entry["filename"]}"'})
+        try:
+            return await stream_artifact_file(store, ArtifactRef.model_validate(entry["artifact_ref"]), "track.mp3",
+                media_type="audio/mpeg",
+                headers={"Content-Disposition": f'attachment; filename="{entry["filename"]}"'})
+        except Exception as exc:
+            raise HTTPException(503, "saved audio track is unavailable") from exc
 
     return router

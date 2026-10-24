@@ -1,11 +1,14 @@
 """Course-scoped audio projections and bounded-memory archive export."""
 from __future__ import annotations
 import json
+import logging
 import re
 import tempfile
 import zipfile
 from typing import Any
 from b2c_contracts import ArtifactRef
+
+log = logging.getLogger("b2c.api")
 
 
 def audio_progress(manifest: dict, status: str) -> dict:
@@ -67,7 +70,20 @@ def course_audio_checkpoints(store, bucket: str, course_id: str) -> list[dict]:
         for item in page.get("Contents", []):
             if not item["Key"].endswith(".json"):
                 continue
-            record = json.loads(store.s3.get_object(Bucket=bucket, Key=item["Key"])["Body"].read())
+            data = store.s3.get_object(Bucket=bucket, Key=item["Key"])["Body"].read()
+            # A checkpoint that cannot be attributed to a course (corrupt JSON,
+            # wrong shape) is skipped and logged, so it cannot make every
+            # course's audio list unavailable. A checkpoint that claims this
+            # course but fails scope validation is still an error for this
+            # course: it may reference another course's tracks.
+            try:
+                record = json.loads(data)
+            except ValueError as exc:
+                log.warning("skipping unreadable audio checkpoint %s: %s", item["Key"], exc)
+                continue
+            if not isinstance(record, dict) or not isinstance(record.get("course_id"), str):
+                log.warning("skipping audio checkpoint %s without a course identity", item["Key"])
+                continue
             if record.get("course_id") != course_id:
                 continue
             if not re.fullmatch(r"b2c-mp3-[0-9a-f]{64}", str(record.get("workflow_id", ""))):

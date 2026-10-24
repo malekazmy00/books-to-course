@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import httpx
 from temporalio.service import RPCError, RPCStatusCode
 
-from b2c_api import app as api_module
+from b2c_api.routers import indexing as api_module
 from b2c_api.app import create_app
 from b2c_api.ingestion_recovery import recover_index
 from b2c_contracts import ArtifactRef, CourseOutline, Lesson, LessonSpan, Module, StructuredChunk

@@ -2,9 +2,14 @@
 import json
 
 
-def saved_qa_owner(store, workflow_id):
+def saved_qa_owner(store, workflow_id, course_id=None):
+    """Find the single book that saved QA ``workflow_id``.
+
+    With ``course_id`` only that course's book-progress records are listed;
+    without it (legacy APKs that know only the workflow ID) every course is.
+    """
     owners = set()
-    args = {"Bucket": store.bucket}
+    args = {"Bucket": store.bucket, "Prefix": f"{course_id}/book-progress/" if course_id else ""}
     while True:
         page = store.s3.list_objects_v2(**args)
         for item in page.get("Contents", []):

@@ -7,7 +7,7 @@ import httpx
 import pytest
 from moto import mock_aws
 from b2c_api.app import create_app
-from b2c_api.audio_exports import audio_progress, ordered_audio_tracks, audio_zip, validate_audio_manifest
+from b2c_api.audio_exports import ordered_audio_tracks, validate_audio_manifest
 from b2c_core import ArtifactStore, Settings
 
 WID = 'b2c-mp3-'+'a'*64
@@ -21,7 +21,8 @@ class Temporal:
 @pytest.fixture
 def environment():
     with mock_aws():
-        store=ArtifactStore(boto3.client('s3', region_name='us-east-1')); store.ensure_bucket()
+        store=ArtifactStore(boto3.client('s3', region_name='us-east-1'))
+        store.ensure_bucket()
         tracks=[]
         for number,(lesson,kind) in enumerate([('lesson2','lesson_attachment'),('lesson1','lesson_source_text'),('lesson2','lesson_source_text')]):
             ref=store.put('revolution','generate-mp3-track',str(number+1)*64,{'track.mp3':b'ID3-audio-'+str(number).encode()})
@@ -108,7 +109,7 @@ async def test_regenerate_rejects_multiple_lessons_before_queuing(environment):
 @pytest.mark.asyncio
 async def test_original_request_resolves_saved_input_without_operator_refs(environment, monkeypatch):
     from b2c_orchestration.audio import GenerateMP3Input
-    import b2c_api.app as module
+    import b2c_api.routers.audio as module
     store,record,app,_=environment
     ref=record['tracks'][0]['artifact_ref']
     inp=GenerateMP3Input(course_id='revolution',source_artifact_ref=ref,source_kind='course',language='ar')

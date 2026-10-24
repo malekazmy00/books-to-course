@@ -78,8 +78,8 @@ async def recover_extraction(store, client, workflow_id: str, *, course_id: str 
     return {"parsed_book": {"ref": ref.model_dump(mode="json"), "cache_hit": True,
             "page_count": book.page_count, "block_count": len(book.blocks)}, "outline": draft}
 
-async def recover_index(store, chunk_store, workflow_id):
-    record = await associated_record(store, workflow_id, "index")
+async def recover_index(store, chunk_store, workflow_id, *, course_id: str | None = None):
+    record = await associated_record(store, workflow_id, "index", course_id)
     if record is None:
         return None
     accepted = await approved_envelope(store, record)

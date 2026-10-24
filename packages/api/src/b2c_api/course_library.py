@@ -4,7 +4,7 @@ import json
 import uuid
 import threading
 import hashlib
-from typing import Any, Callable, Literal
+from typing import Callable, Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
@@ -66,7 +66,8 @@ def course_library_router(store_provider: Callable, bucket: str, list_books: Cal
             page = store.s3.list_objects_v2(**args)
             found.update(e["Prefix"].rstrip("/") for e in page.get("CommonPrefixes", []))
             token=page.get("NextContinuationToken")
-            if not token: break
+            if not token:
+                break
             args["ContinuationToken"]=token
         return sorted(cid for cid in found if not cid.startswith("_"))
 
@@ -120,7 +121,8 @@ def course_library_router(store_provider: Callable, bucket: str, list_books: Cal
     async def create_course(body: CourseName) -> dict:
         cid="course-"+uuid.uuid4().hex[:24]
         record={"course_id":cid,"name":body.name.strip(),"books":[]}
-        if not record["name"]: raise HTTPException(422,"course name cannot be blank")
+        if not record["name"]:
+            raise HTTPException(422,"course name cannot be blank")
         await run_in_threadpool(save_metadata,cid,record)
         return record
 
@@ -129,7 +131,8 @@ def course_library_router(store_provider: Callable, bucket: str, list_books: Cal
     async def rename_course(course_id: str, body: CourseName) -> dict:
         cid=valid(course_id)
         name=body.name.strip()
-        if not name: raise HTTPException(422,"course name cannot be blank")
+        if not name:
+            raise HTTPException(422,"course name cannot be blank")
         def rename():
             with _metadata_lock:
                 record=read_metadata(cid)
@@ -157,10 +160,12 @@ def course_library_router(store_provider: Callable, bucket: str, list_books: Cal
     @router.put("/v1/courses/{course_id}/memberships/{book_id}")
     async def attach_book(course_id: str, book_id: str, body: Membership) -> dict:
         cid=valid(course_id)
-        if body.book_id!=book_id: raise HTTPException(422,"book identity mismatch")
+        if body.book_id!=book_id:
+            raise HTTPException(422,"book identity mismatch")
         source=await list_books(body.source_course_id)
         book=next((b for b in source["books"] if b["book_id"]==book_id),None)
-        if book is None: raise HTTPException(404,"source book not found")
+        if book is None:
+            raise HTTPException(404,"source book not found")
         native=(await list_books(cid))["books"]
         membership={"book_id":book_id,"source_course_id":body.source_course_id,
             "role":body.role,"title":book.get("display_name") or book.get("title") or book_id,
@@ -175,7 +180,8 @@ def course_library_router(store_provider: Callable, bucket: str, list_books: Cal
                     "file_sha256":b.get("file_sha256","")} for b in native if b["book_id"] not in known]
                 if body.role=="spine":
                     for member in members:
-                        if member.get("role")=="spine": member["role"]="supplementary"
+                        if member.get("role")=="spine":
+                            member["role"]="supplementary"
                 record["books"]=members+[membership]
                 save_metadata(cid,record)
                 return record

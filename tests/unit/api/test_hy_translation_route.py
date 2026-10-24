@@ -32,6 +32,7 @@ class Temporal:
 
 
 class Store:
+    bucket = "artifacts"
     def __init__(self, original=None):
         self.s3 = self
         self.original = original
@@ -43,9 +44,12 @@ class Store:
     def read(self, *args):
         # Book attribution is tested separately; this does not mutate any book.
         raise ValueError("no parsed book fixture")
+    def exists(self, course_id, stage, key):
+        # The source parsed book is a committed artifact of course "c".
+        return SOURCE if (course_id, stage, key) == ("c", SOURCE.stage, SOURCE.key) else None
 
 
-SOURCE = ArtifactRef(stage="ingest-parse-pdf", key="source", uri="s3://artifacts/c/source",
+SOURCE = ArtifactRef(stage="ingest-parse-pdf", key="1"*64, uri="s3://artifacts/c/ingest-parse-pdf/"+"1"*64+"/",
     sha256="a"*64, created_at=datetime.now(UTC))
 
 
@@ -105,7 +109,7 @@ async def test_booktrans_pro_route_is_dispatched_only_when_its_queue_is_polling(
 async def test_resume_can_explicitly_switch_hy_without_discarding_checkpoint(monkeypatch):
     import importlib
     from b2c_orchestration.translation import TranslateContentInput
-    module=importlib.import_module("b2c_api.app")
+    module=importlib.import_module("b2c_api.routers.translations")
     monkeypatch.setattr(module,"translation_manual_overrides",lambda *args: [])
     original = TranslateContentInput(course_id="c", source_artifact_ref=SOURCE.model_dump(mode="json"),
         source_kind="book",source_language="en",target_language="ar",max_tokens=8192,
@@ -165,7 +169,6 @@ async def test_catalog_hy_readiness_requires_workflow_poller(workflow_poller,act
 
 @pytest.mark.asyncio
 async def test_contextual_glossary_is_persisted_and_changes_workflow_identity():
-    from b2c_translation.glossary import ContextualGlossary
     temporal = Temporal()
     store = Store()
     async def connect(_): return temporal

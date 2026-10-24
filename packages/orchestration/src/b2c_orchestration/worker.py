@@ -31,6 +31,7 @@ from .translation import TranslationActivities, TranslateContentWorkflow, Retran
 from .queues import AUDIO, HEAVY, IO, LIGHT, TRANSLATE_BOOK, max_concurrent_activities
 from .translate_book import AssembleBookTranslationWorkflow, TranslateBookActivities, TranslateBookWorkflow
 from .translation_profiles import ProfileRuntime, UnknownProfile, load_translation_profiles
+from .termbase_store import TermbaseStore
 from .translation_store import TranslationResultStore
 from .telemetry import setup_tracing
 
@@ -60,7 +61,7 @@ class _UnavailableProfiles:
     def fingerprint(self, *_args):
         raise UnknownProfile(f"translation profiles unavailable: {self.reason}")
 
-    engine = estimator = fingerprint
+    engine = estimator = term_proposer = fingerprint
 
 
 def translate_book_worker(client, s, *, store, cache, executor) -> Worker:
@@ -73,10 +74,12 @@ def translate_book_worker(client, s, *, store, cache, executor) -> Worker:
         log.error("translation profiles unavailable", extra={"error": type(exc).__name__})
         runtime = _UnavailableProfiles(type(exc).__name__)
     acts = TranslateBookActivities(artifact_store=store, result_store=TranslationResultStore(s.pg_dsn),
-                                   runtime=runtime, memory=TranslationMemory(s.pg_dsn))
+                                   runtime=runtime, memory=TranslationMemory(s.pg_dsn),
+                                   termbase_store=TermbaseStore(s.pg_dsn))
     return Worker(client, task_queue=TRANSLATE_BOOK,
                   workflows=[TranslateBookWorkflow, AssembleBookTranslationWorkflow],
-                  activities=[acts.prepare, acts.translate_batch, acts.assemble],
+                  activities=[acts.prepare, acts.build_termbase, acts.check_termbase, acts.translate_batch,
+                              acts.assemble],
                   activity_executor=executor, max_concurrent_activities=max_concurrent_activities(TRANSLATE_BOOK))
 
 

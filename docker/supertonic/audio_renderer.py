@@ -69,6 +69,10 @@ def _split_provider_text(text: str) -> list[str]:
         else:
             boundary = window.rfind(" ", int(_PROVIDER_TEXT_LIMIT * 0.75), _PROVIDER_TEXT_LIMIT)
             if boundary < 0:
+                # Prefer a short segment over rejecting text that has a usable
+                # word boundary earlier in the window.
+                boundary = window.rfind(" ", 0, _PROVIDER_TEXT_LIMIT)
+            if boundary <= 0:
                 raise HTTPException(422, "unbroken token exceeds TTS provider limit")
             cut = boundary + 1
         segments.append(text[:cut].strip())
@@ -167,6 +171,9 @@ def render_serial(req: RenderRequest):
         for i, text in enumerate(segments):
             saved = cache / (keys[i] + ".wav")
             save("rendering", i + 1)
+            if i not in completed and saved.exists() and valid_wav(saved.read_bytes()):
+                # An identical segment earlier in this render already produced it.
+                completed.add(i)
             if i in completed:
                 wav = saved.read_bytes()
             else:

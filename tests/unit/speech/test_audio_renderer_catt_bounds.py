@@ -14,11 +14,20 @@ def renderer(monkeypatch,tmp_path):
     return mod
 
 
-def test_arabic_is_bounded_after_number_expansion_without_losing_text(renderer):
+def _spaces(text):
+    return " ".join(text.split())
+
+
+def test_arabic_is_bounded_by_provider_limit_and_left_unexpanded_for_fasih(renderer):
+    # Number expansion and CATT-sized chunking now happen inside Fasih; the
+    # renderer only bounds requests to the 1200-char provider limit.
     text=("لجان التحقيق التي تلت الهجمات الإرهابية في 2001 "*80)+"أ"*1100
     parts=renderer.tts_segments(text,"ar")
-    assert all(0<len(p)<=160 for p in parts)
-    assert "".join(parts)==text.replace("2001","ألفان وواحد")
+    assert renderer._PROVIDER_TEXT_LIMIT==1200
+    assert renderer.RENDER_POLICY_VERSION.startswith("sentence-aware-boundaries-v4")
+    assert all(0<len(p)<=1200 for p in parts)
+    assert _spaces(" ".join(parts))==_spaces(text)
+    assert "2001" in parts[0]
     assert len(parts)>2
 
 
@@ -34,13 +43,14 @@ def test_long_arabic_render_orders_audio_and_reuses_completed_wav(renderer,monke
         def __exit__(self,*args):pass
         def read(self):return data
     def request(req,timeout):
-        body=json.loads(req.data);assert len(body["text"])<=160;requests.append(body["text"]);return Response()
+        body=json.loads(req.data);assert len(body["text"])<=1200;requests.append(body["text"]);return Response()
     monkeypatch.setattr(renderer.urllib.request,"urlopen",request)
     def assemble(command,**kwargs):
         listing=Path(command[command.index("-i")+1]).read_text().splitlines()
         assert len(listing)==len(expected)
         return types.SimpleNamespace(stdout=b"ID3"+b"0"*300)
     monkeypatch.setattr(renderer.subprocess,"run",assemble)
+    assert len(expected)>1
     req=renderer.RenderRequest(texts=[text],language="ar")
     assert renderer.render(req).status_code==200
     assert requests==list(dict.fromkeys(expected))
@@ -54,8 +64,23 @@ def test_english_limit_is_preserved(renderer):
 
 
 def test_arabic_prefers_sentence_boundaries_and_keeps_exact_order(renderer):
-    text = "أ" * 70 + ". " + "ب" * 70 + ". " + "ت" * 90
+    first = " ".join(["أ" * 9] * 90) + "."   # 899 chars, sentence end inside the 0.65-1.0 window
+    second = " ".join(["ب" * 9] * 30) + "،"
+    third = " ".join(["ت" * 9] * 40)
+    text = first + " " + second + " " + third
     parts = renderer.tts_segments(text, "ar")
-    assert parts[0].endswith(". ")
-    assert "".join(parts) == text
-    assert max(map(len, parts)) <= 160
+    assert parts[0] == first
+    assert " ".join(parts) == text
+    assert max(map(len, parts)) <= 1200
+
+
+def test_space_outside_preferred_window_is_used_before_rejecting(renderer):
+    text = "ب" * 100 + " " + "أ" * 1150
+    parts = renderer.tts_segments(text, "ar")
+    assert parts == ["ب" * 100, "أ" * 1150]
+
+
+def test_truly_unbroken_arabic_token_is_rejected(renderer):
+    with pytest.raises(renderer.HTTPException) as error:
+        renderer.tts_segments("أ" * 1201, "ar")
+    assert error.value.status_code == 422

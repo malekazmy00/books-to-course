@@ -1,18 +1,23 @@
 [project]
 name = "b2c-api"
 version = "0.0.0"
-description = "L10 Serving: FastAPI /v1."
+description = "B2C upload API and course-serving endpoints."
 requires-python = ">=3.11"
-dependencies = ["b2c-contracts", "b2c-core", "b2c-llm-gateway"]
+dependencies = ["b2c-contracts", "b2c-core", "b2c-llm-gateway", "b2c-orchestration", "b2c-pedagogy", "psycopg[binary]>=3.2,<4", "fastapi>=0.115,<1", "python-multipart>=0.0.20,<1", "uvicorn[standard]>=0.34,<1"]
 
 [tool.uv.sources]
 b2c-contracts = { workspace = true }
 b2c-core = { workspace = true }
 b2c-llm-gateway = { workspace = true }
+b2c-orchestration = { workspace = true }
+b2c-pedagogy = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[project.scripts]
+b2c-api = "b2c_api.app:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/b2c_api"]

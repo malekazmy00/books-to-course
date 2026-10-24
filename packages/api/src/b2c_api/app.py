@@ -67,6 +67,7 @@ from temporalio.exceptions import WorkflowAlreadyStartedError
 from temporalio.service import RPCError, RPCStatusCode
 from b2c_translation.generation import validate_manual_translation
 from b2c_api.ingestion_recovery import recover_extraction, recover_index
+from b2c_api.deps import s3_bytes, s3_json
 from b2c_api.workflow_resume import (
     FAILED as RETRY_STATUSES,
     ResumeStageRequest,
@@ -91,6 +92,10 @@ def _serialize_progress_writes(function):
 
 class UploadTooLarge(ValueError):
     pass
+
+
+class _MissingObject(LookupError):
+    """A checkpoint object that has not been written yet."""
 
 
 def _hash_upload(stream: Any, max_bytes: int) -> tuple[str, bool]:
@@ -654,9 +659,10 @@ def create_app(
                                                 Prefix=course_id + "/book-library/", Delimiter="/")
             books: list[dict[str, Any]] = []
             for entry in response.get("CommonPrefixes", []):
-                obj = await run_in_threadpool(store.s3.get_object, Bucket=settings.s3_bucket,
-                                              Key=entry["Prefix"] + "_manifest.json")
-                ref = ArtifactRef.model_validate_json(obj["Body"].read())
+                manifest = await s3_bytes(store.s3, settings.s3_bucket, entry["Prefix"] + "_manifest.json")
+                if manifest is None:
+                    continue  # uncommitted library entry
+                ref = ArtifactRef.model_validate_json(manifest)
                 item = json.loads(await run_in_threadpool(store.read, ref, "book-library.json"))
                 source_ref = item.get("source_artifact_ref") or {}
                 digest = str(item.get("file_sha256", ""))
@@ -674,9 +680,10 @@ def create_app(
                                                Prefix=course_id + "/book-upload/", Delimiter="/")
             temporal = None
             for entry in uploaded.get("CommonPrefixes", []):
-                obj = await run_in_threadpool(store.s3.get_object, Bucket=settings.s3_bucket,
-                                              Key=entry["Prefix"] + "_manifest.json")
-                upload_ref = ArtifactRef.model_validate_json(obj["Body"].read())
+                manifest = await s3_bytes(store.s3, settings.s3_bucket, entry["Prefix"] + "_manifest.json")
+                if manifest is None:
+                    continue  # uncommitted upload
+                upload_ref = ArtifactRef.model_validate_json(manifest)
                 meta = json.loads(await run_in_threadpool(store.read, upload_ref, "book-upload.json"))
                 digest = str(meta.get("file_sha256", ""))
                 engine = os.getenv("B2C_OCR_ENGINE", "rapidocr").strip().lower()
@@ -721,12 +728,10 @@ def create_app(
         app.state.artifact_store = store
         key = f"{course_id}/book-progress/{hashlib.sha256(book_id.encode()).hexdigest()}.json"
         try:
-            obj = await run_in_threadpool(store.s3.get_object, Bucket=settings.s3_bucket, Key=key)
-            record = json.loads(obj["Body"].read())
+            record = await s3_json(store.s3, settings.s3_bucket, key)
         except Exception as exc:
-            code = getattr(exc, "response", {}).get("ResponseMetadata", {}).get("HTTPStatusCode")
-            if code != 404:
-                raise HTTPException(status_code=503, detail="book progress is unavailable") from exc
+            raise HTTPException(status_code=503, detail="book progress is unavailable") from exc
+        if record is None:
             record = {"schema_version": "1.0", "course_id": course_id, "book_id": book_id, "stages": {}}
         catalog = await list_course_books(course_id)
         book = next((item for item in catalog["books"] if item.get("book_id") == book_id), None)
@@ -743,12 +748,9 @@ def create_app(
         if artifact_book_id != book_id:
             legacy_key = f"{course_id}/book-progress/{hashlib.sha256(artifact_book_id.encode()).hexdigest()}.json"
             try:
-                obj = await run_in_threadpool(store.s3.get_object, Bucket=settings.s3_bucket, Key=legacy_key)
-                legacy_record = json.loads(obj["Body"].read())
+                legacy_record = await s3_json(store.s3, settings.s3_bucket, legacy_key)
             except Exception as exc:
-                code = getattr(exc, "response", {}).get("ResponseMetadata", {}).get("HTTPStatusCode")
-                if code != 404:
-                    raise HTTPException(status_code=503, detail="legacy book progress is unavailable") from exc
+                raise HTTPException(status_code=503, detail="legacy book progress is unavailable") from exc
         # A registry entry is not reusable just because it says COMPLETED. Bind
         # every downstream stage to the current immutable parsed-book artifact.
         ingest_item = record.get("stages", {}).get("ingest", {})
@@ -1357,13 +1359,10 @@ def create_app(
         store = app.state.artifact_store or ArtifactStore.from_settings(settings)
         app.state.artifact_store = store
         key = f"_system/translation-requests/{workflow_id}.json"
-        try:
-            obj = await run_in_threadpool(store.s3.get_object, Bucket=settings.s3_bucket, Key=key)
-            inp = TranslateContentInput.model_validate(json.loads(obj["Body"].read()))
-        except Exception as exc:
-            code = getattr(exc, "response", {}).get("ResponseMetadata", {}).get("HTTPStatusCode")
-            if code != 404:
-                raise
+        saved_request = await s3_json(store.s3, settings.s3_bucket, key)
+        if saved_request is not None:
+            inp = TranslateContentInput.model_validate(saved_request)
+        else:
             client = await get_temporal_client()
             history = await client.get_workflow_handle(workflow_id).fetch_history()
             started = next((e for e in history.events if e.HasField("workflow_execution_started_event_attributes")), None)
@@ -1499,8 +1498,9 @@ def create_app(
             app.state.artifact_store = store
             progress_key = f"_system/translation-progress/{workflow_id}.json"
             try:
-                obj = await run_in_threadpool(store.s3.get_object, Bucket=settings.s3_bucket, Key=progress_key)
-                progress = json.loads(obj["Body"].read())
+                progress = await s3_json(store.s3, settings.s3_bucket, progress_key)
+                if progress is None:
+                    raise _MissingObject(progress_key)
                 now = datetime.now(UTC)
                 checkpoint = progress.get("last_progress_at") or progress.get("started_at") or progress.get("updated_at")
                 age_seconds = None
@@ -1545,8 +1545,7 @@ def create_app(
                     )
                 response["progress"] = progress
             except Exception as exc:
-                code = getattr(exc, "response", {}).get("ResponseMetadata", {}).get("HTTPStatusCode")
-                if code != 404:
+                if not isinstance(exc, _MissingObject):
                     log.exception("failed to read translation progress checkpoint")
                     raise HTTPException(status_code=503, detail="translation progress is unavailable") from exc
                 response["progress"] = {
@@ -1584,8 +1583,9 @@ def create_app(
             app.state.artifact_store = store
             try:
                 progress_key = f"_system/translation-progress/{workflow_id}.json"
-                obj = await run_in_threadpool(store.s3.get_object, Bucket=settings.s3_bucket, Key=progress_key)
-                progress = json.loads(obj["Body"].read())
+                progress = await s3_json(store.s3, settings.s3_bucket, progress_key)
+                if progress is None:
+                    raise _MissingObject(progress_key)
                 progress["successful_segments"] = int(progress.get("completed_segments", 0))
                 progress["active_segments"] = len(progress.get("current_segment_ids", []))
                 progress["deferred_units_count"] = len(progress.get("deferred_batches", []))
@@ -1595,8 +1595,7 @@ def create_app(
                 progress["completion_percent"] = round(100 * done / total, 1) if total else None
                 response["progress"] = progress
             except Exception as progress_error:
-                code = getattr(progress_error, "response", {}).get("ResponseMetadata", {}).get("HTTPStatusCode")
-                if code != 404:
+                if not isinstance(progress_error, _MissingObject):
                     log.exception("failed to read terminal translation progress checkpoint")
                     raise HTTPException(status_code=503, detail="translation progress is unavailable") from progress_error
                 response["progress"] = {"progress_state": "not_reported", "completed_segments": 0,
@@ -1642,8 +1641,7 @@ def create_app(
                 total, done = units["total_segments"], units["saved_segments"]
                 parent_key = f"_system/translation-progress/{original.resume_from_workflow_id}.json"
                 try:
-                    parent_obj = await run_in_threadpool(store.s3.get_object, Bucket=settings.s3_bucket, Key=parent_key)
-                    parent_progress = json.loads(parent_obj["Body"].read())
+                    parent_progress = await s3_json(store.s3, settings.s3_bucket, parent_key) or {}
                     missing = {u["segment_id"] for u in units["units"] if u["checkpoint_status"] != "saved"}
                     failed_ids = sorted(set(parent_progress.get("failed_segment_ids", [])) & missing)
                 except Exception:
@@ -1822,13 +1820,9 @@ def create_app(
             raise HTTPException(status_code=404, detail="candidate not found")
         original = await original_translation_input(workflow_id)
         store = app.state.artifact_store
-        try:
-            obj = await run_in_threadpool(store.s3.get_object, Bucket=settings.s3_bucket, Key=(f"_system/translation-candidate-revisions/{candidate_id}/{revision_id}.json" if revision_id else f"_system/translation-candidates/{candidate_id}.json"))
-        except Exception as exc:
-            if getattr(exc,"response",{}).get("ResponseMetadata",{}).get("HTTPStatusCode") == 404:
-                raise HTTPException(status_code=409, detail="candidate is not ready for review") from exc
-            raise
-        record = json.loads(obj["Body"].read())
+        record = await s3_json(store.s3, settings.s3_bucket, (f"_system/translation-candidate-revisions/{candidate_id}/{revision_id}.json" if revision_id else f"_system/translation-candidates/{candidate_id}.json"))
+        if record is None:
+            raise HTTPException(status_code=409, detail="candidate is not ready for review")
         sources = await run_in_threadpool(translation_source_segments, store, original)
         matches = [x for x in sources if x.segment_id == record.get("segment_id")]
         if (record.get("parent_workflow_id") != workflow_id or record.get("candidate_workflow_id") != candidate_id
@@ -2042,10 +2036,11 @@ def create_app(
             if outline_ref is not None:
                 store = app.state.artifact_store or ArtifactStore.from_settings(settings)
                 app.state.artifact_store = store
-                manifest_obj = await run_in_threadpool(
-                    store.s3.get_object, Bucket=settings.s3_bucket,
-                    Key=outline_ref.uri.removeprefix(f"s3://{settings.s3_bucket}/") + "_manifest.json")
-                outline_manifest = ArtifactRef.model_validate_json(manifest_obj["Body"].read())
+                manifest_bytes = await s3_bytes(store.s3, settings.s3_bucket,
+                    outline_ref.uri.removeprefix(f"s3://{settings.s3_bucket}/") + "_manifest.json")
+                if manifest_bytes is None:
+                    raise ValueError("approved outline manifest is missing")
+                outline_manifest = ArtifactRef.model_validate_json(manifest_bytes)
                 approved_payload = json.loads(await run_in_threadpool(store.read, outline_manifest, "approved-outline.json"))
                 book_id = approved_payload["outline"]["spine_book_id"]
                 spine_ref = ArtifactRef.model_validate(approved_payload["spine_parsed_ref"])
@@ -2063,14 +2058,11 @@ def create_app(
         store = app.state.artifact_store or ArtifactStore.from_settings(settings)
         app.state.artifact_store = store
         try:
-            obj = await run_in_threadpool(store.s3.get_object, Bucket=settings.s3_bucket,
-                Key=f"_system/audio-progress/{workflow_id}.json")
-            value = json.loads(obj["Body"].read())
+            value = await s3_json(store.s3, settings.s3_bucket, f"_system/audio-progress/{workflow_id}.json")
         except Exception as exc:
-            code = getattr(exc, "response", {}).get("ResponseMetadata", {}).get("HTTPStatusCode")
-            if code == 404:
-                raise HTTPException(status_code=409, detail="no completed audio tracks are available yet") from exc
             raise HTTPException(status_code=503, detail="audio checkpoint is unavailable") from exc
+        if value is None:
+            raise HTTPException(status_code=409, detail="no completed audio tracks are available yet")
         if value.get("workflow_id") != workflow_id or not value.get("course_id") or not isinstance(value.get("tracks"), list):
             raise HTTPException(status_code=503, detail="audio checkpoint identity is invalid")
         for track in value["tracks"]:
@@ -2158,9 +2150,9 @@ def create_app(
     async def add_audio_lesson_order(value: dict, workflow_id: str) -> dict:
         store = app.state.artifact_store
         try:
-            obj = await run_in_threadpool(store.s3.get_object, Bucket=settings.s3_bucket,
-                Key=f"_system/audio-display/{workflow_id}.json")
-            display = json.loads(obj["Body"].read())
+            display = await s3_json(store.s3, settings.s3_bucket, f"_system/audio-display/{workflow_id}.json")
+            if display is None:
+                return value
             if display.get("course_id") != value.get("course_id") or display.get("workflow_id") != workflow_id:
                 raise HTTPException(503, "audio display identity is invalid")
             return {**value, "lesson_order": display.get("lesson_order", [])}
@@ -2178,14 +2170,10 @@ def create_app(
         store = app.state.artifact_store or ArtifactStore.from_settings(settings)
         app.state.artifact_store = store
         try:
-            obj = await run_in_threadpool(store.s3.get_object, Bucket=settings.s3_bucket,
-                                         Key=course_id + "/course-settings.json")
-            return str(json.loads(obj["Body"].read()).get("name") or course_id)
+            course_settings = await s3_json(store.s3, settings.s3_bucket, course_id + "/course-settings.json")
         except Exception as exc:
-            code = getattr(exc, "response", {}).get("Error", {}).get("Code")
-            if isinstance(exc, KeyError) or code in {"NoSuchKey", "404", "NotFound"}:
-                return course_id
             raise HTTPException(503, "course name is unavailable") from exc
+        return str((course_settings or {}).get("name") or course_id)
 
 
     async def list_course_audio_runs(course_id: str) -> dict[str, Any]:
@@ -2253,13 +2241,11 @@ def create_app(
         store = app.state.artifact_store or ArtifactStore.from_settings(settings)
         app.state.artifact_store = store
         try:
-            obj = await run_in_threadpool(store.s3.get_object, Bucket=settings.s3_bucket,
-                Key=f"_system/audio-inputs/{workflow_id}.json")
-            inp = GenerateMP3Input.model_validate_json(obj["Body"].read())
+            saved_input = await s3_bytes(store.s3, settings.s3_bucket, f"_system/audio-inputs/{workflow_id}.json")
+            inp = GenerateMP3Input.model_validate_json(saved_input) if saved_input is not None else None
         except Exception as exc:
-            code = getattr(exc, "response", {}).get("Error", {}).get("Code")
-            if not (isinstance(exc, KeyError) or code in {"NoSuchKey", "404", "NotFound"}):
-                raise HTTPException(503, "audio input is unavailable") from exc
+            raise HTTPException(503, "audio input is unavailable") from exc
+        if inp is None:
             try:
                 client = await get_temporal_client()
                 history = await client.get_workflow_handle(workflow_id).fetch_history()
@@ -2451,14 +2437,10 @@ def create_app(
             progress_value = None
             if getattr(store, "s3", None) is not None:
                 try:
-                    progress_obj = await run_in_threadpool(
-                        store.s3.get_object, Bucket=settings.s3_bucket, Key=progress_key)
-                    progress_value = json.loads(progress_obj["Body"].read())
+                    progress_value = await s3_json(store.s3, settings.s3_bucket, progress_key)
                 except Exception as exc:
-                    code = getattr(exc, "response", {}).get("ResponseMetadata", {}).get("HTTPStatusCode")
-                    if code != 404:
-                        log.exception("failed to read QA progress checkpoint")
-                        raise HTTPException(status_code=503, detail="question generation progress is unavailable") from exc
+                    log.exception("failed to read QA progress checkpoint")
+                    raise HTTPException(status_code=503, detail="question generation progress is unavailable") from exc
             if progress_value is not None:
                 response["progress"] = progress_value
             else:
@@ -2505,13 +2487,13 @@ def create_app(
             app.state.artifact_store = store
             try:
                 progress_key = f"_system/qa-progress/{workflow_id}.json"
-                obj = await run_in_threadpool(store.s3.get_object, Bucket=settings.s3_bucket, Key=progress_key)
-                response["progress"] = json.loads(obj["Body"].read())
+                saved_progress = await s3_json(store.s3, settings.s3_bucket, progress_key)
             except Exception as progress_error:
-                code = getattr(progress_error, "response", {}).get("ResponseMetadata", {}).get("HTTPStatusCode")
-                if code != 404:
-                    log.exception("failed to read terminal question generation progress checkpoint")
-                    raise HTTPException(status_code=503, detail="question generation progress is unavailable") from progress_error
+                log.exception("failed to read terminal question generation progress checkpoint")
+                raise HTTPException(status_code=503, detail="question generation progress is unavailable") from progress_error
+            if saved_progress is not None:
+                response["progress"] = saved_progress
+            else:
                 response["progress"] = {"progress_state": "not_reported", "completed_scopes": 0,
                                          "total_scopes": 0, "message": "لا توجد نقاط تقدم محفوظة لهذا التشغيل."}
             try:
@@ -2532,13 +2514,8 @@ def create_app(
         store = app.state.artifact_store or ArtifactStore.from_settings(settings)
         app.state.artifact_store = store
         try:
-            response = await run_in_threadpool(store.s3.get_object,
-                Bucket=store.bucket, Key=f"_system/workflow-controls/{workflow_id}.json")
-            return json.loads(response["Body"].read())
+            return await s3_json(store.s3, store.bucket, f"_system/workflow-controls/{workflow_id}.json") or {}
         except Exception as exc:
-            code = getattr(exc, "response", {}).get("ResponseMetadata", {}).get("HTTPStatusCode")
-            if isinstance(exc, KeyError) or code == 404:
-                return {}
             raise HTTPException(status_code=503, detail="could not read pause control") from exc
 
     @app.get("/v1/workflows/{workflow_id}/control")
@@ -3004,10 +2981,11 @@ def create_app(
         app.state.artifact_store = store
         key = f"{course_id}/book-progress/{hashlib.sha256(book_id.encode()).hexdigest()}.json"
         try:
-            obj = await run_in_threadpool(store.s3.get_object, Bucket=settings.s3_bucket, Key=key)
-            record = json.loads(obj["Body"].read())
+            record = await s3_json(store.s3, settings.s3_bucket, key)
         except Exception as exc:
-            raise HTTPException(409, detail="book recovery record is unavailable") from exc
+            raise HTTPException(503, detail="book recovery record is unavailable") from exc
+        if record is None:
+            raise HTTPException(409, detail="book recovery record is unavailable")
         stages = record.get("stages", {})
         recorded_ids = {stages.get(stage, {}).get("workflow_id"),
                         old_workflow.rsplit("-", 1)[0] + "-" + hashlib.sha256((old_workflow + "\0safe-resume-v1").encode()).hexdigest()}

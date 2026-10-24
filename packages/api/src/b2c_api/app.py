@@ -63,6 +63,7 @@ from b2c_api.audio_exports import audio_progress, ordered_audio_tracks, validate
 from starlette.concurrency import run_in_threadpool
 from temporalio.client import Client
 from temporalio.contrib.pydantic import pydantic_data_converter
+from temporalio.common import WorkflowIDReusePolicy
 from temporalio.exceptions import WorkflowAlreadyStartedError
 from temporalio.service import RPCError, RPCStatusCode
 from b2c_translation.generation import validate_manual_translation
@@ -90,6 +91,11 @@ from b2c_api.workflow_resume import (
 )
 
 log = logging.getLogger("b2c.api")
+# Deterministic workflow IDs make a repeated POST idempotent only if Temporal
+# refuses to start a second run after a successful one. A failed, cancelled,
+# terminated or timed-out run may still be retried under the same ID. The QA
+# checkpoint resume and failed-stage retry flows mint their own derived IDs.
+REUSE_ONLY_AFTER_FAILURE = WorkflowIDReusePolicy.ALLOW_DUPLICATE_FAILED_ONLY
 _CHUNK_BYTES = 1024 * 1024
 
 
@@ -189,6 +195,9 @@ class TranslationRequest(BaseModel):
 class TranslationRetranslateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     segment_id: str = Field(min_length=1, max_length=160)
+    # Optional client token: a new value requests another candidate for the
+    # same unchanged segment; omitting it makes retries return the same one.
+    request_nonce: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{1,64}$")
 
 
 class TranslationRevisionSelectionRequest(BaseModel):
@@ -648,6 +657,7 @@ def create_app(
             try:
                 await client.start_workflow(
                     IngestPDFWorkflow.run, inp, id=workflow_id, task_queue=LIGHT,
+                    id_reuse_policy=REUSE_ONLY_AFTER_FAILURE,
                 )
             except WorkflowAlreadyStartedError:
                 pass  # stable workflow id makes a retried upload request idempotent
@@ -1278,6 +1288,7 @@ def create_app(
                 await client.start_workflow(
                     IndexApprovedBookWorkflow.run, index_input,
                     id=index_workflow_id, task_queue=settings.indexing_task_queue,
+                    id_reuse_policy=REUSE_ONLY_AFTER_FAILURE,
                 )
             except WorkflowAlreadyStartedError:
                 pass
@@ -1466,7 +1477,8 @@ def create_app(
                 Key=f"_system/translation-requests/{workflow_id}.json",
                 Body=inp.model_dump_json().encode("utf-8"), ContentType="application/json")
             try:
-                await client.start_workflow(TranslateContentWorkflow.run, inp, id=workflow_id, task_queue=inp.activity_task_queue)
+                await client.start_workflow(TranslateContentWorkflow.run, inp, id=workflow_id, task_queue=inp.activity_task_queue,
+                                            id_reuse_policy=REUSE_ONLY_AFTER_FAILURE)
             except WorkflowAlreadyStartedError:
                 pass
         except HTTPException:
@@ -1835,9 +1847,20 @@ def create_app(
             Key=f"_system/translation-requests/{workflow_id}.json", Body=original.model_dump_json().encode(), ContentType="application/json")
         inp = RetranslateSegmentInput(original=original, parent_workflow_id=workflow_id,
             segment_id=request.segment_id, source_text_sha256=hashlib.sha256(unit["source_text"].encode()).hexdigest())
-        candidate_id = "b2c-retranslate-" + uuid.uuid4().hex
-        client = await get_temporal_client()
-        await client.start_workflow(RetranslateSegmentWorkflow.run, inp, id=candidate_id, task_queue=original.activity_task_queue)
+        # Deterministic per (parent, segment, source text, current text, client
+        # nonce): a retried POST returns the same candidate; a new attempt after
+        # an accepted revision, or with a fresh nonce, gets a new candidate.
+        current_text_sha = hashlib.sha256((unit.get("translated_text") or "").encode()).hexdigest()
+        candidate_id = "b2c-retranslate-" + hashlib.sha256("\0".join((
+            workflow_id, request.segment_id, inp.source_text_sha256, current_text_sha,
+            request.request_nonce or "")).encode()).hexdigest()[:32]
+        client = await connected_temporal()
+        try:
+            await client.start_workflow(RetranslateSegmentWorkflow.run, inp, id=candidate_id,
+                                        task_queue=original.activity_task_queue,
+                                        id_reuse_policy=REUSE_ONLY_AFTER_FAILURE)
+        except WorkflowAlreadyStartedError:
+            pass
         return {"workflow_id":workflow_id,"candidate_workflow_id":candidate_id,"segment_id":request.segment_id,
             "status":"queued","other_segments_unchanged":True}
 
@@ -2067,8 +2090,11 @@ def create_app(
             except Exception as exc:
                 log.exception("could not verify audio source lineage")
                 raise HTTPException(status_code=503, detail="audio source lineage could not be verified") from exc
-            try: await client.start_workflow(GenerateMP3Workflow.run, inp, id=workflow_id, task_queue=inp.activity_task_queue)
-            except WorkflowAlreadyStartedError: pass
+            try:
+                await client.start_workflow(GenerateMP3Workflow.run, inp, id=workflow_id, task_queue=inp.activity_task_queue,
+                                            id_reuse_policy=REUSE_ONLY_AFTER_FAILURE)
+            except WorkflowAlreadyStartedError:
+                pass
         except HTTPException: raise
         except Exception as exc:
             log.exception("failed to queue MP3 generation")
@@ -2410,7 +2436,8 @@ def create_app(
         )
         try:
             try:
-                await client.start_workflow(GenerateCourseQAWorkflow.run, inp, id=workflow_id, task_queue=inp.activity_task_queue)
+                await client.start_workflow(GenerateCourseQAWorkflow.run, inp, id=workflow_id, task_queue=inp.activity_task_queue,
+                                            id_reuse_policy=REUSE_ONLY_AFTER_FAILURE)
             except WorkflowAlreadyStartedError:
                 pass
         except Exception as exc:

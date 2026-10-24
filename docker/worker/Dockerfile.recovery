@@ -1,6 +1,11 @@
+# Code refresh on top of b2c-worker:dev (built from docker/worker/Dockerfile).
+# `uv sync` reconciles the environment with the current lockfile so new dependencies are
+# installed too (copying packages/ alone left new imports unresolvable at runtime).
 FROM b2c-worker:dev
 USER root
+COPY pyproject.toml uv.lock .python-version /app/
 COPY packages/ /app/packages/
+RUN UV_HTTP_TIMEOUT=600 UV_HTTP_RETRIES=10 uv sync --frozen --all-packages --extra docling
 COPY tests/ /app/tests/
 USER 10001:10001
 CMD ["b2c-worker"]

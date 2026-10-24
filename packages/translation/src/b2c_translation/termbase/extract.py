@@ -23,6 +23,31 @@ Classic rule-based + statistical term extraction, no NLP model dependency:
 * **Named entities:** typed by surface rules: honorifics, initials, reporting verbs and
   possessives (person); head nouns (organization / place / work); a small country and
   region list (place); quotation marks or a preceding "book/novel/..." (work).
+* **Single-word domain concepts (v2):** keyness of a lowercase word in the book against a
+  general-English reference, Kilgarriff's "simple maths" ratio
+  ``(fpm_book + 1) / (fpm_reference + 1)`` (A. Kilgarriff, "Simple maths for keywords",
+  Corpus Linguistics 2009, https://www.sketchengine.eu/wp-content/uploads/2015/04/
+  2009-Simple-maths-for-keywords.pdf, checked 2026-10-24; smoothing n=1 favours rarer,
+  specialised words). It is the smoothed form of the "weirdness" ratio of Ahmad, Gillam &
+  Tostevin, TREC-8 1999 (https://trec.nist.gov/pubs/trec8/papers/surrey2.pdf, checked
+  2026-10-24). A log-likelihood test (Dunning 1993, https://aclanthology.org/J93-1003/;
+  Rayson & Garside 2000, https://aclanthology.org/W00-0901/) needs reference *counts*, which
+  the reference list does not publish, so the ratio is used with frequency and spread floors
+  instead. The reference is ``wordfreq`` 3.1.1 English (pinned, docs/04 section 5;
+  https://pypi.org/project/wordfreq/3.1.1/). Without a POS tagger, verbs and evaluative
+  adjectives are filtered by a nominal-context share (preceded by a determiner/preposition or
+  followed by "of") and by suffixes; glued OCR tokens ("ofeach") are rejected when they
+  split into two common words; a word mostly used inside a longer accepted term is dropped
+  (the C-value nesting idea applied to unigrams).
+* **Back-of-book index (v2):** a single-word headword is kept on its own evidence (the
+  indexer judged it a concept) when it occurs at least twice and is not a very common word.
+* **Possessives and question marks inside names (v2):** "Devil's Advocacy" is kept as one
+  name when the possessor (almost) never occurs outside the phrase; "What If? Analysis" is
+  joined when a technique head noun follows the "?".
+* **Person typing (v2):** surnames of note / bibliography authors ("Given Surname, Title" and
+  "Surname, Given") and surnames seen with reporting verbs type Title-Case names as people;
+  "-ian/-ean/-ist/-ism" adjectives of a person's name ("Crocean") are kept as terms
+  (signal ``eponym``); very common nationality adjectives ("Italian") are not terms.
 
 Occurrences are counted only in translatable units (prose, heading, list items, captions,
 table cells, footnotes); references, index, toc and noise never count.
@@ -32,14 +57,25 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter, defaultdict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 from b2c_contracts import TranslationUnit
 
 from .model import TermCandidate
 
-EXTRACTOR_VERSION = "termbase-extract-v1"
+EXTRACTOR_VERSION = "termbase-extract-v2"
+
+GeneralFrequency = Callable[[str], float]
+
+
+@lru_cache(maxsize=200_000)
+def general_english_frequency(word: str) -> float:
+    """Share of English tokens that are ``word`` (0.0 when unseen), from wordfreq 3.1.1."""
+    from wordfreq import word_frequency  # imported lazily: the word list loads in ~1 s
+
+    return float(word_frequency(word, "en"))
 
 TRANSLATABLE_KINDS = frozenset({"prose", "heading", "list_item", "caption", "table_cell", "footnote"})
 _MAX_SAMPLE = 5
@@ -140,6 +176,34 @@ _CLOSE_QUOTES = frozenset({"'", "’", '"', "”"})
 _WORD = re.compile(r"[^\W_]+(?:[-'’][^\W_]+)*")
 _HEADING_NUM = re.compile(r"^\s*(?:(?:chapter|part|section)\s+)?[0-9IVXLC]+(?:\.[0-9]+)*\.?\s+", re.I)
 
+# Head nouns that may follow a "?" inside a technique title ("What If? Analysis").
+_QUESTION_TITLE_HEADS = frozenset("""
+Analysis Analyses Technique Techniques Method Approach Exercise Game Test Check Review Mapping
+Matrix Diagram Session Workshop Framework Model Questions Scenario Scenarios
+""".split())
+
+# --- keyness of single lowercase words (see the module docstring) -------------------------
+KEYNESS_SMOOTHING = 1.0          # Kilgarriff's n (per-million smoothing constant)
+MIN_KEYNESS = 20.0               # (fpm_book + n) / (fpm_reference + n), word found by keyness alone
+MIN_INDEX_KEYNESS = 5.0          # an index headword needs much less (the indexer chose it)
+SPECIFIC_KEYNESS = 100.0         # so specific that adjective use is still a term ("subaltern")
+MAX_REFERENCE_ZIPF = 4.5         # very common words (>= ~32 per million) are not termbase concepts
+MAX_INDEX_ZIPF = 5.0             # an index headword is trusted up to here
+MIN_NOMINAL_SHARE = 0.2          # share of mentions after a determiner/preposition or before "of"
+MIN_HEAD_SHARE = 0.5             # share of mentions ending a phrase (not "vital role")
+MIN_LOWER_SHARE = 0.6            # otherwise the word is part of a capitalised name
+_NOMINAL_LEFT = frozenset("""
+the a an this these those its their his her our your my of in on for with by from such any
+each every no some many all other both between among into against
+""".split())
+_NON_NOMINAL_SUFFIX = re.compile(r"(?:ing|ed|ous|ful|less|able|ible)$")
+_LEGAL_SUFFIX_ACRONYMS = frozenset({"LLC", "INC", "LTD", "PLC", "LLP"})
+
+
+def _zipf(freq: float) -> float:
+    """Zipf scale of a token share: log10 of frequency per billion words (wordfreq's scale)."""
+    return math.log10(freq * 1e9) if freq > 0 else 0.0
+
 
 @dataclass
 class _Tok:
@@ -167,6 +231,62 @@ class _Agg:
     work_cue: int = 0
     definition: str | None = None
     expansion: str | None = None
+    join_possessor: tuple[str, ...] | None = None   # "Devil's Advocacy" -> ("devil",)
+
+
+@dataclass
+class _WordStats:
+    """Per casefolded word: lowercase / mid-sentence capitalised mentions, nominal contexts,
+    noun-phrase-head positions, units and sections (prose-like units only: not headings, not
+    all caps)."""
+    lower: Counter = field(default_factory=Counter)
+    cap_mid: Counter = field(default_factory=Counter)
+    nominal: Counter = field(default_factory=Counter)   # after a determiner/preposition, or before "of"
+    head: Counter = field(default_factory=Counter)      # followed by punctuation / a function word
+    units: dict = field(default_factory=lambda: defaultdict(set))
+    sections: dict = field(default_factory=lambda: defaultdict(set))
+    tokens: int = 0
+
+    def add(self, toks: list[_Tok], idx: int, section: tuple[str, ...]) -> None:
+        prev = ""
+        for n, tok in enumerate(toks):
+            if not tok.is_word:
+                prev = ""
+                continue
+            self.tokens += 1
+            w, possessive = _possessive(tok.text)
+            lw = w.casefold().replace("’", "'")
+            if w.islower():
+                self.lower[lw] += 1
+                nxt = toks[n + 1] if n + 1 < len(toks) else None
+                if prev in _NOMINAL_LEFT or (nxt is not None and nxt.text == "of"):
+                    self.nominal[lw] += 1
+                if (tok.period or possessive or nxt is None or not nxt.is_word
+                        or nxt.text.casefold() in STOPWORDS):
+                    self.head[lw] += 1
+            elif not tok.sent_start and _is_cap(w):
+                self.cap_mid[lw] += 1
+            self.units[lw].add(idx)
+            self.sections[lw].add(section)
+            prev = lw
+
+    def lower_share(self, w: str) -> float:
+        total = self.lower[w] + self.cap_mid[w]
+        return self.lower[w] / total if total else 0.0
+
+    def keyness(self, w: str, ref: GeneralFrequency) -> float:
+        """Kilgarriff's simple-maths ratio of this book against the general reference."""
+        fpm = 1e6 * (self.lower[w] + self.cap_mid[w]) / max(1, self.tokens)
+        return (fpm + KEYNESS_SMOOTHING) / (1e6 * ref(w) + KEYNESS_SMOOTHING)
+
+    def noun_like(self, w: str, ref: GeneralFrequency) -> bool:
+        """POS-free noun test: often after a determiner/preposition (not a verb) and often the
+        head of its phrase (not an attributive adjective); a very specific word passes the
+        second test anyway ("subaltern", "hegemonic" are terms as adjectives too)."""
+        low = self.lower[w]
+        if not low or self.nominal[w] / low < MIN_NOMINAL_SHARE:
+            return False
+        return self.head[w] / low >= MIN_HEAD_SHARE or self.keyness(w, ref) >= SPECIFIC_KEYNESS
 
 
 def _possessive(word: str) -> tuple[str, bool]:
@@ -222,7 +342,9 @@ def _sentences(text: str) -> list[str]:
 
 
 def _key(phrase: str) -> tuple[str, ...]:
-    return tuple(_WORD.findall(phrase.casefold().replace("’", "'")))
+    # possessive "'s" is dropped per word, exactly as in ``_Occurrences`` ("Devil's Advocacy")
+    words = _WORD.findall(phrase.casefold().replace("’", "'"))
+    return tuple(w[:-2] if w.endswith("'s") and len(w) > 2 else w for w in words)
 
 
 class _Occurrences:
@@ -285,13 +407,23 @@ _INDEX_ENTRY = re.compile(r"^(?P<head>[A-Za-z][^,:;\d()]{1,80}?)\s*(?:[,:]\s*(?P
 
 
 def extract_candidates(units: Sequence[TranslationUnit], *, min_cvalue: float = 4.0,
-                       min_term_frequency: int = 3, min_term_sections: int = 2) -> list[TermCandidate]:
-    """Extract termbase candidates (terms, acronyms, named entities) from one book's units."""
+                       min_term_frequency: int = 3, min_term_sections: int = 2,
+                       general_frequency: GeneralFrequency | None = None,
+                       min_keyness: float = MIN_KEYNESS) -> list[TermCandidate]:
+    """Extract termbase candidates (terms, acronyms, named entities) from one book's units.
+
+    ``general_frequency(word)`` is the share of general-English tokens that are ``word``
+    (default: wordfreq English, ``general_english_frequency``); it drives the keyness of
+    single words and the common-word filters.
+    """
+    ref = general_frequency or general_english_frequency
     trans = [u for u in units if u.kind in TRANSLATABLE_KINDS]
     occ = _Occurrences(trans)
     aggs: dict[tuple[str, ...], _Agg] = defaultdict(_Agg)
     index_people: set[str] = set()       # casefolded surnames from "Surname, Given" headwords
     index_heads: dict[tuple[str, ...], str] = {}
+    stats = _WordStats()
+    ref_people = _reference_people(units)
 
     # ---------------------------------------------------------- back-of-book index
     for unit in units:
@@ -331,6 +463,7 @@ def extract_candidates(units: Sequence[TranslationUnit], *, min_cvalue: float = 
             _cap_phrases(text, toks, aggs, occ, is_heading)
         # -------------------------------------------------- lowercase n-grams (C-value input)
         if not is_heading and not upper:
+            stats.add(toks, idx, tuple(unit.section_path))
             run: list[str] = []
             for tok in toks + [_Tok("", 0, 0, False, False, is_word=False)]:
                 w = tok.text
@@ -371,7 +504,7 @@ def extract_candidates(units: Sequence[TranslationUnit], *, min_cvalue: float = 
                 short = m.group(0)
                 short = short[:-1] if short.endswith("s") and short[:-1].isupper() else short
                 if len(short) < 2 or _ROMAN.match(short) or short.casefold() in STOPWORDS \
-                        or any(c.isdigit() for c in short):
+                        or any(c.isdigit() for c in short) or short in _LEGAL_SUFFIX_ACRONYMS:
                     continue
                 aggs[_key(short) + ("#acronym",)].surface[short] += 1
         # -------------------------------------------------- defined terms
@@ -415,7 +548,91 @@ def extract_candidates(units: Sequence[TranslationUnit], *, min_cvalue: float = 
             aggs[key].surface[head] += 1
             aggs[key].signals.add("index")
 
-    return _finalise(aggs, occ, trans, index_people, min_term_frequency, min_term_sections)
+    # ---------------------------------------------------------- keyness of single words
+    for word in _key_words(stats, ref, min_keyness, min_term_frequency, min_term_sections):
+        a = aggs[(word,)]
+        a.surface[word] += 1
+        a.signals.add("keyness")
+
+    # an author "surname" used mostly lowercase in the book, or a very common English word, is
+    # more likely a title word ("House", "Popular") than a name
+    ref_people = {p for p in ref_people
+                  if stats.lower[p] <= stats.cap_mid[p] and _zipf(ref(p)) < MAX_REFERENCE_ZIPF}
+    ctx = _Ctx(ref=ref, stats=stats, people=index_people | ref_people, aggs=aggs)
+    return _finalise(aggs, occ, trans, ctx, min_term_frequency, min_term_sections)
+
+
+@dataclass
+class _Ctx:
+    ref: GeneralFrequency
+    stats: _WordStats
+    people: set[str]      # casefolded surnames: index "Surname, Given" and note/bibliography authors
+    aggs: dict            # all phrase evidence, keyed like ``_key``
+
+
+def _key_words(stats: _WordStats, ref: GeneralFrequency, min_keyness: float, min_freq: int,
+               min_sections: int) -> list[str]:
+    """Lowercase single words that are domain-specific for this book (module docstring)."""
+    out = []
+    for w, low in stats.lower.items():
+        if (low < min_freq or len(w) < 4 or w in STOPWORDS or w in NON_TERM_WORDS or "'" in w
+                or w.endswith("ly") or _NON_NOMINAL_SUFFIX.search(w) or not w.replace("-", "").isalpha()):
+            continue
+        if len(stats.units[w]) < min_freq or len(stats.sections[w]) < min_sections:
+            continue
+        if stats.lower_share(w) < MIN_LOWER_SHARE or not stats.noun_like(w, ref):
+            continue
+        general = ref(w)
+        if _zipf(general) >= MAX_REFERENCE_ZIPF:
+            continue
+        if general == 0.0 and "-" not in w and _glued(w, ref):
+            continue
+        if stats.keyness(w, ref) >= min_keyness:
+            out.append(w)
+    return sorted(out)
+
+
+def _glued(word: str, ref: GeneralFrequency) -> bool:
+    """An unseen word that splits into two common words is an OCR join ("ofeach", "adifferent")."""
+    return any(_zipf(ref(word[:i])) >= 3.0 and _zipf(ref(word[i:])) >= 3.0 for i in range(1, len(word) - 1))
+
+
+_NOTE_NUMBER = re.compile(r"^\s*(?:\d+\.\s*)?(?:(?:See|see|Cf\.|cf\.)(?:\s+also)?\s+)?")
+_NAME_WORD = r"(?:[A-Z][\w’'\-]+|[A-Z]\.)"
+_NOTE_AUTHOR = re.compile(rf"(?P<name>{_NAME_WORD}(?:\s+{_NAME_WORD}){{1,3}}?)(?:\s+(?:Jr|Sr)\.?)?"
+                          r"(?=,|\s+and\s)")
+_BIB_AUTHOR = re.compile(r"(?P<sur>[A-Z][\w’'\-]+(?:[ \-][A-Z][\w’'\-]+)?),\s+(?=[A-Z][a-z]+\b|[A-Z]\.)")
+
+
+def _reference_people(units: Sequence[TranslationUnit]) -> set[str]:
+    """Casefolded author surnames from notes / bibliography units: "Given [X.] Surname, Title"
+    and "Surname, Given" at the start of an entry (entries split on ";"), plus co-authors
+    joined by "and" / ",". Used only to type names that also occur in translatable text."""
+    people: set[str] = set()
+    for unit in units:
+        if unit.kind != "reference":
+            continue
+        for entry in unit.source_text.split(";"):
+            text = entry[_NOTE_NUMBER.match(entry).end():]
+            m = _BIB_AUTHOR.match(text)
+            if m and not any(w in _ORG_HEADS or w in _PLACE_HEADS for w in m.group("sur").split()):
+                people.add(m.group("sur").split()[-1].casefold().replace("’", "'"))
+                continue
+            pos = 0
+            while True:
+                m = _NOTE_AUTHOR.match(text, pos)
+                if not m:
+                    break
+                words = m.group("name").split()
+                if any(w in _ORG_HEADS or w in _PLACE_HEADS or w.casefold() in STOPWORDS
+                       or w.casefold() in NON_TERM_WORDS for w in words) or len(words[-1]) < 3:
+                    break
+                people.add(words[-1].casefold().replace("’", "'"))
+                rest = re.match(r",?\s+and\s+", text[m.end():])
+                if not rest:
+                    break
+                pos = m.end() + rest.end()
+    return people
 
 
 def _context_of(text: str, phrase: str) -> str:
@@ -457,6 +674,35 @@ def _c_values(freq: Counter) -> dict[tuple[str, ...], float]:
     return out
 
 
+def _grow(toks: list[_Tok], i: int) -> int:
+    """Last index of the run of capitalised words (joined by connectors) starting at ``i``."""
+    n = len(toks)
+    j = i
+    k = i + 1
+    while k < n:
+        t = toks[k]
+        if toks[k - 1].period and toks[k - 1].text not in _HONORIFICS and len(toks[k - 1].text) > 1 \
+                and toks[k - 1].text not in _NAME_SUFFIXES:
+            break
+        if _possessive(toks[k - 1].text)[1]:
+            break
+        if t.is_word and _is_cap(t.text):
+            j = k
+            k += 1
+        elif t.is_word and t.text.casefold() in _CONNECTORS and k + 1 < n and not t.period and (
+                (toks[k + 1].is_word and _is_cap(toks[k + 1].text))
+                or (toks[k + 1].text.casefold() == "the" and k + 2 < n and _is_cap(toks[k + 2].text))):
+            k += 1
+            if toks[k].text.casefold() == "the":
+                k += 1
+        elif (t.text == "?" and t.start == toks[k - 1].end and k + 1 < n
+              and toks[k + 1].text in _QUESTION_TITLE_HEADS):
+            k += 1   # "What If? Analysis": a question-form technique title
+        else:
+            break
+    return j
+
+
 def _cap_phrases(text: str, toks: list[_Tok], aggs, occ: _Occurrences, is_heading: bool) -> None:
     i = 0
     n = len(toks)
@@ -465,38 +711,44 @@ def _cap_phrases(text: str, toks: list[_Tok], aggs, occ: _Occurrences, is_headin
         if not (tok.is_word and _is_cap(tok.text)):
             i += 1
             continue
-        # grow a run of capitalised words joined by connectors
-        j = i
-        words = [i]
-        k = i + 1
-        while k < n:
-            t = toks[k]
-            if toks[k - 1].period and toks[k - 1].text not in _HONORIFICS and len(toks[k - 1].text) > 1 \
-                    and toks[k - 1].text not in _NAME_SUFFIXES:
-                break
-            if _possessive(toks[k - 1].text)[1]:
-                break
-            if t.is_word and _is_cap(t.text):
-                words.append(k)
-                j = k
-                k += 1
-            elif t.is_word and t.text.casefold() in _CONNECTORS and k + 1 < n and not t.period and (
-                    (toks[k + 1].is_word and _is_cap(toks[k + 1].text))
-                    or (toks[k + 1].text.casefold() == "the" and k + 2 < n and _is_cap(toks[k + 2].text))):
-                k += 1
-                if toks[k].text.casefold() == "the":
-                    k += 1
-            else:
-                break
+        j = _grow(toks, i)
         _emit_phrase(text, toks, i, j, aggs, occ, is_heading)
+        if (_possessive(toks[j].text)[1] and j + 1 < n and toks[j + 1].is_word and _is_cap(toks[j + 1].text)
+                and not toks[j].period):
+            _emit_join(text, toks, i, j, _grow(toks, j + 1), aggs, is_heading)
         i = j + 1
+
+
+def _emit_join(text: str, toks: list[_Tok], i: int, j: int, j2: int, aggs, is_heading: bool) -> None:
+    """Record "Possessor's Name" ("Devil's Advocacy") as a possible single name; it is kept in
+    ``_finalise`` only when the possessor rarely occurs outside the joined phrase."""
+    while i <= j and (toks[i].text in _HONORIFICS or (toks[i].text.casefold() in STOPWORDS
+                                                       and (toks[i].sent_start or is_heading))):
+        i += 1
+    while j2 > j and toks[j2].text.casefold() in _CONNECTORS:
+        j2 -= 1
+    if i > j or j2 <= j or _possessive(toks[j2].text)[1]:
+        return
+    possessor = [t.text for t in toks[i:j + 1] if t.is_word]
+    if len(possessor) > 3 or len([t for t in toks[i:j2 + 1] if t.is_word]) > 6:
+        return
+    surface = " ".join(text[toks[i].start:toks[j2].end].split())
+    key = _key(surface)
+    a = aggs[key]
+    a.surface[surface] += 1
+    a.mentions += 1
+    a.signals.add("heading" if is_heading else "capitalized")
+    a.signals.add("possessive_join")
+    a.join_possessor = _key(" ".join(possessor))
 
 
 def _emit_phrase(text: str, toks: list[_Tok], i: int, j: int, aggs, occ: _Occurrences, is_heading: bool) -> None:
     # strip honorifics / leading function words
     honorific = False
+    question_title = any(t.text == "?" for t in toks[i:j + 1])   # "What If? Analysis" keeps "What"
     while i <= j and (toks[i].text in _HONORIFICS or (toks[i].text.casefold() in STOPWORDS
-                                                       and (toks[i].sent_start or is_heading))):
+                                                       and (toks[i].sent_start or is_heading)
+                                                       and not question_title)):
         honorific = honorific or toks[i].text in _HONORIFICS
         i += 1
     while i <= j and toks[j].text.casefold() in _CONNECTORS:
@@ -565,8 +817,10 @@ _NOT_A_TERM = re.compile(r"^(?:Chapter|Figure|Table|Part|Section|Page|Box|Append
                          r"|^[\d\W]+$")
 
 
-def _finalise(aggs, occ: _Occurrences, trans, index_people, min_freq, min_sections) -> list[TermCandidate]:
+def _finalise(aggs, occ: _Occurrences, trans, ctx: _Ctx, min_freq, min_sections) -> list[TermCandidate]:
     out: dict[tuple[tuple[str, ...], bool], TermCandidate] = {}
+    hits_of: dict[tuple[tuple[str, ...], bool], list[int]] = {}
+    deferred: list[tuple[tuple[str, ...], str, _Agg, list[int]]] = []   # possible eponyms
     for raw_key, a in aggs.items():
         acronym = raw_key[-1:] == ("#acronym",)
         key = raw_key[:-1] if acronym else raw_key
@@ -584,23 +838,33 @@ def _finalise(aggs, occ: _Occurrences, trans, index_people, min_freq, min_sectio
                 continue
             kind = "acronym"
         else:
-            kind = _kind(key, surface, a, index_people)
-            if not _keep(kind, key, surface, a, hits, trans, freq, min_freq, min_sections):
+            kind = _kind(key, surface, a, ctx, aggs)
+            if not _keep(kind, key, surface, a, hits, trans, freq, min_freq, min_sections, ctx):
+                if kind == "term" and len(key) == 1 and _EPONYM_SUFFIX.search(key[0]) and _is_cap(surface):
+                    deferred.append((key, surface, a, hits))
+                    continue
                 if kind != "term" or not _proper_noun(key, surface, a, hits, trans):
                     continue
                 kind = "person"  # most unresolved single proper nouns in books are surnames
                 a.signals.add("kind_uncertain")
-        sections = len({tuple(trans[h].section_path) for h in hits})
-        context = a.definition or _context_of(trans[hits[0]].source_text, surface)
-        score = round(freq * max(1.0, math.log2(1 + sections)), 3)
-        cand = TermCandidate(
-            source=surface, kind=kind, frequency=freq, sections=sections,
-            unit_ids=tuple(trans[h].unit_id for h in hits[:_MAX_SAMPLE]),
-            definition_context=context, expansion=a.expansion if acronym else None,
-            signals=tuple(sorted(a.signals)), score=score)
+        if kind == "term" and len(key) == 1 and a.signals & {"keyness", "index"} \
+                and ctx.stats.lower_share(key[0]) >= MIN_LOWER_SHARE:
+            surface = key[0]    # "hegemony", not the heading / sentence-initial "Hegemony"
         dedupe = (key, acronym)
         if dedupe not in out or out[dedupe].frequency < freq:
-            out[dedupe] = cand
+            out[dedupe] = _candidate(surface, kind, a, hits, trans, acronym)
+            hits_of[dedupe] = hits
+    _drop_nested(out, hits_of)
+    # adjectives of a person's name ("Crocean", "Gramscian"): terms, flagged ``eponym``
+    surnames = ctx.people | {k[-1] for (k, acr), c in out.items() if c.kind == "person" and not acr}
+    for key, surface, a, hits in deferred:
+        if len(hits) >= 2 and _eponym(key[0], surnames) and _cap_ratio(surface, hits, trans) >= 0.8:
+            a.signals.add("eponym")
+            out[(key, False)] = _candidate(surface, "term", a, hits, trans, False)
+    for dedupe, cand in list(out.items()):
+        if cand.kind == "term" and len(dedupe[0]) == 1 and "eponym" not in cand.signals \
+                and _is_cap(cand.source) and _eponym(dedupe[0][0], surnames):
+            out[dedupe] = cand.model_copy(update={"signals": tuple(sorted({*cand.signals, "eponym"}))})
     # a plural form duplicates its singular (frequency already counts both)
     for (key, acronym) in list(out):
         singular = (key[:-1] + (key[-1][:-1],), False)
@@ -610,14 +874,91 @@ def _finalise(aggs, occ: _Occurrences, trans, index_people, min_freq, min_sectio
     return sorted(out.values(), key=lambda c: (c.kind, -c.frequency, c.source.casefold(), c.source))
 
 
-def _index_person(key: tuple[str, ...], surface: str, index_people: set[str]) -> bool:
+def _candidate(surface: str, kind: str, a: _Agg, hits: list[int], trans, acronym: bool) -> TermCandidate:
+    sections = len({tuple(trans[h].section_path) for h in hits})
+    context = a.definition or _context_of(trans[hits[0]].source_text, surface)
+    score = round(len(hits) * max(1.0, math.log2(1 + sections)), 3)
+    return TermCandidate(
+        source=surface, kind=kind, frequency=len(hits), sections=sections,
+        unit_ids=tuple(trans[h].unit_id for h in hits[:_MAX_SAMPLE]),
+        definition_context=context, expansion=a.expansion if acronym else None,
+        signals=tuple(sorted(a.signals)), score=score)
+
+
+def _drop_nested(out: dict, hits_of: dict, share: float = 0.75) -> None:
+    """Drop a single word found only by keyness, and the possessor of an accepted possessive
+    name ("Devil" of "Devil's Advocacy"), when >= ``share`` of its units are covered by a
+    longer accepted candidate containing it (the word rarely stands alone)."""
+    longer: dict[str, set[int]] = defaultdict(set)
+    possessors: dict[tuple[str, ...], set[int]] = defaultdict(set)
+    for (key, acronym), cand in out.items():
+        if acronym or len(key) < 2:
+            continue
+        for w in set(key):
+            longer[w] |= set(hits_of[(key, acronym)])
+        if "possessive_join" in cand.signals:
+            for n in range(1, len(key)):
+                possessors[key[:n]] |= set(hits_of[(key, acronym)])
+    for (key, acronym), cand in list(out.items()):
+        if acronym:
+            continue
+        own = set(hits_of[(key, acronym)])
+        covered = possessors.get(key, set())
+        if len(key) == 1 and "keyness" in cand.signals and set(cand.signals) <= {"keyness", "capitalized"}:
+            w = key[0]
+            covered = covered | longer.get(w, set()) | longer.get(w[:-1] if w.endswith("s") else w + "s", set())
+        if covered and len(own & covered) >= share * len(own):
+            del out[(key, acronym)]
+
+
+_EPONYM_SUFFIX = re.compile(r"(?:ians?|eans?|ists?|isms?|ites?)$")
+
+
+def _eponym(word: str, surnames: set[str]) -> bool:
+    """``word`` = stem + -ian/-ean/-ist/-ism/-ite where a known surname starts with the stem
+    and is at most two letters longer ("crocean" <- "croce", "gramscian" <- "gramsci")."""
+    m = _EPONYM_SUFFIX.search(word)
+    if not m:
+        return False
+    stem = word[:m.start()]
+    if len(stem) < 3:
+        return False
+    return any(p.startswith(stem) and len(p) - len(stem) <= 2 and len(p) >= 4 for p in surnames)
+
+
+def _index_person(key: tuple[str, ...], surface: str, ctx: _Ctx) -> bool:
     words = surface.split()
     if not all(_is_cap(w) for w in words) or len(words) > 4:
         return False
-    return key[-1] in index_people
+    if len(key) > 1 and not _name_like(key[0], ctx):
+        return False    # "Young Gramsci", "Postcolonial Gramsci": a title, not a person
+    return key[-1] in ctx.people
 
 
-def _kind(key, surface: str, a: _Agg, index_people: set[str]) -> str:
+def _name_like(word: str, ctx: _Ctx) -> bool:
+    """A given name is capitalised mid-sentence more often than not, and is not a connector
+    or a derived adjective ("Leninist")."""
+    return (word not in _CONNECTORS and not _EPONYM_SUFFIX.search(word) and not _TECHNICAL_SUFFIX.search(word)
+            and not word.endswith("ing") and ctx.stats.lower[word] <= ctx.stats.cap_mid[word])
+
+
+def _reported_surname(key: tuple[str, ...], surface: str, ctx: _Ctx, aggs) -> bool:
+    """A 2-3 word Title-Case name ("Amos Tversky") whose last word, used alone, is followed by
+    reporting verbs / possessives ("Tversky argued") and is not a common English word."""
+    words = surface.split()
+    if not 2 <= len(words) <= 3 or len(key) != len(words) \
+            or not all(_is_cap(w) and w.replace("-", "").isalpha() for w in words):
+        return False
+    if any(w.casefold() in _CONNECTORS or w.casefold() in STOPWORDS or w in _ORG_HEADS or w in _PLACE_HEADS
+           or w in _WORK_HEADS for w in words):
+        return False
+    single = aggs.get(key[-1:])
+    return bool(single and single.reported and _name_like(key[0], ctx)
+                and (single.reported + single.possessive) / max(1, single.mentions) >= 0.05
+                and _zipf(ctx.ref(key[-1])) < MAX_REFERENCE_ZIPF)
+
+
+def _kind(key, surface: str, a: _Agg, ctx: _Ctx, aggs) -> str:
     if a.name_pattern:
         return "person"
     if a.org_head:
@@ -626,15 +967,20 @@ def _kind(key, surface: str, a: _Agg, index_people: set[str]) -> str:
         return "place"
     if a.work_head or (a.quoted + a.work_cue and (a.quoted + a.work_cue) / max(1, a.mentions) >= 0.3):
         return "work"
-    if _index_person(key, surface, index_people) and not _TECHNICAL_SUFFIX.search(surface):
+    if "possessive_join" in a.signals:
+        return "term"
+    if _index_person(key, surface, ctx) and not _TECHNICAL_SUFFIX.search(surface) \
+            and not ("keyness" in a.signals and len(key) == 1):
         return "person"
     if a.reported and len(key) <= 3 and not _TECHNICAL_SUFFIX.search(surface) \
             and (a.reported + a.possessive) / max(1, a.mentions) >= 0.05:
         return "person"
+    if _reported_surname(key, surface, ctx, aggs):
+        return "person"
     return "term"
 
 
-def _keep(kind, key, surface, a: _Agg, hits, trans, freq, min_freq, min_sections) -> bool:
+def _keep(kind, key, surface, a: _Agg, hits, trans, freq, min_freq, min_sections, ctx: _Ctx) -> bool:
     signals = a.signals
     n_words = len(key)
     capitalised = bool(signals & {"capitalized", "heading"})
@@ -644,6 +990,11 @@ def _keep(kind, key, surface, a: _Agg, hits, trans, freq, min_freq, min_sections
         if _cap_ratio(surface, hits, trans) < 0.8:
             return False
         return n_words > 1 or freq >= 2 or a.place_head > 0
+    if "possessive_join" in signals and a.join_possessor:
+        # the possessor must (almost) never stand alone: capitalised non-possessive mentions
+        possessor = ctx.aggs.get(a.join_possessor)
+        alone = possessor.mentions - possessor.possessive if possessor else 0
+        return freq >= 2 and alone <= 0.25 * freq and _cap_ratio(surface, hits, trans) >= 0.8
     if "defined" in signals or ("acronym_expansion" in signals and n_words >= 2):
         return True
     if "c_value" in signals and freq >= min_freq and \
@@ -651,11 +1002,19 @@ def _keep(kind, key, surface, a: _Agg, hits, trans, freq, min_freq, min_sections
         return True
     if "index" in signals and (n_words > 1 or _TECHNICAL_SUFFIX.search(surface)):
         return True
+    if "index" in signals and n_words == 1 and freq >= 2 and _zipf(ctx.ref(key[0])) < MAX_INDEX_ZIPF \
+            and ctx.stats.lower_share(key[0]) >= MIN_LOWER_SHARE and ctx.stats.noun_like(key[0], ctx.ref) \
+            and ctx.stats.keyness(key[0], ctx.ref) >= MIN_INDEX_KEYNESS:
+        return True     # a lowercase concept the indexer chose
+    if "keyness" in signals:
+        return True     # filters applied in ``_key_words``
     if capitalised:
         if _cap_ratio(surface, hits, trans) < 0.8 or freq < 2:
             return False
         if n_words == 1 and not _TECHNICAL_SUFFIX.search(surface):
             return False
+        if n_words == 1 and _zipf(ctx.ref(key[0])) >= MAX_REFERENCE_ZIPF:
+            return False   # common nationality / general adjectives ("Italian", "European")
         return any(trans[h].kind != "heading" for h in hits)
     return False
 

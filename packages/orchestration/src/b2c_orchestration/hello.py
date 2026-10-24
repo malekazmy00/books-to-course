@@ -52,14 +52,12 @@ class HelloActivities:
                 prompt_version: str | None) -> None:
         if self.prov is None:
             return
-        act = self.prov.start_activity(stage=stage, stage_version=STAGE_VERSION, agent=agent,
-                                       prompt_version=prompt_version,
-                                       activity_id=f"act:{stage}:{ref.key[:16]}")
-        for i in inputs:
-            self.prov.used(act, i)
-            self.prov.derived(ref.uri, i)
-        self.prov.generated(ref.uri, act)
-        self.prov.end_activity(act)
+        # One transaction; every row is idempotent, so cache hits re-record safely.
+        self.prov.record_activity(stage=stage, stage_version=STAGE_VERSION, agent=agent,
+                                  prompt_version=prompt_version,
+                                  activity_id=f"act:{stage}:{ref.key[:16]}",
+                                  used=inputs, derived=[(ref.uri, i) for i in inputs],
+                                  generated=[ref.uri])
 
     def _log(self, stage: str, ref: ArtifactRef, hit: bool) -> None:
         activity.logger.info("stage done", extra={"stage": stage, "key": ref.key, "cache_hit": hit,
@@ -71,8 +69,7 @@ class HelloActivities:
         key = stage_key("hello-prepare", STAGE_VERSION, [_sha(payload)], {})
         ref, hit = self.store.get_or_compute(inp.course_id, "hello-prepare", key,
                                              lambda: {"input.json": payload})
-        if not hit:
-            self._record("hello-prepare", ref, [], None, None)
+        self._record("hello-prepare", ref, [], None, None)
         self._log("hello-prepare", ref, hit)
         return {"ref": ref.model_dump(mode="json"), "cache_hit": hit}
 
@@ -97,8 +94,7 @@ class HelloActivities:
             return {"greeting.json": g.model_dump_json().encode()}
 
         ref, hit = self.store.get_or_compute(inp.course_id, "hello-greet", key, compute)
-        if not hit:
-            self._record("hello-greet", ref, [src.uri], self.gateway.model_id, PROMPT_VERSION)
+        self._record("hello-greet", ref, [src.uri], self.gateway.model_id, PROMPT_VERSION)
         self._log("hello-greet", ref, hit)
         return {"ref": ref.model_dump(mode="json"), "cache_hit": hit}
 
@@ -114,8 +110,7 @@ class HelloActivities:
             return {"result.json": json.dumps(g.model_dump(), ensure_ascii=False).encode()}
 
         ref, hit = self.store.get_or_compute(inp.course_id, "hello-finalize", key, compute)
-        if not hit:
-            self._record("hello-finalize", ref, [src.uri], None, None)
+        self._record("hello-finalize", ref, [src.uri], None, None)
         self._log("hello-finalize", ref, hit)
         return {"ref": ref.model_dump(mode="json"), "cache_hit": hit,
                 "result": json.loads(self.store.read(ref, "result.json"))}

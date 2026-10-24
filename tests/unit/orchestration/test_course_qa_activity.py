@@ -334,7 +334,7 @@ def test_course_qa_retrieval_keeps_primary_and_supplementary_source_attribution(
 
 def test_checkpoint_loader_paginates_skips_enrichment_and_requires_explicit_switch():
     from b2c_orchestration.qa import _load_qa_checkpoints
-    from b2c_pedagogy.qa_generation import ScopeResult, generate_course_qa
+    from b2c_pedagogy.qa_generation import generate_course_qa
     from tests.unit.pedagogy.test_qa_generation import fixture_sources, FakeGateway as QAGateway
     outline, book, chunks = fixture_sources()
     scope = generate_course_qa(outline, book, chunks, QAGateway(), lesson_question_count=1,
@@ -435,6 +435,7 @@ async def test_qa_workflow_uses_bounded_retry_and_long_external_timeout(monkeypa
         captured.update(kwargs)
         return {"status": "failed"}
     monkeypatch.setattr(qa.workflow, "execute_activity", execute)
+    monkeypatch.setattr(qa.workflow, "patched", lambda _: True)
     inp = GenerateCourseQAInput(course_id="course", approved_outline_ref={}, index_result={})
     await qa.GenerateCourseQAWorkflow().run(inp)
     assert captured["retry_policy"].maximum_attempts == 3
@@ -484,3 +485,42 @@ def test_checkpoint_loader_retains_empty_failure_diagnostics_across_sources():
         group_question_count=1, course_question_count=1, precompleted_scopes=list(restored.values()))
     assert retried.status == "final"
     assert retried.scopes[0].items == final.items
+
+
+class _KeyCaptured(Exception):
+    pass
+
+
+def _qa_cache_key(chunks, monkeypatch=None, prompt_version=None, index_extra=None):
+    import b2c_orchestration.qa as qa_mod
+    approved_ref, parsed_ref, envelope, parsed, _ = _fixtures()
+    store = FakeStore(approved_ref, parsed_ref, envelope, parsed)
+    seen = []
+
+    def capture(course_id, stage, key, compute):
+        seen.append(key)
+        raise _KeyCaptured()
+    store.get_or_compute = capture
+    if prompt_version is not None:
+        monkeypatch.setattr(qa_mod, "QA_PROMPT_VERSION", prompt_version)
+    entry = {"role": "spine", "chunk_count": 2, "chunk_ids": ["c1", "c2"], **(index_extra or {})}
+    with pytest.raises(ApplicationError):
+        CourseQAActivities(store, FakeChunkStore(chunks), FakeGateway()).generate(GenerateCourseQAInput(
+            course_id="course", approved_outline_ref=approved_ref.model_dump(mode="json"),
+            index_result={"course_id": "course", "outline_sha256": approved_ref.sha256,
+                          "books": {"spine": entry}}))
+    return seen[0]
+
+
+def test_qa_cache_key_tracks_indexed_sources_and_prompt_version(monkeypatch):
+    chunks = _fixtures()[4]
+    baseline = _qa_cache_key(chunks)
+    assert _qa_cache_key(chunks) == baseline
+    # Same chunk ids but re-indexed text must not reuse a QA artifact.
+    changed = [chunks[0].model_copy(update={"text": chunks[0].text + " Extra."}), chunks[1]]
+    assert _qa_cache_key(changed) != baseline
+    # Re-indexing that only flips cache_hit is not a content change.
+    assert _qa_cache_key(chunks, index_extra={"cache_hit": True}) == baseline
+    # Any other change to the published index result (e.g. snapshot artifact) is.
+    assert _qa_cache_key(chunks, index_extra={"artifact_ref": {"key": "x"}}) != baseline
+    assert _qa_cache_key(chunks, monkeypatch, prompt_version="phase5-grounded-qa-v5") != baseline

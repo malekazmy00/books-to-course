@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextvars
 import hashlib
 import json
 import os
@@ -17,12 +16,13 @@ from temporalio.common import RetryPolicy
 
 with workflow.unsafe.imports_passed_through():
     from .controls import wait_for_activity_checkpoint, execute_checkpointed
+    from .heartbeat import start_activity_heartbeat_pump
     from b2c_contracts import ArtifactRef, ParsedBook, stage_key
     from b2c_core.source_identity import artifact_source_identity
     from b2c_translation.generation import validate_manual_translation, translation_completeness_issue
-    from b2c_translation import SourceSegment, TranslatedSegment, TranslationPack, plan_translation_batches, translate_segments
-from b2c_translation.arabic_correction import correct_pack, correction_identity
-from b2c_translation.glossary import ContextualGlossary, glossary_identity
+    from b2c_translation import SourceSegment, TranslatedSegment, plan_translation_batches, translate_segments
+    from b2c_translation.arabic_correction import correct_pack, correction_identity
+    from b2c_translation.glossary import ContextualGlossary, glossary_identity
 
 
 class TranslateContentInput(BaseModel):
@@ -42,37 +42,9 @@ class TranslateContentInput(BaseModel):
 
 
 def _start_activity_heartbeat_pump(workflow_id: str, *, interval_seconds: float = 30.0) -> tuple[threading.Event, threading.Thread]:
-    """Keep long synchronous provider calls alive in Temporal.
-
-    Translation activities make blocking HTTP calls. Progress callbacks cannot
-    heartbeat while one of those calls is waiting, so an otherwise healthy
-    activity can time out and continue writing checkpoints after Temporal has
-    already marked its attempt failed. Copy the activity context into a small
-    helper thread and heartbeat liveness independently; durable progress still
-    comes from the S3 checkpoints written by the main activity thread.
-    """
-    stop = threading.Event()
-    activity_context = contextvars.copy_context()
-
-    def pump() -> None:
-        while not stop.wait(interval_seconds):
-            try:
-                activity_context.run(
-                    activity.heartbeat,
-                    {"workflow_id": workflow_id, "kind": "translation_liveness"},
-                )
-            except RuntimeError:
-                # The activity context is gone or the worker has already
-                # completed this task. The pump must never outlive the activity.
-                return
-            except Exception:
-                # A transient heartbeat transport failure is retried on the
-                # next tick; it must not mask or replace translation errors.
-                continue
-
-    thread = threading.Thread(target=pump, name="b2c-translation-heartbeat", daemon=True)
-    thread.start()
-    return stop, thread
+    """Keep long synchronous provider calls alive in Temporal (see heartbeat.py)."""
+    return start_activity_heartbeat_pump(workflow_id, interval_seconds=interval_seconds,
+                                         kind="translation_liveness")
 
 
 def translation_source_segments(artifact_store: Any, inp: TranslateContentInput) -> list[SourceSegment]:
@@ -179,6 +151,44 @@ def translation_checkpoint_records(artifact_store: Any, prefix: str):
         continuation = next_token
 
 
+def seed_translation_checkpoints(
+    artifact_store: Any, workflow_ids: list[str], compatible: dict[str, Any],
+    sources: dict[str, SourceSegment],
+) -> dict[str, tuple[datetime, TranslatedSegment]]:
+    """Collect compatible saved units from every checkpoint of earlier runs.
+
+    Only malformed checkpoint content is skipped; storage failures propagate so
+    a transient S3 error cannot silently discard paid translations, and a
+    truncated listing without a fresh continuation token fails instead of
+    re-listing the first page forever.
+    """
+    seeded: dict[str, tuple[datetime, TranslatedSegment]] = {}
+    for checkpoint_workflow_id in workflow_ids:
+        prefix = f"_system/translation-checkpoints/{checkpoint_workflow_id}/"
+        token = None
+        while True:
+            args = {"Bucket": artifact_store.bucket, "Prefix": prefix}
+            if token:
+                args["ContinuationToken"] = token
+            page = artifact_store.s3.list_objects_v2(**args)
+            for entry in page.get("Contents", []):
+                body = artifact_store.s3.get_object(Bucket=artifact_store.bucket, Key=entry["Key"])["Body"].read()
+                try:
+                    saved = json.loads(body)
+                    merge_translation_checkpoint(saved, compatible, sources, seeded)
+                except (ValueError, TypeError, KeyError, AttributeError):
+                    # json/pydantic errors are ValueErrors; a non-object payload
+                    # raises AttributeError. Skip only that checkpoint.
+                    continue
+            if not page.get("IsTruncated"):
+                break
+            next_token = page.get("NextContinuationToken")
+            if not next_token or next_token == token:
+                raise ValueError("translation checkpoint listing has invalid pagination")
+            token = next_token
+    return seeded
+
+
 def translation_manual_overrides(artifact_store: Any, inp: TranslateContentInput, workflow_id: str) -> list[dict[str, Any]]:
     originals = {x.segment_id:x for x in translation_source_segments(artifact_store, inp)}
     prefix = f"_system/translation-overrides/{workflow_id}/"
@@ -190,7 +200,8 @@ def translation_manual_overrides(artifact_store: Any, inp: TranslateContentInput
                 or data.get("source_language") != inp.source_language or data.get("target_language") != inp.target_language
                 or data.get("segment_id") not in originals):
                 raise ValueError("translation override identity mismatch")
-            data["text"] = validate_manual_translation(originals[data["segment_id"]].text, data["text"])
+            data["text"] = validate_manual_translation(originals[data["segment_id"]].text, data["text"],
+                                                       target_language=inp.target_language)
             output.append(data)
     return sorted(output, key=lambda x:(x["created_at"], x["revision_id"]))
 
@@ -240,7 +251,8 @@ class TranslationActivities:
         else:
             if saved.get("parent_workflow_id") != inp.parent_workflow_id or saved.get("segment_id") != inp.segment_id or saved.get("source_text_sha256") != inp.source_text_sha256:
                 raise ApplicationError("candidate identity mismatch", non_retryable=True)
-            saved["text"] = validate_manual_translation(segment.text, saved["text"])
+            saved["text"] = validate_manual_translation(segment.text, saved["text"],
+                                                        target_language=original.target_language)
             return saved
         if original.selected_translation_engine == "booktrans-pro":
             from .booktrans_route import run_booktrans_pro
@@ -275,7 +287,9 @@ class TranslationActivities:
             "segment_id":segment.segment_id, "source_text_sha256":inp.source_text_sha256,
             "source_sha256":ref.sha256, "source_artifact_ref":original.source_artifact_ref,
             "source_language":original.source_language, "target_language":original.target_language,
-            "text":validate_manual_translation(segment.text, pack.segments[0].text), "citations":segment.citations,
+            "text":validate_manual_translation(segment.text, pack.segments[0].text,
+                                               target_language=original.target_language),
+            "citations":segment.citations,
             "raw_text": raw_pack.segments[0].text, "arabic_editing": edit_audit,
             "glossary_sha256": glossary_identity(original.contextual_glossary),
             "model_id":self.gateway.model_id, "created_at":datetime.now(UTC).isoformat(),
@@ -453,29 +467,12 @@ class TranslationActivities:
             checkpoint_workflow_ids = list(dict.fromkeys(
                 item for item in (inp.resume_from_workflow_id, workflow_id) if item
             ))
-            seeded: dict[str, tuple[datetime, TranslatedSegment]] = {}
             source_by_id = {item.segment_id: item for item in source_segments}
             compatible = {name: value for name, value in run_identity.items()
                           if name not in {"max_tokens", "prompt_version", "model_id",
                                           "translation_engine", "provider_id"}}
-            for checkpoint_workflow_id in checkpoint_workflow_ids:
-                prefix = f"_system/translation-checkpoints/{checkpoint_workflow_id}/"
-                token = None
-                while True:
-                    args = {"Bucket": self.artifact_store.bucket, "Prefix": prefix}
-                    if token:
-                        args["ContinuationToken"] = token
-                    page = self.artifact_store.s3.list_objects_v2(**args)
-                    for entry in page.get("Contents", []):
-                        try:
-                            saved = json.loads(self.artifact_store.s3.get_object(
-                                Bucket=self.artifact_store.bucket, Key=entry["Key"])["Body"].read())
-                            merge_translation_checkpoint(saved, compatible, source_by_id, seeded)
-                        except Exception:
-                            continue
-                    if not page.get("IsTruncated"):
-                        break
-                    token = page.get("NextContinuationToken")
+            seeded = seed_translation_checkpoints(self.artifact_store, checkpoint_workflow_ids,
+                                                  compatible, source_by_id)
             resumed_by_id = {item.segment_id: item for item in resume_segments}
             resumed_by_id.update({key: value[1] for key, value in seeded.items()})
             resume_segments = list(resumed_by_id.values())

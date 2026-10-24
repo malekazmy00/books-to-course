@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from typing import Any, TypeVar
@@ -31,6 +32,7 @@ from .errors import (
     OpenRouterRateLimited,
 )
 
+log = logging.getLogger("b2c.llm_gateway")
 T = TypeVar("T", bound=BaseModel)
 PROVIDER = "llama.cpp"
 MAX_RETRIES = 2
@@ -395,13 +397,25 @@ class LLMGateway:
                 span.set_attribute("langfuse.observation.input", json.dumps(messages, ensure_ascii=False))
 
             hit = self.cache.get(key) if cacheable else None
+            stale_hit = False
             if hit is not None:
                 res = ChatResult(text=hit["text"], model=hit["model"], usage=hit.get("usage", {}),
                                  cached=True, attempts=0, finish_reason=hit.get("finish_reason"),
                                  generation_attempts=hit.get("generation_attempts"))
-                parsed = schema.model_validate_json(res.text) if schema else None
-                self._finish(span, res, cache_hit=True)
-                return res, parsed
+                try:
+                    parsed = schema.model_validate_json(res.text) if schema else None
+                except ValidationError as exc:
+                    # The schema changed without a prompt_version bump (the key does
+                    # not cover the schema). Treat the entry as a miss: regenerate and
+                    # replace it, rather than failing deterministically forever.
+                    stale_hit = True
+                    span.add_event("b2c.cache_stale", {"b2c.schema": schema.__name__})
+                    log.warning("stale LLM cache entry failed %s validation; regenerating "
+                                "(key=%s, prompt_version=%s): %s", schema.__name__, key,
+                                prompt_version, str(exc).splitlines()[0] if str(exc) else "invalid")
+                else:
+                    self._finish(span, res, cache_hit=True)
+                    return res, parsed
 
             try:
                 res, parsed = self._generate(messages, params, schema, span)
@@ -409,9 +423,12 @@ class LLMGateway:
                 span.set_status(Status(StatusCode.ERROR, type(exc).__name__))
                 raise
             if cacheable:
-                self.cache.put(key, self.model_id,
-                               {"text": res.text, "model": res.model, "usage": res.usage,
-                                "finish_reason": res.finish_reason, "generation_attempts": res.attempts})
+                value = {"text": res.text, "model": res.model, "usage": res.usage,
+                         "finish_reason": res.finish_reason, "generation_attempts": res.attempts}
+                if stale_hit:
+                    self.cache.put(key, self.model_id, value, replace=True)
+                else:
+                    self.cache.put(key, self.model_id, value)
             self._finish(span, res, cache_hit=False)
             return res, parsed
 

@@ -27,7 +27,10 @@ s3://artifacts/{course_id}/{stage}/{key}/<files>
 | backoff_coefficient | 2.0 |
 | maximum_interval | 10m |
 | maximum_attempts | 5 |
-| non_retryable | `ValidationError`، `UnsupportedFormat`، `RightsNotCleared`، `ConsentMissing`، `OutlineNeedsReview` |
+| non_retryable | `ValidationError`، `UnsupportedFormat`، `RightsNotCleared`، `ConsentMissing`، `OutlineNeedsReview`، `OpenRouterQuotaExceeded`، `OpenRouterRateLimited`، `LLMOutputTruncated`، `FreeTokenQuotaExceeded`، `InvalidLLMOutput` |
+
+المصدر: `packages/orchestration/src/b2c_orchestration/retry.py` (`DEFAULT_RETRY`)، و`tests/unit/orchestration/test_retry_policy_docs.py` بيتأكد إن الجدول ده مطابق للكود. الأنواع المضافة كلها فشل حتمي: إعادة المحاولة مش هتغيّر النتيجة (`FreeTokenQuotaExceeded` حد tokens مدى الحياة ومش بيتجدد، و`InvalidLLMOutput` بيترفع بعد محاولات الإصلاح الداخلية في الـ gateway عند `temperature=0`).
+بعض الـ activities ليها سياسة خاصة بيها: QA والترجمة (3 محاولات)، والـ MP3 (3 محاولات، `MP3_RETRY` في `audio.py`).
 
 ### 1.4 مخرجات الـ LLM
 - كل مخرج بيتطلب **structured output** (JSON schema مولّد من Pydantic) عبر `llm_gateway`. VERIFY دعم `response_format` / `json_schema` في إصدار llama-server المثبت.

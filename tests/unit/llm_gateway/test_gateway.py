@@ -571,3 +571,57 @@ def test_structured_gateway_sends_full_input_and_unmodified_output_budget():
     assert srv.requests[0]["messages"] == messages
     assert srv.requests[0]["max_tokens"] == 8192
     assert output.greeting == "Heading"  # Schema acceptance alone is not semantic completeness.
+
+
+class StrictGreeting(BaseModel):
+    name: str
+    greeting: str
+    language: str
+
+
+def test_cached_entry_that_fails_current_schema_is_regenerated_and_replaced(caplog):
+    """A stale cache hit (schema tightened, same key) is a miss, not a fatal ValidationError."""
+    cache = InMemoryLLMCache()
+    srv = FakeServer(['{"name": "Ada", "greeting": "Hi", "language": "en"}'])
+    gw, _ = make(srv, cache=cache)
+    # Seed the exact key the gateway will use with an entry the schema rejects.
+    stale = {"text": '{"name": "Ada", "greeting": "Hi"}', "model": "gemma4-test.gguf", "usage": {}}
+    original_get = cache.get
+    seeded = {}
+
+    def get(k):
+        if k not in seeded:
+            seeded[k] = True
+            cache._d[k] = stale
+        return original_get(k)
+    cache.get = get
+    with caplog.at_level("WARNING"):
+        out = gw.structured(MSGS, StrictGreeting, prompt_version="p1")
+    assert out.language == "en"
+    assert len(srv.requests) == 1
+    assert any("stale" in record.getMessage() for record in caplog.records)
+    # The regenerated, valid response replaces the stale entry.
+    again = gw.structured(MSGS, StrictGreeting, prompt_version="p1")
+    assert again == out and len(srv.requests) == 1
+
+
+def test_postgres_cache_put_only_overwrites_when_replacing(monkeypatch):
+    import b2c_llm_gateway.cache as cache_mod
+    statements = []
+
+    class Conn:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def execute(self, sql, params=None):
+            statements.append(sql)
+
+    monkeypatch.setattr(cache_mod.psycopg, "connect", lambda *a, **k: Conn())
+    cache = cache_mod.PostgresLLMCache("postgresql://x")
+    cache.put("k", "m", {"text": "a"})
+    cache.put("k", "m", {"text": "b"}, replace=True)
+    assert "DO NOTHING" in statements[0]
+    assert "DO UPDATE" in statements[1]

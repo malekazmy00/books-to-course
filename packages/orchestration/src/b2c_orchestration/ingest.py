@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import os
 import tempfile
@@ -20,16 +21,26 @@ with workflow.unsafe.imports_passed_through():
     from b2c_core.source_identity import parsed_source_identity, source_identity_file
     from b2c_contracts import ArtifactRef, BookUpload, CourseOutline, ParsedBook, stage_key
     from b2c_ingest import (
-        OCRRequired, UnsupportedPDF, SuryaUnavailable, parse_pdf_book,
+        OCRRequired, UnsupportedPDF, parse_pdf_book,
         parse_pdf_with_docling, parse_pdf_with_surya, parse_pdf_with_openrouter,
     )
+    from b2c_ingest.openrouter_ocr import OCR_PROMPT_VERSION
     from b2c_outline import InferredSection, OutlineUnavailable, outline_from_book
 
+    from .heartbeat import LONG_ACTIVITY_HEARTBEAT_TIMEOUT, activity_heartbeats
     from .queues import HEAVY, LIGHT
     from .retry import DEFAULT_RETRY
 
 STAGE = "ingest-parse-pdf"
 STAGE_VERSION = "6"
+OUTLINE_STAGE = "build-outline"
+OUTLINE_STAGE_VERSION = "4"
+
+
+def _gemini_table_model() -> str:
+    """The Gemini model the table adapter actually calls (its default argument)."""
+    from b2c_ingest import gemini_tables
+    return str(inspect.signature(gemini_tables.transcribe_table_png).parameters["model"].default)
 
 
 @dataclass
@@ -49,23 +60,28 @@ class IngestPDFActivities:
     gemini_api_key_file: str | None = None
     gateway: Any | None = None
 
-    def _record(self, ref: ArtifactRef, source_uri: str) -> None:
+    def _record(self, ref: ArtifactRef, source_uri: str, ocr_engine: str) -> None:
         if self.prov is None:
             return
-        activity_record = self.prov.start_activity(
+        # The agent is the engine this run actually used (inp.ocr_engine may
+        # override the worker default), not the worker environment.
+        self.prov.record_activity(
             stage=STAGE, stage_version=STAGE_VERSION,
-            agent=(self.gateway.model_id if os.getenv("B2C_OCR_ENGINE", "rapidocr").strip().lower() == "openrouter" and self.gateway else
-                   "surya-2-llama.cpp" if os.getenv("B2C_OCR_ENGINE", "rapidocr").strip().lower() == "surya" else
+            agent=(self.gateway.model_id if ocr_engine == "openrouter" and self.gateway else
+                   "surya-2-llama.cpp" if ocr_engine == "surya" else
                    "docling-rapidocr"),
-            prompt_version=None, activity_id=f"act:{STAGE}:{ref.key[:16]}",
+            prompt_version=OCR_PROMPT_VERSION if ocr_engine == "openrouter" else None,
+            activity_id=f"act:{STAGE}:{ref.key[:16]}",
+            used=[source_uri], derived=[(ref.uri, source_uri)], generated=[ref.uri],
         )
-        self.prov.used(activity_record, source_uri)
-        self.prov.derived(ref.uri, source_uri)
-        self.prov.generated(ref.uri, activity_record)
-        self.prov.end_activity(activity_record)
 
     @activity.defn(name="ingest_parse_pdf")
     def parse_pdf(self, inp: IngestPDFInput) -> dict[str, Any]:
+        # OCR/Docling calls block for minutes; keep the attempt visibly alive.
+        with activity_heartbeats("ingest_parse_liveness"):
+            return self._parse_pdf(inp)
+
+    def _parse_pdf(self, inp: IngestPDFInput) -> dict[str, Any]:
         upload = BookUpload.model_validate(inp.upload)
         source = ArtifactRef.model_validate(inp.source_ref)
         input_sha = upload.file_sha256
@@ -85,7 +101,7 @@ class IngestPDFActivities:
             surya_timeout_seconds = int(os.getenv("B2C_SURYA_TIMEOUT_SECONDS", "3600"))
         except ValueError as exc:
             raise ApplicationError(
-                "B2C_SURYA_MAX_TOKENS must be an integer",
+                "B2C_SURYA_MAX_TOKENS and B2C_SURYA_TIMEOUT_SECONDS must be integers",
                 type="InvalidSuryaConfig", non_retryable=True,
             ) from exc
         if surya_max_tokens < 8192 or surya_timeout_seconds < 1800:
@@ -108,6 +124,20 @@ class IngestPDFActivities:
             "upload": upload.model_dump(mode="json"),
             "cache_bust": inp.cache_bust,
         }
+        # Model identities only enter the key when that model is used, so the
+        # default local (rapidocr, no Gemini) cache keys stay unchanged.
+        openrouter_max_tokens = 0
+        if ocr_engine == "openrouter":
+            try:
+                openrouter_max_tokens = int(os.getenv("B2C_OPENROUTER_OCR_MAX_TOKENS", "12000"))
+            except ValueError as exc:
+                raise ApplicationError("B2C_OPENROUTER_OCR_MAX_TOKENS must be an integer",
+                                       type="InvalidOpenRouterOCRConfig", non_retryable=True) from exc
+            config["ocr_model_id"] = getattr(self.gateway, "model_id", None)
+            config["ocr_max_tokens"] = openrouter_max_tokens
+            config["ocr_prompt_version"] = OCR_PROMPT_VERSION
+        if self.gemini_api_key_file and ocr_engine != "surya":
+            config["gemini_table_model"] = _gemini_table_model()
         key = stage_key(STAGE, STAGE_VERSION, [input_sha], config)
 
         def compute() -> dict[str, bytes]:
@@ -140,7 +170,7 @@ class IngestPDFActivities:
                                     type="GeminiKeyUnavailable", non_retryable=True)
                         parsed = parse_pdf_with_openrouter(upload, path, gateway=self.gateway,
                             gemini_api_key=gemini_key,
-                            max_tokens=int(os.getenv("B2C_OPENROUTER_OCR_MAX_TOKENS", "12000")))
+                            max_tokens=openrouter_max_tokens)
                     elif ocr_engine == "surya":
                         try:
                             parsed = parse_pdf_book(upload, path)
@@ -186,8 +216,9 @@ class IngestPDFActivities:
             inp.course_id, STAGE, key, compute
         )
         parsed = ParsedBook.model_validate_json(self.store.read(ref, "parsed-book.json"))
-        if not cache_hit:
-            self._record(ref, source.uri)
+        # Recording is idempotent; a cache hit may follow a crash between the
+        # artifact commit and its PROV rows, so always record.
+        self._record(ref, source.uri, ocr_engine)
         activity.logger.info("PDF parsed", extra={
             "stage": STAGE, "book_id": upload.book_id, "key": ref.key,
             "page_count": parsed.page_count, "blocks": len(parsed.blocks), "cache_hit": cache_hit,
@@ -237,7 +268,6 @@ class OutlineActivities:
                 "no-TOC outline inference is unavailable; configure a local model or explicitly enable the remote evaluation-data route"
             )
         assert self.gateway is not None
-        model = self.gateway.model_id
         max_chars = min(18000, int(getattr(self.gateway, "page_batch_max_chars", 24000)))
         max_pages = min(10, int(getattr(self.gateway, "page_batch_max_pages", 10)))
         groups: list[list[Any]] = []
@@ -295,19 +325,20 @@ class OutlineActivities:
             return
         inferred = any(lesson.provenance == "llm_inferred"
                        for module in outline.modules for lesson in module.lessons)
-        activity_record = self.prov.start_activity(
-            stage="build-outline", stage_version="3",
+        self.prov.record_activity(
+            stage=OUTLINE_STAGE, stage_version=OUTLINE_STAGE_VERSION,
             agent=(getattr(self.gateway, "model_id", "outline-inference") if inferred else "deterministic-outline-v1"),
             prompt_version=OUTLINE_PROMPT_VERSION if inferred else None,
             activity_id=f"act:build-outline:{ref.key[:16]}",
+            used=[source_uri], derived=[(ref.uri, source_uri)], generated=[ref.uri],
         )
-        self.prov.used(activity_record, source_uri)
-        self.prov.derived(ref.uri, source_uri)
-        self.prov.generated(ref.uri, activity_record)
-        self.prov.end_activity(activity_record)
 
     @activity.defn(name="outline_from_parsed_book")
     def build(self, inp: BuildOutlineInput) -> dict[str, Any]:
+        with activity_heartbeats("outline_liveness"):
+            return self._build(inp)
+
+    def _build(self, inp: BuildOutlineInput) -> dict[str, Any]:
         parsed_ref = ArtifactRef.model_validate(inp.parsed_ref)
         parsed = ParsedBook.model_validate_json(self.store.read(parsed_ref, "parsed-book.json"))
         has_headings = any(block.type == "heading" for block in parsed.blocks)
@@ -317,7 +348,7 @@ class OutlineActivities:
                   "cache_bust": inp.cache_bust,
                   "inference_model": inference_model,
                   "prompt_version": OUTLINE_PROMPT_VERSION if inference_model else None}
-        key = stage_key("build-outline", "4", [parsed_ref.sha256], config)
+        key = stage_key(OUTLINE_STAGE, OUTLINE_STAGE_VERSION, [parsed_ref.sha256], config)
 
         def compute() -> dict[str, bytes]:
             try:
@@ -335,8 +366,7 @@ class OutlineActivities:
             inp.course_id, "build-outline", key, compute
         )
         outline = CourseOutline.model_validate_json(self.store.read(ref, "course-outline.json"))
-        if not cache_hit:
-            self._record(ref, parsed_ref.uri, outline)
+        self._record(ref, parsed_ref.uri, outline)  # idempotent, see parse
         return {
             "ref": ref.model_dump(mode="json"), "cache_hit": cache_hit,
             "module_count": len(outline.modules),
@@ -354,16 +384,29 @@ class IngestPDFWorkflow:
     @workflow.run
     async def run(self, inp: IngestPDFInput) -> dict[str, Any]:
         activity_timeout = timedelta(hours=24)
-        parsed = await execute_checkpointed(self, 
-            "ingest_parse_pdf", inp, task_queue=HEAVY, retry_policy=DEFAULT_RETRY,
-            start_to_close_timeout=activity_timeout,
+        parse_options: dict[str, Any] = {}
+        # Pre-existing histories scheduled the parse without a heartbeat timeout.
+        if workflow.patched("ingest-parse-heartbeat-v1"):
+            parse_options["heartbeat_timeout"] = LONG_ACTIVITY_HEARTBEAT_TIMEOUT
+        parsed = await execute_checkpointed(
+            self, "ingest_parse_pdf", inp, task_queue=HEAVY, retry_policy=DEFAULT_RETRY,
+            start_to_close_timeout=activity_timeout, **parse_options,
         )
         if inp.upload.get("role") != "spine":
             return {"parsed_book": parsed, "outline": None}
-        outline = await execute_checkpointed(self, 
-            "outline_from_parsed_book",
+        # No-TOC outlines call the LLM once per page group: that is heavy work
+        # (docs/04 §2) and can exceed minutes. Old histories keep the LIGHT
+        # queue and 5 minute timeout they were scheduled with.
+        if workflow.patched("outline-heavy-queue-v1"):
+            outline_options: dict[str, Any] = {
+                "task_queue": HEAVY, "start_to_close_timeout": timedelta(hours=12),
+                "heartbeat_timeout": LONG_ACTIVITY_HEARTBEAT_TIMEOUT,
+            }
+        else:
+            outline_options = {"task_queue": LIGHT, "start_to_close_timeout": timedelta(minutes=5)}
+        outline = await execute_checkpointed(
+            self, "outline_from_parsed_book",
             BuildOutlineInput(inp.course_id, parsed["ref"], inp.supplementary_book_ids, inp.cache_bust),
-            task_queue=LIGHT, retry_policy=DEFAULT_RETRY,
-            start_to_close_timeout=timedelta(minutes=5),
+            retry_policy=DEFAULT_RETRY, **outline_options,
         )
         return {"parsed_book": parsed, "outline": outline}

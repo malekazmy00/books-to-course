@@ -138,7 +138,9 @@ async def run_worker() -> None:
         Worker(client, task_queue=LIGHT, workflows=[HelloPipeline, IngestPDFWorkflow, IndexApprovedBookWorkflow], activities=[acts.finalize, outline_acts.build, index_acts.index_approved_book],
                activity_executor=executor, max_concurrent_activities=max_concurrent_activities(LIGHT)),
         Worker(client, task_queue=HEAVY, workflows=[GenerateCourseQAWorkflow, TranslateContentWorkflow, RetranslateSegmentWorkflow, GenerateMP3Workflow],
-               activities=[acts.greet, ingest_acts.parse_pdf, qa_acts.generate, translation_acts.translate, translation_acts.retranslate_segment, mp3_acts.generate],
+               # outline_acts.build stays on LIGHT too, for histories scheduled
+               # before outline-heavy-queue-v1.
+               activities=[acts.greet, ingest_acts.parse_pdf, outline_acts.build, qa_acts.generate, translation_acts.translate, translation_acts.retranslate_segment, mp3_acts.generate],
                activity_executor=executor, max_concurrent_activities=max_concurrent_activities(HEAVY)),
         Worker(client, task_queue=IO, activities=[acts.prepare],
                activity_executor=executor, max_concurrent_activities=max_concurrent_activities(IO)),
@@ -156,7 +158,9 @@ async def run_audio_worker() -> None:
     s = Settings()
     configure_logging(s.log_level)
     provider = setup_tracing(f"{s.service_name}-audio-worker", s.otel_endpoint)
-    store = ArtifactStore.from_settings(s)
+    prov = ProvRecorder(s.pg_dsn)
+    prov.migrate()
+    store = ArtifactStore.from_settings(s, recorder=prov)
     store.ensure_bucket()
     mp3_acts = MP3Activities(artifact_store=store)
     client = await connect(s)

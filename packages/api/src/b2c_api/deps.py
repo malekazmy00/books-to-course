@@ -24,6 +24,43 @@ COURSE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}")
 BOOK_ID = re.compile(r"[A-Za-z0-9._-]{1,120}")
 
 
+STREAM_CHUNK_BYTES = 64 * 1024
+
+
+async def stream_artifact_file(store: Any, ref: Any, name: str, *, media_type: str, bucket: str | None = None,
+                               headers: dict[str, str] | None = None) -> Any:
+    """Stream one committed artifact file from S3 in bounded chunks.
+
+    Mirrors ``ArtifactStore.read``'s addressing (``<ref prefix>/<name>``) but
+    never materializes the object; the body is closed when the response ends.
+    """
+    from starlette.background import BackgroundTask
+    from starlette.responses import StreamingResponse
+
+    if not name or name.startswith("/") or "\\" in name or any(
+            part in {"", ".", ".."} for part in name.split("/")):
+        raise ValueError(f"unsafe artifact file name: {name!r}")
+    bucket = bucket or store.bucket
+    prefix = ref.uri.removeprefix(f"s3://{bucket}/")
+    if prefix == ref.uri:
+        raise ValueError("artifact is outside the configured bucket")
+    obj = await run_in_threadpool(store.s3.get_object, Bucket=bucket, Key=prefix + name)
+    body = obj["Body"]
+
+    def chunks():
+        try:
+            while data := body.read(STREAM_CHUNK_BYTES):
+                yield data
+        finally:
+            body.close()
+
+    response_headers = dict(headers or {})
+    if obj.get("ContentLength") is not None:
+        response_headers["Content-Length"] = str(obj["ContentLength"])
+    return StreamingResponse(chunks(), media_type=media_type, headers=response_headers,
+                             background=BackgroundTask(body.close))
+
+
 async def describe_or_404(client: Any, workflow_id: str,
                           detail: str = "workflow not found") -> tuple[Any, Any]:
     """Describe a workflow: Temporal NOT_FOUND -> 404, any other failure -> 503."""

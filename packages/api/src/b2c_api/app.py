@@ -77,6 +77,7 @@ from b2c_api.deps import (
     describe_or_404,
     s3_bytes,
     s3_json,
+    stream_artifact_file,
     verified_ref,
 )
 from b2c_api.workflow_resume import (
@@ -908,11 +909,11 @@ def create_app(
         ref = ArtifactRef.model_validate(item["source_artifact_ref"])
         if ref.stage != "book-upload" or not ref.uri.startswith(f"s3://{settings.s3_bucket}/{course_id}/"):
             raise HTTPException(status_code=503, detail="uploaded book reference is invalid")
-        store = app.state.artifact_store
-        try: data = await run_in_threadpool(store.read, ref, "source.pdf")
-        except Exception as exc: raise HTTPException(status_code=503, detail="uploaded PDF is unavailable") from exc
-        return StreamingResponse(io.BytesIO(data), media_type="application/pdf",
-            headers={"Content-Disposition": f'inline; filename="{book_id}.pdf"'})
+        try:
+            return await stream_artifact_file(get_store(), ref, "source.pdf", media_type="application/pdf",
+                headers={"Content-Disposition": f'inline; filename="{book_id}.pdf"'})
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="uploaded PDF is unavailable") from exc
 
     @app.get("/v1/ingestions/{workflow_id}/text")
     async def ingestion_text_preview(workflow_id: str, course_id: str | None = None, offset: int = Query(0, ge=0),
@@ -2175,12 +2176,13 @@ def create_app(
         if entry is None: raise HTTPException(status_code=404, detail="audio track not found")
         ref = ArtifactRef.model_validate(entry.get("artifact_ref"))
         if ref.stage != "generate-mp3-track" or not ref.uri.startswith(f"s3://{settings.s3_bucket}/{manifest.get('course_id')}/"): raise HTTPException(status_code=503, detail="audio track reference is invalid")
-        store = app.state.artifact_store or ArtifactStore.from_settings(settings); app.state.artifact_store = store
-        try: data = await run_in_threadpool(store.read, ref, "track.mp3")
-        except Exception as exc: raise HTTPException(status_code=503, detail="audio track is unavailable") from exc
         name = await audio_course_name(str(manifest["course_id"]))
         filename = next(t["filename"] for t in ordered_audio_tracks(manifest, name) if t["track_id"] == track_id)
-        return StreamingResponse(io.BytesIO(data), media_type="audio/mpeg", headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+        try:
+            return await stream_artifact_file(get_store(), ref, "track.mp3", media_type="audio/mpeg",
+                headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="audio track is unavailable") from exc
 
     async def add_audio_lesson_order(value: dict, workflow_id: str) -> dict:
         store = app.state.artifact_store
@@ -2314,11 +2316,12 @@ def create_app(
             if result.get("kind") != "book": raise HTTPException(status_code=409, detail="this audio is split into separate tracks; use the manifest")
             ref = ArtifactRef.model_validate(result["artifact"])
             if ref.stage != "generate-mp3" or not ref.uri.startswith(f"s3://{settings.s3_bucket}/{result.get('course_id')}/"): raise HTTPException(status_code=503, detail="MP3 artifact failed scope validation")
-            store = app.state.artifact_store or ArtifactStore.from_settings(settings); app.state.artifact_store = store
-            data = await run_in_threadpool(store.read, ref, "course.mp3")
-        except HTTPException: raise
-        except Exception as exc: raise HTTPException(status_code=503, detail="MP3 is unavailable") from exc
-        return StreamingResponse(io.BytesIO(data), media_type="audio/mpeg", headers={"Content-Disposition": 'attachment; filename="course.mp3"'})
+            return await stream_artifact_file(get_store(), ref, "course.mp3", media_type="audio/mpeg",
+                headers={"Content-Disposition": 'attachment; filename="course.mp3"'})
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="MP3 is unavailable") from exc
     @app.post("/v1/courses/{course_id}/qa/generate", status_code=202)
     async def generate_course_questions(course_id: str, request: CourseQAGenerationRequest) -> dict[str, Any]:
         manager = app.state.model_lifecycle

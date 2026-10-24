@@ -1,6 +1,6 @@
 """Read-only, course-scoped exports of committed non-audio artifacts."""
 from __future__ import annotations
-import io
+
 import json
 import re
 import tempfile
@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 from b2c_contracts import ArtifactRef
+from b2c_api.deps import stream_artifact_file
 
 # Explicit allowlist excludes secrets, internal checkpoints and audio.
 RESULT_STAGES = {"ingest-parse-pdf", "approve-outline", "generate-course-qa", "translate-content", "index-approved-book"}
@@ -62,10 +63,16 @@ def available_results(store, bucket: str, course_id: str) -> list[dict]:
         args["ContinuationToken"] = token
     return sorted(found, key=lambda item: (item["created_at"], item["result_id"]), reverse=True)
 
-def read_result_file(store, bucket: str, course_id: str, result_id: str, name: str) -> tuple[ArtifactRef, bytes]:
+def result_file_ref(store, bucket: str, course_id: str, result_id: str, name: str) -> ArtifactRef:
+    """Course-scoped ref for one listed file of a committed result (no content read)."""
     ref = scoped_ref(store, bucket, course_id, result_id)
     if name not in store.list_files(ref) or "\\" in name or name.startswith("/") or any(p in {"", ".", ".."} for p in name.split("/")):
         raise HTTPException(404, "saved result file not found")
+    return ref
+
+
+def read_result_file(store, bucket: str, course_id: str, result_id: str, name: str) -> tuple[ArtifactRef, bytes]:
+    ref = result_file_ref(store, bucket, course_id, result_id, name)
     return ref, store.read(ref, name)
 
 def result_units(document: dict) -> list[dict]:
@@ -148,10 +155,16 @@ def result_exports_router(store_provider: Callable, bucket: str) -> APIRouter:
     @router.get("/v1/courses/{course_id}/results/{result_id}/file")
     async def download(course_id: str, result_id: str, name: str = Query(min_length=1, max_length=300),
                        preview: bool = False):
-        ref, data = await run_in_threadpool(read_result_file, store_provider(), bucket, course_id, result_id, name)
+        store = store_provider()
+        ref = await run_in_threadpool(result_file_ref, store, bucket, course_id, result_id, name)
         media = "application/json" if name.endswith(".json") else "text/plain; charset=utf-8" if name.endswith((".txt", ".md")) else "application/octet-stream"
         filename = re.sub(r"[^A-Za-z0-9._-]", "_", name.rsplit("/", 1)[-1])
-        return Response(data, media_type=media, headers={"Content-Disposition": f'{"inline" if preview else "attachment"}; filename="{filename}"', "X-Artifact-SHA256": ref.sha256})
+        try:
+            return await stream_artifact_file(store, ref, name, media_type=media, bucket=bucket, headers={
+                "Content-Disposition": f'{"inline" if preview else "attachment"}; filename="{filename}"',
+                "X-Artifact-SHA256": ref.sha256})
+        except Exception as exc:
+            raise HTTPException(503, "saved result file is unavailable") from exc
 
     @router.get("/v1/courses/{course_id}/results/{result_id}/units")
     async def units(course_id: str, result_id: str, name: str = Query(min_length=1, max_length=300),

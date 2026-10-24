@@ -34,7 +34,14 @@ package = false
 [tool.uv.workspace]
 members = ["packages/*"]
 
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
 [tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
 b2c-contracts = { workspace = true }
 b2c-core = { workspace = true }
 b2c-llm-gateway = { workspace = true }

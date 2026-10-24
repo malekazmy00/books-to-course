@@ -371,7 +371,7 @@ def create_app(
             return await call_next(request)
         supplied = request.headers.get("authorization", "")
         expected = f"Bearer {api_token}"
-        if not secrets.compare_digest(supplied, expected):
+        if not secrets.compare_digest(supplied.encode("utf-8"), expected.encode("utf-8")):
             return JSONResponse(status_code=401, content={"detail": "valid bearer token required"})
         return await call_next(request)
     app.state.artifact_store = artifact_store

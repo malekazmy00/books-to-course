@@ -452,7 +452,7 @@ def lifecycle_router(manager: ModelLifecycle, operator_token: str) -> APIRouter:
     async def authenticate(authorization: str = Header(default="")):
         if not operator_token:
             raise HTTPException(503, "operator authentication is not configured")
-        if not secrets.compare_digest(authorization, "Bearer " + operator_token):
+        if not secrets.compare_digest(authorization.encode("utf-8"), ("Bearer " + operator_token).encode("utf-8")):
             raise HTTPException(401, "valid bearer token required")
 
     from fastapi import Depends

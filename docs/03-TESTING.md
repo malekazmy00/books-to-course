@@ -17,7 +17,7 @@
 1. **Negative control لكل اختبار تقييمي:** مدخل فاسد عمدًا لازم **يفشل**. لو نجح، يبقى المقيِّم نفسه بايظ والنتيجة ملغية.
 2. **TDD لكل phase:** الاختبارات بتتكتب الأول وتفشل، وبعدين التنفيذ.
 3. **العتبات (thresholds) ابتدائية ❓:** بتتعاير مرة واحدة في أول gate بناءً على قياس حقيقي، وبعدها **بتتجمّد** في `eval/thresholds.yaml`. ممنوع تنزيلها عشان اختبار ينجح. لو عتبة شكلها غلط: stop and report.
-4. **Golden fixtures:** كتب OpenStax ‏(CC BY 4.0). مجموعة صغيرة متعلَّمة يدويًا في `eval/golden/`.
+4. **Golden fixtures:** لا يُفترض أن مجانية الوصول تعني سماحًا بالاستخدام الآلي. استخدم `eval/golden/phase1/source-manifest.json` لمصادر Phase 1 المسموح بها للاختبار الداخلي، واحفظ النصوص المرخصة على قرص بيانات B2C؛ مجموعة الـ 10 chunks ذات الوسوم المرجعية تظل بحاجة إلى تعليم بشري. لا تنشر مخرجات أو نصوص Think Stats خارج نطاق غير تجاري، واحتفظ بنسبة المصدر وشروط ShareAlike.
 5. **Determinism:** المهام الحتمية بتشتغل بـ `temperature=0`، والتقييمات الاحتمالية بتتعاد 3 مرات ويتاخد المتوسط والانحراف.
 
 ## 3. كتالوج الاختبارات
@@ -29,7 +29,7 @@
 | T-P0-01 | import boundaries (import-linter) | مفيش أي مخالفة |
 | T-P0-02 | trace من activity تجريبية يظهر في Langfuse | span موجود بالـ attributes |
 | T-P0-03 | Temporal durability: ‏`kill -9` للـ worker في نص workflow تجريبي | الـ workflow بيكمّل بعد إعادة التشغيل والنتيجة صحيحة |
-| T-P0-04 | resource limits: ‏`docker inspect` لكل خدمة b2c | كل خدمة ليها `Memory` و`NanoCpus` و`CpuShares`، ومجموع الذاكرة ≤ 60GiB |
+| T-P0-04 | resource limits: ‏`docker inspect` لكل خدمة b2c | كل خدمة ليها `Memory` و`NanoCpus` و`CpuShares`، ومجموع الذاكرة ≤ 85GiB (D-007، عُدّل 2026-09-29) |
 | T-P0-05 | isolation: الحاويات اللي برّه b2c ماتغيرتش | `docker ps` قبل وبعد: نفس الـ IDs ونفس الـ StartedAt |
 
 ### Phase 1: LLM benchmark
@@ -50,6 +50,8 @@
 | T-ING-03 | صفحة ممسوحة بتتحوّل لـ OCR | CER ≤ 3% ❓ |
 | T-ING-04 (neg) | ترتيب عمودين متبدّل عمدًا | لازم يتكشف |
 | T-ING-05 | تشغيل مرتين بيدي نفس الـ `stage_key` وcache hit | 100% |
+| T-ING-06 | API upload: امتداد المحتوى، حد الحجم، source artifact، وبدء Temporal | 202 للطلب الصحيح؛ الرفض 413/415 للمدخلات غير الصالحة |
+| T-ING-07 | حالة ingestion عبر Temporal workflow ID | الحالة المعروضة تطابق وصف Temporal |
 
 ### L2 Outline
 | ID | الاختبار | معيار النجاح |
@@ -68,12 +70,12 @@
 ### L4 Knowledge Graph
 | ID | الاختبار | معيار النجاح |
 |---|---|---|
-| T-KG-01 | entity recall / precision مقابل golden | ≥ 0.8 / ≥ 0.7 ❓ |
-| T-KG-02 | entity resolution على 50 زوج متعلَّم | F1 ≥ 0.9 ❓ |
+| T-KG-01 | entity recall / precision مقابل independent source-grounded auto labels (system diagnostic؛ لا تُسمّى gold) | ≥ 0.8 / ≥ 0.7 ❓ |
+| T-KG-02 | entity resolution على 50 زوجًا معلّمة آليًا من شواهد المصدر (system diagnostic؛ لا manual labels) | F1 ≥ 0.9 ❓ |
 | T-KG-03 | إدراج كتاب تالت مايحذفش كيانات الأول والتاني | 100% |
 | T-KG-04 | حذف كتاب مايسيبش citations له | 0 |
 | T-KG-05 | عبر الكتب: مفهوم في الفصل X من الكتاب الأساسي بيسترجع مقطعه من فصل مختلف في الكتاب المساند | الحالات المتعلَّمة كلها ناجحة |
-| T-KG-06 | LightRAG بيرفض طلب من غير API key | 401 |
+| T-KG-06 | LightRAG يرفض القراءة والاستعلام والإضافة والحذف من غير API key؛ يُقبل 401 أو 403 بعد نجاح طلب موثّق وفحص عدم تغيّر البيانات | كل المسارات المحمية 401/403؛ الموثق 200 |
 
 ### L5 Enrichment
 | ID | الاختبار | معيار النجاح |
@@ -143,3 +145,9 @@
 ### Open issues:
 ### Gate decision: PASS / FAIL (with reason)
 ```
+
+### اختيار اختبارات استخراج المستندات
+- نعتمد منهجًا متعدد الأبعاد: دقة النص + ترتيب القراءة + تخطيط الصفحة والجداول + إحالات الصفحة + زمن/ذاكرة التشغيل؛ CER وحده لا يقيس صلاحية ناتج الكتاب للكورس.
+- نستخدم OmniDocBench مرجعًا لتغطية مهام parsing المختلفة، وDocVQA مرجعًا لاختبار الأسئلة المعتمدة على فهم بنية المستند. لا نعامل نتائج أي benchmark خارجي كبديل عن مجموعة كتب عربية ذات نص مرجعي بشري.
+- نختار صفحات ممثلة وموسومة يدويًا من كتب رقمية ومسوح ضوئية، ونقسم النتائج حسب اللغة، والدقة، والميل والضبابية، والأعمدة، والجداول. نثبت سياسة التطبيع العربي وعتبات القبول قبل تشغيل بوابة القبول، ونعرض CER/WER الخام والمطبع منفصلين.
+- مصادر المنهج: [OmniDocBench (CVPR 2025)](https://openaccess.thecvf.com/content/CVPR2025/papers/Ouyang_OmniDocBench_Benchmarking_Diverse_PDF_Document_Parsing_with_Comprehensive_Annotations_CVPR_2025_paper.pdf)، [DocVQA](https://www.docvqa.org/)، [PaddleOCR Arabic model support](https://github.com/PaddlePaddle/PaddleOCR/blob/main/docs/version3.x/algorithm/PP-OCRv5/PP-OCRv5_multi_languages.en.md). توثيق PaddleOCR يحدد نموذج PP-OCRv5 للعربية؛ لذلك يجب تثبيت النموذج وإصداره في سجل التقييم.

@@ -1,19 +1,19 @@
 # CLAUDE.md — book2course
 
 Research (non-commercial) platform that converts books into structured, Arabic-narrated courses.
-Docs are in Arabic with English technical terms. Read them in this order before any work:
+Docs are in Arabic with English technical terms. Before every work session, read the delivery plan and current status, then consult the technical sources in this order:
 
-1. `docs/00-DECISIONS.md`  — decisions (Accepted / Deferred / Open). Do not re-decide Accepted items.
-2. `docs/01-ARCHITECTURE.md` — layers, diagrams, data flow.
-3. `docs/02-CONTRACTS.md` + `packages/contracts/src/b2c_contracts/models.py` — source of truth for all data.
-4. `docs/03-TESTING.md` — test catalog (IDs, thresholds).
-5. `docs/04-OPERATIONS.md` — resource budget, shared-server rules, observability.
-6. `docs/05-PHASES.md` — phased plan with gates. **This is your work order.**
-
+1. `docs/06-DELIVERY-PLAN.md` — end-to-end product plan, decision method, review cycle, and release gates.
+2. `docs/PROJECT-STATUS.md` — verified current state, evidence, and next actions.
+3. `docs/00-DECISIONS.md` — decisions (Accepted / Deferred / Open). Do not re-decide Accepted items.
+4. `docs/01-ARCHITECTURE.md` — layers, diagrams, data flow.
+5. `docs/02-CONTRACTS.md` + `packages/contracts/src/b2c_contracts/models.py` — source of truth for all data.
+6. `docs/03-TESTING.md` — test catalog (IDs, thresholds).
+7. `docs/04-OPERATIONS.md` — resource budget, shared-server rules, observability.
+8. `docs/05-PHASES.md` — detailed phased plan and gates. This is the implementation work order under the delivery plan.
 ## Hard rules
 
-1. **One phase at a time.** Only work on the phase you were assigned. Do not start phase N+1 until the
-   gate of phase N passes AND evidence is written to `eval/reports/phase-N.md`.
+1. **One acceptance gate at a time.** Do not mark phase N+1 complete or release through it until phase N passes and its evidence is recorded. Owner-directed model acquisition, research, and explicitly scoped parallel implementation may proceed without implying a passed gate.
 2. **Tests first.** For the assigned phase, write the tests listed in `docs/03-TESTING.md` first
    (they must fail), then implement until they pass. Never weaken a test or threshold to make it pass;
    if a threshold looks wrong, stop and report.
@@ -22,12 +22,12 @@ Docs are in Arabic with English technical terms. Read them in this order before 
 4. **Layer boundaries.** Layer packages must not import each other. They communicate only through
    `b2c_contracts` models + stored artifacts. Only `packages/orchestration` knows the order of layers.
 5. **LLM access only through `packages/llm_gateway`.** No direct HTTP calls to model servers elsewhere.
-6. **Local models only** in the current stage (decision D-004). Do not add cloud API providers or keys.
+6. **B2C runtime defaults to local models** (D-004). Temporary D-022 allows CodeCraft/OpenRouter API access only for owner-approved synthetic-data tests, with explicit opt-in and a secret file outside the repository. Keep local mode as the default; do not send real book content to external APIs. D-021 remains a separate coding-assistance exception.
 7. **Shared server — do not touch other projects.** Never stop, restart, reconfigure, or exec into
    containers outside compose project `b2c` (e.g. `firecrawl-*`, `ai-company-*`, `memory-qdrant`,
    `infisical-*`, `searxng`, `ollama`, `playwright`, their redis/postgres). Never run global commands
    such as `docker system prune`, `docker volume prune`, or `docker compose down` without `-p b2c`.
-8. **Resource budget** (D-007, raised to 61 GiB on 2026-09-27): the project must stay within **61 GiB RAM
+8. **Resource budget** (D-007, raised to 85 GiB by the owner on 2026-09-29): the project must stay within **85 GiB RAM
    and 40 logical CPUs**. Every service in compose must declare `mem_limit`, `cpus`, and `cpu_shares` per
    `docs/04-OPERATIONS.md`. A `mem_limit` must cover the measured working set incl. mapped binaries —
    undersized limits thrash the shared disk (Phase 0 incident).

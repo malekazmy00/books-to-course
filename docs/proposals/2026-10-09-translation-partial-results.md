@@ -1,0 +1,13 @@
+# Translation partial final results — 2026-10-09
+
+Owner requirement: exhaust bounded unit retries, continue later units, persist all validated work and expose gaps for explicit retry after repair. Numeric and completeness gates remain unchanged.
+
+Implemented in source: TranslationPack has completed/partial status, expected total and missing/failed/suspect IDs. After visiting every unit and bounded deferred retries, exhausted units no longer throw a whole-job failure. Coverage mismatch unrelated to the exhausted units still fails. The activity commits a valid partial translation JSON/text, source reference and overrides into a new immutable artifact. Artifact identity includes the accepted payload and gap manifest, so partial artifacts cannot be returned as complete outputs from the cache later. Terminal progress is persisted after artifact commit.
+
+Temporal finishes successfully after committing the output; API exposes result_status and progress_state=partial, actual accepted/expected counts, coverage percentage and explicit missing/retry IDs. Existing terminal-source resume and revision APIs remain applicable. Complete outputs stay compatible with existing clients. A partial output is never labeled full coverage. Existing audio code still refuses a lesson whose required translated source unit is missing; partial lesson/audio selection is a separate capability and was not weakened here.
+
+Some model responses emit exact raw numerals rather than instructed numeric placeholders. They are now accepted only when no B2C_NUM marker remains and the complete ordered numeric token sequence equals the source exactly. Missing, extra, changed, mixed or reordered numbers are still rejected. Short-content triage remains unchanged.
+
+Validation: 39 focused unit/API/orchestration tests passed, using deterministic test gateways and in-memory artifact stores. Regressions prove later units are visited, immutable partial artifacts persist, retries submit only missing units, a complete retry obtains a different artifact, and terminal API displays 50% for a half-complete result. No external inference, service restart/deployment or current workflow mutation occurred.
+
+Runtime procedure for project coordinator: safely build/update generation-worker and API after confirming active tasks; resume the terminal failed body workflow with its exact saved source request and resume_from_workflow_id. Do not delete checkpoints or regenerate accepted units. The next run visits missing/suspect units only and commits a usable partial or complete artifact with durable gap IDs. Keep the completed appendix artifact untouched.

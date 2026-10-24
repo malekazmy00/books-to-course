@@ -10,28 +10,27 @@
 | الاستهلاك الحالي للمشاريع التانية | ~7.3 GiB، والـ CPU ‏~89% idle | `top`، `docker stats` |
 | NUMA | عقدتين فعليًا، لكن WSL بيعرض عقدة واحدة ← **مفيش pinning** | D-008 |
 
-## 2. ميزانية الموارد (D-007: ≤ 61 GiB و≤ 40 CPU — عُدّلت من 60 في 2026-09-27)
+## 2. ميزانية الموارد (D-007: ≤ 85 GiB و≤ 40 CPU — عُدّلت إلى 85 في 2026-09-29)
 
 **قاعدة الـ CPU:** الخدمات التقيلة (`heavy`) ماتشتغلش مع بعض، لأن Temporal task queue `heavy` مضبوطة بـ `max_concurrent_activities=1`.
 - أسوأ حالة في نفس اللحظة = أكبر خدمة heavy + كل الخفيفة = **24 + 10.5 = 34.5 CPU**، وده أقل من 40.
 
-**قاعدة الذاكرة:** النماذج بتفضل محمّلة، عشان كده **مجموع `mem_limit` لكل الخدمات لازم يكون ≤ 61 GiB**. ده بيتختبر في T-P0-04.
+**قاعدة الذاكرة:** النماذج بتفضل محمّلة، عشان كده **مجموع `mem_limit` لكل الخدمات لازم يكون ≤ 85 GiB**. ده بيتختبر في T-P0-04.
 
 **قاعدة الـ limits الصغيرة (درس Phase 0):** `mem_limit` لازم يغطي الـ working set كله، ومعاه الـ binary المحمّل في الذاكرة (page cache). الحد الأصغر من كده بيعمل thrashing: قراءات متكررة من الـ disk المشترك. اقيس `memory.stat` (anon + file) قبل ما تحدد الـ limit.
 
 | الخدمة | نوع | mem_limit | cpus | cpu_shares | ملاحظة |
 |---|---|---|---|---|---|
-| llm (llama-server) | heavy | 26g | 24 | 512 | Qwen3-30B-A3B Q4 ≈ 18.6GB + KV cache |
+| llm (llama-server) | heavy | 50g | 24 | 512 | Qwen3-Coder 30B (`qwen3-coder:30b`) blob 18.56GB + KV cache; copy on B2C VHDX |
 | embed-rerank | heavy | 5g | 6 | 512 | bge-m3 + reranker |
-| docling-worker | heavy | 5g | 8 | 512 | Phase 2+ |
 | tts | heavy | 4g | 8 | 512 | Phase 8 |
 | postgres (pgvector) | light | 4g | 2 | 1024 | |
 | temporal (+ui) | light | 2g | 1 | 1024 | |
 | lightrag | light | 3g | 2 | 1024 | الشغل التقيل بيتعمل عن طريق llm/embed |
 | langfuse (web+worker) + clickhouse + redis + object store | light | 8g | 3 | 1024 | Phase 0 |
-| api + web + workers | light | 2g | 1 | 1024 | |
+| api + web + workers | mixed | 6g | 4 | 1024 | API 512m/0.5; worker 5g/4 including serial Docling OCR; 512m reserved for web |
 | observability: otel-collector (core) + prometheus + grafana + cadvisor | light | 1.25g | 1.5 | 1024 | 256m + 384m + 384m + 256m. المقاس idle: 17 / 53 / 228 / ~20 MiB anon (Phase 0) |
-| **المجموع** | | **60.25g** | | | ≤ 61 ✅ (D-007 بعد التعديل) |
+| **المجموع** | | **83.25g** | | | ≤ 85 ✅ (D-007 بعد التعديل) |
 
 `cpu_shares: 512` معناها إن الخدمة التقيلة بتاخد أولوية أقل من الافتراضي (1024) وقت التنافس، فالمشاريع التانية بتكسب. دي آلية CFS shares الرسمية في Docker.
 
@@ -59,18 +58,24 @@
 - الـ threads: الأنوية الحقيقية بس، لأن الـ hyperthreads غالبًا مابتفيدش في llama.cpp. القيمة النهائية من T-B-01.
 - الـ GGUF: إما من blobs بتاعة Ollama الموجود (VERIFY، وللقراءة بس، ومن غير أي تعديل على Ollama)، أو تحميل من Hugging Face بـ revision مثبت.
 
-## 5. جدول الإصدارات المثبتة (يتملى في Phase 0/1)
+## 5. جدول الإصدارات المثبتة (Phase 0 verified; Phase 1+ pending)
 | المكون | الإصدار / digest | تاريخ التحقق | المصدر |
 |---|---|---|---|
-| llama.cpp server image | | | |
-| Qwen3-30B-A3B-Instruct-2507 GGUF | | | |
-| pgvector/pgvector | | | |
-| Temporal server | | | temporalio docs |
-| Langfuse | v4.x | | langfuse self-hosting docs |
-| Docling | | | |
-| LightRAG | | | |
-| bge-m3 / bge-reranker-v2-m3 | revision | | |
-| py-fsrs | 6.x | | |
+| llama.cpp server image | `server-b11176` / `sha256:6257697a7f5d034b8fb499ddb07af3e250506352f94102054252a23f3b85e0af` | 2026-09-29 | GHCR pinned image; `llama-server --help` |
+| Qwen3-Coder 30B GGUF (`qwen3-coder:30b`) | blob `sha256:1194192cf2a187eb02722edcc3f77b11d21f537048ce04b67ccf8ba78863006a` | 2026-09-29 | Ollama local manifest; SHA-256 verified copy on B2C VHDX |
+| pgvector/pgvector | `0.8.6-pg17` / `sha256:cf134a767f474095eeba57e0117be8e568e011a63f33fbf252f14c9b760f8e6f` | 2026-09-29 | pinned image; `image-digests.txt` |
+| Temporal server | `1.32.0` / `sha256:c3e752127759616bb1615e0f9ba0e21635aeb5fdeb922de4f371c350955f46ae` | 2026-09-29 | pinned image; `image-digests.txt` |
+| Temporal admin-tools / UI | `1.32.0` / `2.54.1`, digests in `image-digests.txt` | 2026-09-29 | pinned images |
+| Langfuse web / worker | `4.46.0`, digests in `image-digests.txt` | 2026-09-29 | pinned images; T-P0-02 |
+| ClickHouse | `25.12`, digest in `image-digests.txt` | 2026-09-29 | pinned image |
+| Redis / MinIO | `7.4` / pinned digest; MinIO pinned digest (image tag `latest`) | 2026-09-29 | pinned images; `image-digests.txt` |
+| pypdf | 6.1.3 (uv.lock; b2c-ingest) | 2026-09-29 | project-owned text-PDF parser and extraction fallback; scanned PDFs require Docling/OCR |
+| FastAPI / uvicorn / python-multipart | uv.lock (b2c-api) | 2026-09-30 | local upload/status API on 127.0.0.1:8100 |
+| Docling | 2.131.0 (uv.lock; b2c-ingest[docling]) | 2026-10-01 | CPU PyTorch; OCR/layout/table models prefetched into worker image for offline runtime |
+| OpenRouter test profile | `nvidia/nemotron-3-super-120b-a12b:free` | 2026-10-01 | Verified with schema-constrained JSON; free endpoint reported $0 and 86.54% availability over 3d when checked. Read-only key mount; free-provider prompts may be logged. Base compose stays local. |
+| LightRAG | Phase 1+; not verified in Phase 0 | — | — |
+| bge-m3 / bge-reranker-v2-m3 | Phase 1+; not verified in Phase 0 | — | — |
+| py-fsrs | Phase 1+; not verified in Phase 0 | — | — |
 
 ## 6. المراقبة (Observability)
 
@@ -83,7 +88,7 @@
 ### 6.2 المقاييس والتنبيهات
 | الطبقة | المقاييس | Alert |
 |---|---|---|
-| Host | CPU، وRAM، وdisk، واستهلاك b2c مقابل الميزانية | مجموع b2c > 55 GiB؛ disk > 80% |
+| Host | CPU، وRAM، وdisk، واستهلاك b2c مقابل الميزانية | مجموع b2c > 78 GiB؛ disk > 80% |
 | llm_gateway | tokens in/out، وp95 latency، وtokens/s، وcache hit، ونسبة JSON غير صالح | p95 > 2× baseline؛ JSON invalid > 5% |
 | Ingest | pages/min، ونسبة OCR، والفشل | فشل > 2% |
 | LightRAG | زمن الإدراج لكل كتاب، و`doc_status=failed` | أي failed |
@@ -106,7 +111,45 @@
 - **أولوية قصوى** للحاجات اللي مايتعادش إنتاجها: الـ termbase، والمراجعات البشرية، وsRS review logs، ووثائق موافقات الأصوات (مرجعها بس، والأصل عند المكتب القانوني).
 - اختبار استعادة شهري (T-OPS-01).
 
+### Arabic post-translation editing runtime (opt-in)
+
+The B2C worker mounts the pinned local CAMeL-Lab QALB14 NoPnx/Pnx models and read-only `text-editing` source under the persistent data disk. `B2C_ARABIC_GEC_ENABLED` defaults to `false`; enable only after a representative Arabic quality review. The translation artifact keeps its original translation immutable and records decisions in `translation-arabic-editing.json`; corrections are cached independently by source, accepted translation, model manifest, and policy. The source checkout is pinned to `4d552ca3ae98029550f27fc52aa1b22883e16e61` (MIT).
+
 ## 8. الأسرار
 - `.env` برّه git (فيه `.env.example` بس)، وDocker secrets للمفاتيح.
 - مفتاح منفصل لكل خدمة: LightRAG API key، وLangfuse keys، وPostgres passwords.
 - VERIFY: لو مشروع تاني بيستخدم Infisical، **ممنوع** نستخدمه أو نعدّل فيه من غير قرار صريح.
+
+## 8. Windows reboot and B2C startup ordering (2026-10-05)
+- `B2C-Data-Disk-Mount` runs at the signed-in user's logon with highest privilege and attaches only `F:\wsl-b2c\b2c-data.vhdx`; it verifies `/mnt/wsl/b2cdata/.b2c-data-disk` and `models/` and never formats the disk.
+- `B2C-Stack-Start` runs one minute after logon as the signed-in user. It waits up to 15 minutes for the verified mount and Docker, checks the mount again with `scripts/data-disk.sh check`, then runs only Compose project `b2c` from `/root/projects/book2course`. It does not build images or remove orphan containers.
+- The start script is maintained at `scripts/windows/start-b2c-stack.ps1`; the installed copy and log are under `%ProgramData%\B2C\`. It was run through Task Scheduler after the restart and returned result 0.
+- After reboot, the VHDX was present and mounted at `/mnt/wsl/b2cdata` (`/dev/sde`, ext4, rw); the marker and model directory were verified. Core Compose services recovered on their existing data. LightRAG's separate experimental compose profile is not part of the default startup task.
+- After `up -d`, the startup task restarts only B2C's cAdvisor so its Docker factory registers after Docker is ready; this prevents the post-reboot case where cAdvisor appeared up but exported no per-container memory series.
+- The same task gates success on a Prometheus query returning at least one `container_memory_working_set_bytes` series labeled with Compose project `b2c`; the verified current count is 15. It fails visibly in its task result/log if the memory series do not return within two minutes.
+
+
+## 9. Android operator access from mobile (updated 2026-10-08)
+- The operator APK uses the fixed HTTPS Tailscale hostname https://desktop-3khe91s.tail7385b1.ts.net; the operator does not enter a server address. The app connection button checks /health only when pressed.
+- Keep the API bound to loopback; Funnel is the HTTPS path to the computer. Do not publish port 8100 directly. Set B2C_API_AUTH_REQUIRED=true; the API bearer token remains in the server-side secret file mounted read-only at /run/secrets/b2c_mobile_api_token.
+- The 32-bit debug APK does not embed the bearer token. On first protected API operation, the user enters it once; Android Keystore encrypts it locally. Treat this as a private operator credential, not a public-release login model.
+- The audio generation activity is routed to the isolated audio Temporal task queue. Its single-activity worker has a 512 MiB/0.5 CPU limit and does not replace the existing HEAVY worker. Build/deploy it with the normal B2C Compose service graph and speech overlay.
+- The Windows Tailscale service and B2C Docker startup task must both start at login/reboot; verify the Funnel after reboot before considering remote access persistent.
+- APK 0.3.2 supports API 24+ and armeabi-v7a; Android 7/8 device-level E2E and learner-facing app readiness are still unverified.
+
+
+### Model recovery after data-disk attachment (2026-10-09)
+The Windows startup script now invokes `scripts/restore-model-services.sh` after base Compose startup. It starts only existing B2C Fasih/BGE/EmbeddingGemma containers that failed with boot bind-mount errors; manually stopped models and historical workers are preserved. The installed ProgramData script was synchronized and both parser/shell checks plus idempotent execution passed. Current reboot recovery and translation checkpoint-tail repair evidence are in `eval/reports/reboot-recovery-2026-10-09.md`.
+
+The same post-mount task now runs `scripts/recover-lost-b2c-activities.sh`: it compares pending B2C QA/translation activity ownership with live B2C container boot times, preserves live workers, and requeues only attempts whose original worker process is proven lost. It retains source/checkpoint identity and retry budget. Model and activity recovery hooks are in the installed ProgramData copy.
+
+## Public APK connectivity recovery — 2026-10-09
+
+The local API and MagicDNS path returned HTTP 200, but this did not prove public access: host DNS resolved to the private tailnet IP. Forced public-DNS address tests found the default HTTPS port 443 stalling during connection/TLS. Refreshing Funnel and rebinding did not fix that path. The same persistent background Funnel proxy on HTTPS 8443 worked instead.
+
+Public APK base URL: `https://desktop-3khe91s.tail7385b1.ts.net:8443`. Keep the existing bearer credential unchanged. Public health returned HTTP 200 from Windows; authenticated library checks from WSL, forcing each of the three public ingress addresses, all returned HTTP 200. No credential or library payload was logged. Keep port 443 configured for existing clients, but its public path remains faulty; clients must select 8443 for the verified working path. This is a public connectivity workaround, not proof of a repaired upstream 443 service. The background Funnel configuration is persistent; another full reboot has not been performed.
+
+
+### Arabic speech punctuation fallback (2026-10-12)
+
+The opt-in Naqta insertion-only speech preparation uses policy naqta-insertion-only-v2-short-terminal. It inserts a terminal period for Arabic text up to 240 characters when no terminal punctuation is present, covering short inputs where the model abstains. It does not modify words, existing terminal punctuation, English text, or longer passages. On B2C-On-D, the focused unit suite passed 4/4 and a live renderer smoke returned HTTP 200 with an ID3 MP3 (47,564 bytes); the cached prepared Arabic text had the expected final period.

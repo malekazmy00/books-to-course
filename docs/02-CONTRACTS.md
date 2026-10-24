@@ -1,6 +1,6 @@
 # 02 — العقود بين الطبقات (Layer Contracts)
 
-المصدر الوحيد للحقيقة هو `packages/contracts/src/b2c_contracts/models.py` (SCHEMA_VERSION 1.0.0).
+المصدر الوحيد للحقيقة هو `packages/contracts/src/b2c_contracts/models.py` (SCHEMA_VERSION 1.1.0).
 الوثيقة دي بتشرح **إزاي** كل طبقة بتسلّم للطبقة اللي بعدها. والتعريفات نفسها موجودة في الكود.
 
 > الكود ده اتشغّل واتختبر: `tests/contract/test_contracts_invariants.py` ونتيجته 8 passed. الاختبارات دي بتتأكد من القيود الأساسية (negative controls).
@@ -27,7 +27,7 @@ s3://artifacts/{course_id}/{stage}/{key}/<files>
 | backoff_coefficient | 2.0 |
 | maximum_interval | 10m |
 | maximum_attempts | 5 |
-| non_retryable | `ValidationError`، `UnsupportedFormat`، `RightsNotCleared`، `ConsentMissing` |
+| non_retryable | `ValidationError`، `UnsupportedFormat`، `RightsNotCleared`، `ConsentMissing`، `OutlineNeedsReview` |
 
 ### 1.4 مخرجات الـ LLM
 - كل مخرج بيتطلب **structured output** (JSON schema مولّد من Pydantic) عبر `llm_gateway`. VERIFY دعم `response_format` / `json_schema` في إصدار llama-server المثبت.
@@ -57,7 +57,7 @@ s3://artifacts/{course_id}/{stage}/{key}/<files>
 
 ### CourseOutline
 ```json
-{"schema_version":"1.0.0","course_id":"crs_01","spine_book_id":"bk_stats",
+{"schema_version":"1.1.0","course_id":"crs_01","spine_book_id":"bk_stats",
  "supplementary_book_ids":["bk_bizstats"],"requires_review":false,
  "modules":[{"module_id":"m02","title":"Descriptive Statistics","order":2,
    "lessons":[{"lesson_id":"m02.l03","title":"Measures of the Center","order":3,
@@ -67,7 +67,7 @@ s3://artifacts/{course_id}/{stage}/{key}/<files>
 
 ### LessonSentence
 ```json
-{"schema_version":"1.0.0","sid":"m02.l03:s017",
+{"schema_version":"1.1.0","sid":"m02.l03:s017",
  "text_en":"The median is less sensitive to outliers than the mean.",
  "citations":["c_bk_bizstats_0412"],"kind":"supplementary"}
 ```
@@ -109,3 +109,7 @@ class GraphRetriever(Protocol):
     def delete_book(self, doc_id: str) -> None: ...
     def retrieve(self, query: str, top_k: int) -> list[tuple[str, float]]: ...  # (chunk_id, score)
 ```
+
+
+## 6. Provenance للموافقة على المخطط
+`OutlineApprovalProvenance` يميز صراحةً بين `human` و`system`. المسار البشري يتطلب `reviewer_id` حقيقيًا. المراجع النظامي يحمل `system_id` وإصدار السياسة وبصمة دليل، ولا يقبل أي `reviewer_id`. سياسة `b2c-outline-structural-review` تتحقق من مصدر غير مستنتج آليًا، وعناوين دروس موجودة بالنص، وتغطية متصلة كاملة للكتل، واتساق الصفحات والمتطلبات السابقة. نجاحها يثبت سلامة البنية فقط؛ لا يعني اعتمادًا تربويًا أو مراجعة بشرية.

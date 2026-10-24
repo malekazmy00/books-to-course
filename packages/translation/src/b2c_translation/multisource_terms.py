@@ -5,6 +5,7 @@ layer; exact context checks are required because its language coverage and quali
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import dataclass
@@ -13,11 +14,21 @@ from typing import Any
 
 from b2c_contracts import GlossaryTerm, TermbaseEntry
 
+from .agrovoc import termbase_dir, verify_sha256
+
 WIKIDATA_RELEASE = "2026-09-30"
 WIKIDATA_DUMP_SHA256 = "24b68c109044dc327498a68bee6db07f2b0e566ddb0bbeb2fbb289bf46b2f7fc"
 WIKIDATA_CANDIDATE_SHA256 = "523aa61b81b51787816a02c394c5f753a17c01d497c23f31694b3c8c60dddc43"
 WIKIDATA_LICENSE = "CC0 1.0 (Wikidata structured data)"
 MULTISOURCE_POLICY_ID = "g3-policy-wikidata-agrovoc-context-v1"
+WIKIDATA_RELATIVE_PATH = Path("wikidata-lexemes/wikidata_concept_en_ar_candidates.jsonl")
+# Hash previously hard-coded for AGROVOC candidates; used only when the AGROVOC
+# index object does not report the hash of what it actually loaded.
+_LEGACY_AGROVOC_CANDIDATE_SHA256 = "125888420889ee22746cf740b6c74aaf985f112bd81c573eb853b4150b25ed43"
+
+
+def default_wikidata_dataset() -> Path:
+    return termbase_dir() / WIKIDATA_RELATIVE_PATH
 _SPACE = re.compile(r"\s+")
 _WORD = re.compile(r"[\w]+", re.UNICODE)
 _STOPWORDS = frozenset({
@@ -79,7 +90,9 @@ class MultiSourceCompilation:
 
 
 class WikidataConceptIndex:
-    def __init__(self, concepts: list[WikidataConcept]):
+    def __init__(self, concepts: list[WikidataConcept], *, source_sha256: str = WIKIDATA_CANDIDATE_SHA256):
+        # SHA-256 of the candidate bytes actually loaded; recorded in audit rows.
+        self.source_sha256 = source_sha256
         self.concepts = tuple(concepts)
         self._by_label: dict[str, list[WikidataConcept]] = {}
         for concept in self.concepts:
@@ -90,34 +103,43 @@ class WikidataConceptIndex:
                     self._by_label.setdefault(key, []).append(concept)
 
     @classmethod
-    def from_jsonl(cls, path: str | Path) -> "WikidataConceptIndex":
+    def from_jsonl(
+        cls, path: str | Path | None = None, *, expected_sha256: str | None = WIKIDATA_CANDIDATE_SHA256,
+    ) -> "WikidataConceptIndex":
+        """Load candidates, verifying the stamped hash unless explicitly opted out (None)."""
+        resolved = Path(default_wikidata_dataset() if path is None else path)
+        raw = resolved.read_bytes()
+        actual = hashlib.sha256(raw).hexdigest()
+        verify_sha256(actual, expected_sha256, source="Wikidata", path=resolved)
         concepts: list[WikidataConcept] = []
-        with Path(path).open(encoding="utf-8") as stream:
-            for line in stream:
-                row: dict[str, Any] = json.loads(line)
-                if row.get("license") != WIKIDATA_LICENSE:
-                    raise ValueError("Wikidata snapshot contains an unexpected license")
-                if not row.get("concept_id") or not row.get("en_preferred") or not row.get("ar_preferred"):
-                    raise ValueError("Wikidata concept row lacks bilingual preferred labels")
-                definitions = row.get("definitions", {})
-                concepts.append(WikidataConcept(
-                    concept_id=row["concept_id"],
-                    uri=row["concept_uri"],
-                    en_preferred=row["en_preferred"],
-                    ar_preferred=row["ar_preferred"],
-                    en_alternates=tuple(row.get("en_alternates", ())),
-                    ar_alternates=tuple(row.get("ar_alternates", ())),
-                    linked_en_lemmas=tuple(row.get("linked_en_lemmas", ())),
-                    linked_ar_lemmas=tuple(row.get("linked_ar_lemmas", ())),
-                    definition_en=definitions.get("en", ""),
-                    definition_ar=definitions.get("ar", ""),
-                    domain_item_ids=tuple(row.get("domain_item_ids", ())),
-                    sense_uris=tuple(row.get("wikidata_lexeme_senses", ())),
-                    license=row["license"],
-                    release=row.get("source_release", WIKIDATA_RELEASE),
-                    source_dump_sha256=row.get("source_dump_sha256", WIKIDATA_DUMP_SHA256),
-                ))
-        return cls(concepts)
+        # Split on "\n" only: str.splitlines() would also split on U+2028 inside JSON strings.
+        for line in raw.decode("utf-8").split("\n"):
+            if not line.strip():
+                continue
+            row: dict[str, Any] = json.loads(line)
+            if row.get("license") != WIKIDATA_LICENSE:
+                raise ValueError("Wikidata snapshot contains an unexpected license")
+            if not row.get("concept_id") or not row.get("en_preferred") or not row.get("ar_preferred"):
+                raise ValueError("Wikidata concept row lacks bilingual preferred labels")
+            definitions = row.get("definitions", {})
+            concepts.append(WikidataConcept(
+                concept_id=row["concept_id"],
+                uri=row["concept_uri"],
+                en_preferred=row["en_preferred"],
+                ar_preferred=row["ar_preferred"],
+                en_alternates=tuple(row.get("en_alternates", ())),
+                ar_alternates=tuple(row.get("ar_alternates", ())),
+                linked_en_lemmas=tuple(row.get("linked_en_lemmas", ())),
+                linked_ar_lemmas=tuple(row.get("linked_ar_lemmas", ())),
+                definition_en=definitions.get("en", ""),
+                definition_ar=definitions.get("ar", ""),
+                domain_item_ids=tuple(row.get("domain_item_ids", ())),
+                sense_uris=tuple(row.get("wikidata_lexeme_senses", ())),
+                license=row["license"],
+                release=row.get("source_release", WIKIDATA_RELEASE),
+                source_dump_sha256=row.get("source_dump_sha256", WIKIDATA_DUMP_SHA256),
+            ))
+        return cls(concepts, source_sha256=actual)
 
     def lookup(self, english_term: str) -> tuple[WikidataConcept, ...]:
         return tuple(self._by_label.get(_normalize(english_term), ()))
@@ -159,7 +181,7 @@ def compile_multisource_termbase(
                         "source": "wikidata", "uri": concept.uri, "ar": concept.ar_preferred,
                         "overlap": tuple(sorted(overlap)), "domain": concept.domain_item_ids,
                         "license": concept.license, "release": concept.release,
-                        "hash": WIKIDATA_CANDIDATE_SHA256,
+                        "hash": getattr(wikidata, "source_sha256", WIKIDATA_CANDIDATE_SHA256),
                     })
         if agriculture_domain_confirmed and agrovoc is not None:
             for concept in agrovoc.lookup(item.term_en):
@@ -173,7 +195,7 @@ def compile_multisource_termbase(
                         "source": "agrovoc", "uri": concept.uri, "ar": concept.ar_preferred[0],
                         "overlap": tuple(sorted(overlap)), "domain": (),
                         "license": concept.license, "release": concept.modified,
-                        "hash": "125888420889ee22746cf740b6c74aaf985f112bd81c573eb853b4150b25ed43",
+                        "hash": getattr(agrovoc, "source_sha256", _LEGACY_AGROVOC_CANDIDATE_SHA256),
                     })
         if not candidates:
             audits.append(MultiSourceAudit(

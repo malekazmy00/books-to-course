@@ -5,13 +5,17 @@ import hashlib
 import re
 
 from b2c_contracts.models import Block, CourseOutline, ParsedBook, StructuredChunk
+from b2c_core.arabic_text import normalize_arabic
 
 _TOKEN_RE = re.compile(r"\w+|[^\w\s]", re.UNICODE)
 
 
 def estimate_tokens(text: str) -> int:
-    """Tokenizer-independent estimate, pending in-domain evaluation."""
-    return max(1, len(_TOKEN_RE.findall(text)))
+    """Tokenizer-independent estimate, pending in-domain evaluation.
+
+    Arabic diacritics/tatweel are removed first so they do not count as tokens.
+    """
+    return max(1, len(_TOKEN_RE.findall(normalize_arabic(text))))
 
 
 def _chunk_id(book_id: str, block_ids: list[str]) -> str:
@@ -99,6 +103,10 @@ def chunk_book(book: ParsedBook, *, target_tokens: int = 500, overlap_ratio: flo
                         break
                     carry.insert(0, old)
                     carry_n += old_n
+                if len(carry) == len(pending):
+                    # Carrying every block would make the emitted chunk a strict
+                    # subset of the next one (a duplicated chunk), not an overlap.
+                    carry, carry_n = [], 0
                 pending, size = carry, carry_n
             pending.append(block)
             size += n

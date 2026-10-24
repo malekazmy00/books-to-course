@@ -4,8 +4,9 @@ from __future__ import annotations
 import base64
 import json
 import urllib.error
-import urllib.parse
 import urllib.request
+
+DEFAULT_GEMINI_TABLE_MODEL = "gemini-3.5-flash-lite"
 
 
 class GeminiTableError(RuntimeError):
@@ -16,7 +17,7 @@ def transcribe_table_png(
     image_png: bytes,
     api_key: str,
     *,
-    model: str = "gemini-3.5-flash-lite",
+    model: str = DEFAULT_GEMINI_TABLE_MODEL,
     timeout_s: float = 45.0,
 ) -> tuple[str, dict[str, int]]:
     """Return a Markdown transcription and token usage without leaking the API key."""
@@ -39,11 +40,12 @@ def transcribe_table_png(
         ]}],
         "generationConfig": {"temperature": 0, "maxOutputTokens": 4096},
     }
-    query = urllib.parse.urlencode({"key": api_key})
+    # The key travels in a header, never in the URL (URLs end up in logs,
+    # proxies and exception messages).
     request = urllib.request.Request(
-        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?{query}",
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers={"Content-Type": "application/json", "x-goog-api-key": api_key},
         method="POST",
     )
     try:

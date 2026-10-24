@@ -515,3 +515,54 @@ def test_numbered_procedure_builder_falls_back_when_source_support_is_insufficie
     sentences = [_Sentence(text_en=f"Step {step}. A source step has a distinct operation.",
                            citations=["c1"], kind="primary") for step in range(1, 4)]
     assert _build_numbered_procedure_mcqs(sentences, 3) is None
+
+
+def test_generation_prompt_is_coherent_and_versioned():
+    from b2c_pedagogy.lesson_enrichment import LESSON_ENRICHMENT_PROMPT_VERSION
+
+    outline, book, chunks = _sources()
+    gateway = _Gateway()
+    generate_lesson_enrichments(outline, book, chunks, gateway, question_count=3)
+    system = gateway.calls[0][2][0]["content"]
+    assert "Every summary, glossary item, and MCQ must reference sentence indices." in system
+    assert "Every summary, Use primary" not in system
+    assert LESSON_ENRICHMENT_PROMPT_VERSION == "phase5-lesson-enrichment-v4"
+    assert gateway.calls[0][1] == "phase5-lesson-enrichment-v4:generate:attempt-1"
+
+
+def test_numbered_procedure_questions_never_trigger_proposal_repair_calls(monkeypatch):
+    import b2c_pedagogy.lesson_enrichment as mod
+
+    built = object()
+    monkeypatch.setattr(mod, "_build_numbered_procedure_mcqs", lambda sentences, count: [built] * count)
+    monkeypatch.setattr(mod, "_AssetsCandidate", lambda **kwargs: kwargs)
+
+    def failing_assets(scope_id, candidate, *args, **kwargs):
+        assert candidate["questions"] == [built] * 3
+        raise ValueError(f"{scope_id}:q001: stem exposes answer through the keyed option")
+
+    monkeypatch.setattr(mod, "_make_lesson_assets", failing_assets)
+    outline, book, chunks = _sources()
+    gateway = _Gateway()
+    with pytest.raises(ValueError, match="q001"):
+        generate_lesson_enrichments(outline, book, chunks, gateway, question_count=3, question_repair_limit=3)
+    assert [call[0] for call in gateway.calls] == ["ExactQuestions"]
+
+
+def test_resumed_enrichment_reruns_mcq_evidence_consistency():
+    outline, book, chunks = _sources()
+    [lesson] = generate_lesson_enrichments(outline, book, chunks, _Gateway(), question_count=3)
+    first = lesson.questions[0]
+    tampered_question = first.model_copy(update={"stem": "After calling stats.chance(x), " + first.stem})
+    tampered = lesson.model_copy(update={"questions": [tampered_question, *lesson.questions[1:]]})
+
+    class NoCalls:
+        model_id = "fixture"
+
+        def structured(self, *args, **kwargs):  # pragma: no cover - must not be called
+            raise AssertionError("resumed lesson must not call the model")
+
+    assert generate_lesson_enrichments(outline, book, chunks, NoCalls(), question_count=3,
+                                       precompleted=[lesson]) == [lesson]
+    with pytest.raises(ValueError, match="precompleted enrichment failed revalidation: l1: .*code premise"):
+        generate_lesson_enrichments(outline, book, chunks, NoCalls(), question_count=3, precompleted=[tampered])

@@ -22,9 +22,16 @@ from b2c_contracts import (
     StructuredChunk,
     SupplementCandidate,
 )
-from b2c_synthesis.validation import detect_explicit_polarity_conflicts, validate_citations
+from b2c_core.provenance_checks import detect_explicit_polarity_conflicts, validate_citations
 from .qa_generation import StructuredLLMGateway, _derive_scopes
 from .validation import lint_bloom_distribution, lint_mcq, validate_lesson_assets
+
+
+# Bumped from v2 when the garbled generation system prompt was repaired (two
+# sentences had been inserted inside "Every summary, glossary item, and MCQ must
+# reference sentence indices"). v3 is skipped because orchestration already uses
+# "phase5-lesson-enrichment-v3" as its course-QA stage-key prompt version.
+LESSON_ENRICHMENT_PROMPT_VERSION = "phase5-lesson-enrichment-v4"
 
 
 class _Sentence(BaseModel):
@@ -679,7 +686,7 @@ def generate_lesson_enrichments(
     *,
     question_count: int = 5,
     max_tokens: int = 4096,
-    prompt_version: str = "phase5-lesson-enrichment-v2",
+    prompt_version: str = LESSON_ENRICHMENT_PROMPT_VERSION,
     lesson_ids: list[str] | None = None,
     supplementary_chunks_by_lesson: dict[str, list[StructuredChunk]] | None = None,
     excluded_question_stems: list[str] | None = None,
@@ -720,6 +727,11 @@ def generate_lesson_enrichments(
         bloom_findings = list(lint_bloom_distribution(saved.questions).findings) if saved.questions else []
         if citations.findings or assets.findings or lint_findings or bloom_findings:
             raise ValueError(f"precompleted enrichment failed revalidation: {saved.lesson_id}")
+        try:
+            # Same fail-closed MCQ evidence checks a fresh enrichment must pass.
+            _validate_mcq_evidence_consistency(saved.draft, saved.questions, scope.chunks)
+        except ValueError as exc:
+            raise ValueError(f"precompleted enrichment failed revalidation: {saved.lesson_id}: {exc}") from exc
         precompleted_by_id[saved.lesson_id] = saved
 
     result: list[LessonEnrichment] = []
@@ -773,10 +785,10 @@ def generate_lesson_enrichments(
                 "Create a concise English lesson grounded only in the supplied chunks. Return 4-8 factual lesson sentences, "
                 "at least three concise summary points, only glossary terms explicitly supported by those sentences, "
                 "and exactly the requested number of MCQs. Every sentence must cite exact supplied chunk IDs and use primary "
-                "for spine evidence, supplementary for supplementary evidence, connective only for transitions. Every summary, "
+                "for spine evidence, supplementary for supplementary evidence, connective only for transitions. "
                 "Use primary whenever every cited source ID belongs to the spine; use supplementary whenever every cited source ID belongs to a supplementary book. "
                 "Do not label spine-cited sentences as supplementary or supplementary-cited sentences as primary. "
-                "glossary item, and MCQ must reference sentence indices. These indices are zero-based positions in the returned "
+                "Every summary, glossary item, and MCQ must reference sentence indices. These indices are zero-based positions in the returned "
                 "sentences array, never page, paragraph, or source-chunk numbers. If there are N returned sentences, every index "
                 "must be an integer from 0 through N-1; for example, with four sentences only 0, 1, 2, and 3 are valid. "
                 "Before returning, check that all summary, glossary, and question references point to a sentence that exists. "
@@ -814,12 +826,13 @@ def generate_lesson_enrichments(
         proposal_candidate, reference_normalization = _normalize_proven_one_based_references(proposal_candidate)
         proposals = list(proposal_candidate.questions)
         assets = None
-        repair_limit = min(max(0, question_repair_limit), question_count)
+        # Numbered-procedure MCQs are built from the lesson sentences alone; model
+        # proposals do not influence them, so repairing a proposal cannot help.
+        procedure_questions = _build_numbered_procedure_mcqs(proposal_candidate.sentences, question_count)
+        repair_limit = 0 if procedure_questions else min(max(0, question_repair_limit), question_count)
         for repair_attempt in range(repair_limit + 1):
             try:
-                built_questions = _build_numbered_procedure_mcqs(
-                    proposal_candidate.sentences, question_count
-                ) or _build_source_grounded_mcqs(
+                built_questions = procedure_questions or _build_source_grounded_mcqs(
                     proposals, proposal_candidate.sentences, question_count
                 )
                 candidate = _AssetsCandidate(

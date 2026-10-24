@@ -25,7 +25,52 @@ class OCRRequired(UnsupportedPDF):
     """One or more pages lack a usable text layer and must go through OCR."""
 
 
+# Fallback heading detection (no PDF bookmarks). Deliberately conservative:
+# prose such as "2 of the 10 respondents said yes", footnotes such as
+# "12 See Smith, p. 4." and sentences opening with "Chapter 3 shows ..." must
+# stay paragraph text.
+HEADING_POLICY_VERSION = "pypdf-inline-headings-v2"
+# Legacy prefix pattern, still used by the Surya/OpenRouter OCR backends whose
+# output identity must not change silently. It has the same false positives;
+# migrate those backends to _is_heading_line together with a parser-version bump.
 _HEADING = re.compile(r"^(?:(?i:chapter|part|section)\s+[0-9ivxlcdm]+\b|(?:[0-9]+(?:\.[0-9]+)*[.)]?\s+).{2,}|[A-Z][A-Z0-9 ,:;()&/-]{3,})")
+_KEYWORD_HEADING = re.compile(r"(?i:chapter|part|section)\s+(?:[0-9]+|[ivxlcdm]+)\b[.:]?(?:\s+(?P<title>.+))?")
+_NUMBERED_HEADING = re.compile(r"(?P<number>[0-9]{1,2}(?:\.[0-9]{1,2})*)(?P<mark>[.)]?)\s+(?P<title>.+)")
+_CAPS_HEADING = re.compile(r"[A-Z][A-Z0-9 ,:;()&/-]{3,}")
+_SMALL_WORDS = frozenset({"a", "an", "and", "as", "at", "by", "for", "from", "in", "into", "of", "on",
+                          "or", "the", "to", "with", "vs", "via"})
+_FOOTNOTE_LEADS = frozenset({"see", "cf", "cf.", "ibid", "ibid.", "idem", "quoted", "cited", "for",
+                             "on", "in", "this", "these", "the", "a", "an", "it"})
+
+
+def _title_like(title: str) -> bool:
+    """Short title-case phrase without sentence punctuation."""
+    title = title.strip()
+    if not title or title[-1] in ".,;" or "," in title or len(title) > 120:
+        return False
+    words = re.findall(r"[^\W\d_][\w'’-]*", title)
+    if not words or len(words) > 12 or not words[0][0].isupper():
+        return False
+    content = [word for word in words if word.lower() not in _SMALL_WORDS]
+    return bool(content) and all(word[0].isupper() for word in content)
+
+
+def _is_heading_line(line: str) -> bool:
+    line = line.strip()
+    if not line or len(line) > 140:
+        return False
+    keyword = _KEYWORD_HEADING.fullmatch(line)
+    if keyword is not None:
+        return keyword.group("title") is None or _title_like(keyword.group("title"))
+    numbered = _NUMBERED_HEADING.fullmatch(line)
+    if numbered is not None:
+        title = numbered.group("title")
+        first = title.split()[0].lower()
+        dotted = "." in numbered.group("number") or bool(numbered.group("mark"))
+        if not dotted and first in _FOOTNOTE_LEADS:
+            return False
+        return _title_like(title)
+    return _CAPS_HEADING.fullmatch(line) is not None and any(char.isalpha() for char in line)
 
 
 def _sha256(path: Path) -> str:
@@ -68,6 +113,70 @@ def _paragraphs(text: str) -> Iterator[str]:
         cleaned = re.sub(r"[ \t]+", " ", part).strip()
         if cleaned:
             yield cleaned
+
+
+def _split_page_at_headings(text: str) -> list[tuple[str, str]]:
+    """Split page text into ("text", chunk) / ("heading", line) items in reading order.
+
+    Heading lines are removed from the surrounding paragraph text, and text above
+    a mid-page heading stays with the section that precedes it.
+    """
+    items: list[tuple[str, str]] = []
+    buffer: list[str] = []
+    for line in text.splitlines():
+        if _is_heading_line(line):
+            if "\n".join(buffer).strip():
+                items.append(("text", "\n".join(buffer)))
+            buffer = []
+            items.append(("heading", line.strip()))
+        else:
+            buffer.append(line)
+    if "\n".join(buffer).strip():
+        items.append(("text", "\n".join(buffer)))
+    return items
+
+
+def _build_blocks(book_id: str, pages: list[tuple[int, str, bool]],
+                  bookmarks_by_page: dict[int, list[tuple[int, str]]], *,
+                  detect_headings: bool) -> list[Block]:
+    blocks: list[Block] = []
+    section_path: list[str] = []
+    for page_no, text, _ in pages:
+        seq = 0
+        refs = [PageRef(book_id=book_id, page_no=page_no)]
+
+        def heading(level: int, title: str) -> None:
+            nonlocal seq, section_path
+            section_path = section_path[: max(level - 1, 0)]
+            section_path.append(title)
+            blocks.append(Block(
+                block_id=f"{book_id}:{page_no}:{seq}", type="heading",
+                level=level, text=title, refs=list(refs),
+                section_path=section_path.copy(), ocr=False,
+            ))
+            seq += 1
+
+        def paragraphs(chunk: str) -> None:
+            nonlocal seq
+            for paragraph in _paragraphs(chunk):
+                blocks.append(Block(
+                    block_id=f"{book_id}:{page_no}:{seq}", type="paragraph", text=paragraph,
+                    refs=list(refs), section_path=section_path.copy(), ocr=False,
+                ))
+                seq += 1
+
+        # Bookmark positions within a page are unknown: keep them at the top.
+        for level, title in bookmarks_by_page.get(page_no, []):
+            heading(level, title)
+        if not detect_headings:
+            paragraphs(text)
+            continue
+        for kind, value in _split_page_at_headings(text):
+            if kind == "heading":
+                heading(1, value)
+            else:
+                paragraphs(value)
+    return blocks
 
 
 def parse_pdf_book(upload: BookUpload, source: str | Path, *, min_page_chars: int = 8) -> ParsedBook:
@@ -122,36 +231,13 @@ def parse_pdf_book(upload: BookUpload, source: str | Path, *, min_page_chars: in
         by_page.setdefault(zero_page + 1, []).append((depth + 1, title))
 
     # In the absence of PDF bookmarks, recognize only explicit, conservative
-    # numbered/chapter-style headings. Arbitrary prose is never promoted to TOC.
-    if not bookmarks:
-        for page_no, text, _ in pages:
-            for line in text.splitlines():
-                line = line.strip()
-                if line and len(line) <= 140 and _HEADING.match(line):
-                    by_page.setdefault(page_no, []).append((1, line))
-
-    blocks: list[Block] = []
-    section_path: list[str] = []
-    for page_no, text, _ in pages:
-        seq = 0
-        for level, title in by_page.get(page_no, []):
-            section_path = section_path[: max(level - 1, 0)]
-            section_path.append(title)
-            blocks.append(Block(
-                block_id=f"{upload.book_id}:{page_no}:{seq}", type="heading",
-                level=level, text=title, refs=[PageRef(book_id=upload.book_id, page_no=page_no)],
-                section_path=section_path.copy(), ocr=False,
-            ))
-            seq += 1
-        for paragraph in _paragraphs(text):
-            blocks.append(Block(
-                block_id=f"{upload.book_id}:{page_no}:{seq}", type="paragraph", text=paragraph,
-                refs=[PageRef(book_id=upload.book_id, page_no=page_no)],
-                section_path=section_path.copy(), ocr=False,
-            ))
-            seq += 1
+    # numbered/chapter-style headings, in place. Arbitrary prose is never promoted to TOC.
+    blocks = _build_blocks(upload.book_id, pages, by_page, detect_headings=not bookmarks)
 
     options = {"backend": "pypdf-text", "min_page_chars": min_page_chars, "version": pypdf.__version__}
+    if not bookmarks:
+        # Only fallback-heading output changed; bookmarked parses keep their identity.
+        options["heading_policy"] = HEADING_POLICY_VERSION
     toc_source = "pdf_outline" if bookmarks else "headings"
     return ParsedBook(
         book_id=upload.book_id, title=upload.title, role=upload.role,

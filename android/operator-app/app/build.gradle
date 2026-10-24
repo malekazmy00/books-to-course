@@ -1,0 +1,19 @@
+plugins { id "com.android.application" }
+def mobileApiBaseUrl = System.getenv("B2C_API_BASE_URL") ?: "https://desktop-3khe91s.tail7385b1.ts.net"
+def asBuildConfigString = { value -> "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"" }
+android {
+ buildFeatures { buildConfig true }
+ namespace "com.book2course.operator"
+ compileSdk 35
+ defaultConfig {
+  applicationId "com.book2course.operator"
+  minSdk 24
+  testInstrumentationRunner (project.findProperty("b2cTestRunner") ?: "com.book2course.operator.ButtonRegressionInstrumentation")
+  targetSdk 35
+  versionCode 28
+  versionName "0.5.11"
+  buildConfigField "String", "API_BASE_URL", asBuildConfigString(mobileApiBaseUrl)
+ }
+ splits { abi { enable true; reset(); include (project.findProperty("b2cTestAbi") ?: "armeabi-v7a"); universalApk false } }
+ compileOptions { sourceCompatibility JavaVersion.VERSION_11; targetCompatibility JavaVersion.VERSION_11 }
+}

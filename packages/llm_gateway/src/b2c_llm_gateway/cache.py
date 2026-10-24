@@ -18,7 +18,7 @@ def cache_key(model_id: str, messages: list[dict[str, Any]], params: dict[str, A
 
 class LLMCache(Protocol):
     def get(self, key: str) -> dict[str, Any] | None: ...
-    def put(self, key: str, model_id: str, value: dict[str, Any]) -> None: ...
+    def put(self, key: str, model_id: str, value: dict[str, Any], *, replace: bool = False) -> None: ...
 
 
 class InMemoryLLMCache:
@@ -28,8 +28,11 @@ class InMemoryLLMCache:
     def get(self, key: str) -> dict[str, Any] | None:
         return self._d.get(key)
 
-    def put(self, key: str, model_id: str, value: dict[str, Any]) -> None:
-        self._d.setdefault(key, value)
+    def put(self, key: str, model_id: str, value: dict[str, Any], *, replace: bool = False) -> None:
+        if replace:
+            self._d[key] = value
+        else:
+            self._d.setdefault(key, value)
 
     def __len__(self) -> int:
         return len(self._d)
@@ -57,10 +60,14 @@ class PostgresLLMCache:
             row = c.execute("SELECT response FROM llm_cache WHERE key=%s", (key,)).fetchone()
         return None if row is None else row[0]
 
-    def put(self, key: str, model_id: str, value: dict[str, Any]) -> None:
+    def put(self, key: str, model_id: str, value: dict[str, Any], *, replace: bool = False) -> None:
+        """Insert once; ``replace`` overwrites an entry proven stale by the caller."""
+        conflict = ("ON CONFLICT (key) DO UPDATE SET model_id=EXCLUDED.model_id, "
+                    "response=EXCLUDED.response, created_at=EXCLUDED.created_at"
+                    if replace else "ON CONFLICT (key) DO NOTHING")
         with psycopg.connect(self.dsn, autocommit=True) as c:
             c.execute(
                 "INSERT INTO llm_cache (key, model_id, response, created_at) VALUES (%s,%s,%s,%s) "
-                "ON CONFLICT (key) DO NOTHING",
+                + conflict,
                 (key, model_id, Jsonb(value), datetime.now(timezone.utc)),
             )

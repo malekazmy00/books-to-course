@@ -23,6 +23,7 @@ from b2c_api.deps import ApiContext
 from b2c_api.model_lifecycle import ModelLifecycle, configured_providers, lifecycle_router
 from b2c_api.result_exports import result_exports_router
 from b2c_api.routers.audio import audio_router
+from b2c_api.routers.book_translations import book_translations_router
 from b2c_api.routers.books import _deduplicate_library_books, books_router
 from b2c_api.routers.indexing import indexing_router
 from b2c_api.routers.ingestion import _validate_course_supplementary_identity, ingestion_router
@@ -137,6 +138,7 @@ def create_app(
     ingestion_router(ctx, app)
     indexing_router(ctx, app)
     translations_router(ctx, app)
+    book_translations_router(ctx, app)
     audio_router(ctx, app)
     qa_router(ctx, app)
     workflow_controls_router(ctx, app)

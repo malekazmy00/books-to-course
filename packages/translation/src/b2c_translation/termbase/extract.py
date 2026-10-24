@@ -132,11 +132,12 @@ Moscow|Beijing|Cairo|Rome|Berlin|Tokyo|New York|Baghdad|Damascus|Beirut|Tehran|I
 Turin|Milan|Naples|Sardinia|Sicily|Tunis|Algiers|Rabat|Amman|Riyadh|Doha|Dubai|Kabul|Delhi|Mumbai
 """.replace("\n", "").split("|"))
 
-_TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9]*(?:[-'’][A-Za-z0-9]+)*\.?(?:™|®)?|[0-9]+(?:[.,][0-9]+)*|[^\sA-Za-z0-9]")
+# Words are Unicode letters (Frédéric, Chávez), digits allowed after the first letter.
+_TOKEN = re.compile(r"[^\W\d_][^\W_]*(?:[-'’][^\W_]+)*\.?(?:™|®)?|[0-9]+(?:[.,][0-9]+)*|[^\s\w]|_")
 _SENT_END = frozenset({".", "!", "?", ";", ":"})
 _OPEN_QUOTES = frozenset({"'", "‘", '"', "“"})
 _CLOSE_QUOTES = frozenset({"'", "’", '"', "”"})
-_WORD = re.compile(r"[a-z0-9]+(?:[-'’][a-z0-9]+)*")
+_WORD = re.compile(r"[^\W_]+(?:[-'’][^\W_]+)*")
 _HEADING_NUM = re.compile(r"^\s*(?:(?:chapter|part|section)\s+)?[0-9IVXLC]+(?:\.[0-9]+)*\.?\s+", re.I)
 
 
@@ -585,7 +586,10 @@ def _finalise(aggs, occ: _Occurrences, trans, index_people, min_freq, min_sectio
         else:
             kind = _kind(key, surface, a, index_people)
             if not _keep(kind, key, surface, a, hits, trans, freq, min_freq, min_sections):
-                continue
+                if kind != "term" or not _proper_noun(key, surface, a, hits, trans):
+                    continue
+                kind = "person"  # most unresolved single proper nouns in books are surnames
+                a.signals.add("kind_uncertain")
         sections = len({tuple(trans[h].section_path) for h in hits})
         context = a.definition or _context_of(trans[hits[0]].source_text, surface)
         score = round(freq * max(1.0, math.log2(1 + sections)), 3)
@@ -656,7 +660,16 @@ def _keep(kind, key, surface, a: _Agg, hits, trans, freq, min_freq, min_sections
     return False
 
 
-def _cap_ratio(surface: str, hits: list[int], trans) -> float:
+def _proper_noun(key, surface, a: _Agg, hits, trans) -> bool:
+    """A single word written with a capital in (nearly) every mid-sentence mention, at
+    least twice: a proper noun whose type the surface rules could not decide."""
+    return (len(key) == 1 and a.mentions >= 2 and len(surface) >= 3 and surface[0].isupper()
+            and not surface.isupper() and not _TECHNICAL_SUFFIX.search(surface)
+            and not surface.endswith(("ean", "ian", "ist", "ism"))
+            and _cap_ratio(surface, hits, trans, min_mid=2) >= 0.95)
+
+
+def _cap_ratio(surface: str, hits: list[int], trans, *, min_mid: int = 0) -> float:
     """Share of mid-sentence occurrences written with a capital (Mikheev-style evidence)."""
     pattern = re.compile(r"(?<![\w])" + r"[\s-]+".join(re.escape(w) for w in surface.split()) + r"(?![\w])",
                          re.IGNORECASE)
@@ -674,6 +687,6 @@ def _cap_ratio(surface: str, hits: list[int], trans) -> float:
                 cap += 1
             else:
                 low += 1
-    if cap + low == 0:
-        return 1.0
+    if cap + low == 0 or cap < min_mid:
+        return 1.0 if min_mid == 0 else 0.0
     return cap / (cap + low)

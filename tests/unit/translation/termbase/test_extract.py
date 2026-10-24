@@ -94,3 +94,13 @@ def test_all_caps_headings_do_not_produce_phrases():
 def test_kinds_are_restricted():
     allowed = {"term", "acronym", "person", "organization", "place", "work"}
     assert {c.kind for c in extract_candidates(make_units())} <= allowed
+
+
+def test_accented_names_and_unresolved_proper_nouns():
+    rows = [("A", "prose", "Later, Frédéric Okonjo wrote that the Brellin school had failed."),
+            ("B", "prose", "Critics of Brellin rarely read Okonjo carefully."),
+            ("C", "prose", "Some still follow Brellin today, as Okonjo noted.")]
+    got = _by_source(extract_candidates(make_units(rows)))
+    assert got["Frédéric Okonjo"].kind == "person"
+    assert got["Brellin"].kind == "person" and "kind_uncertain" in got["Brellin"].signals
+    assert got["Okonjo"].kind == "person"

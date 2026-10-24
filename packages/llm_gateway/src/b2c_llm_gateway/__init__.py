@@ -9,8 +9,8 @@ from .budget import (
     PostgresFreeTokenBudget,
     PostgresOpenRouterBudget,
 )
-from .cache import InMemoryLLMCache, LLMCache, PostgresLLMCache, cache_key
-from .client import ChatResult, LLMGateway
+from .cache import InMemoryLLMCache, LLMCache, PostgresLLMCache, cache_key, text_cache_key
+from .client import ChatResult, LLMGateway, TextCompletion
 from .errors import (CloudProviderNotAllowed, InvalidLLMOutput, LLMOutputTruncated, LLMRequestRejected, LLMUnavailable, OpenRouterRateLimited)
 
 __all__ = [
@@ -30,5 +30,7 @@ __all__ = [
     "OpenRouterRateLimited",
     "PostgresOpenRouterBudget",
     "PostgresLLMCache",
+    "TextCompletion",
     "cache_key",
+    "text_cache_key",
 ]

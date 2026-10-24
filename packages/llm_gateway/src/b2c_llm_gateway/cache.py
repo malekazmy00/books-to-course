@@ -16,6 +16,25 @@ def cache_key(model_id: str, messages: list[dict[str, Any]], params: dict[str, A
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+# Key format of the plain-text path (complete_text). Bump when the key's inputs change so
+# old entries can never be served under a new meaning. The structured key above is kept
+# unchanged for compatibility with existing cache entries.
+TEXT_CACHE_KEY_FORMAT = "b2c-text-cache-key/1"
+
+
+def text_cache_key(*, provider: str, base_url: str, model_id: str,
+                   messages: list[dict[str, Any]], params: dict[str, Any],
+                   prompt_version: str) -> str:
+    """Key for complete_text: includes the serving identity (provider + base URL), so the
+    same model id on two different servers or providers never shares an entry."""
+    raw = json.dumps({"format": TEXT_CACHE_KEY_FORMAT, "provider": provider,
+                      "base_url": base_url.rstrip("/"), "model_id": model_id,
+                      "messages": messages, "params": params,
+                      "prompt_version": prompt_version},
+                     sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
 class LLMCache(Protocol):
     def get(self, key: str) -> dict[str, Any] | None: ...
     def put(self, key: str, model_id: str, value: dict[str, Any], *, replace: bool = False) -> None: ...

@@ -9,5 +9,5 @@ DEFAULT_RETRY = RetryPolicy(
     maximum_interval=timedelta(minutes=10),
     maximum_attempts=5,
     non_retryable_error_types=["ValidationError", "UnsupportedFormat", "RightsNotCleared",
-                               "ConsentMissing"],
+                               "ConsentMissing", "OutlineNeedsReview", "OpenRouterQuotaExceeded", "OpenRouterRateLimited", "LLMOutputTruncated"],
 )

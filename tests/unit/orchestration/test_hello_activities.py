@@ -90,4 +90,6 @@ def test_default_retry_policy_matches_contract():  # docs/02 §1.3
     assert DEFAULT_RETRY.maximum_interval == timedelta(minutes=10)
     assert DEFAULT_RETRY.maximum_attempts == 5
     assert set(DEFAULT_RETRY.non_retryable_error_types) == {
-        "ValidationError", "UnsupportedFormat", "RightsNotCleared", "ConsentMissing"}
+        "ValidationError", "UnsupportedFormat", "RightsNotCleared", "ConsentMissing",
+        "OutlineNeedsReview", "OpenRouterRateLimited", "LLMOutputTruncated", "OpenRouterQuotaExceeded",
+    }

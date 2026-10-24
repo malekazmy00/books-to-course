@@ -6,8 +6,9 @@ compete with each other; the budget math in docs/04 §2 depends on this.
 LIGHT = "light"
 HEAVY = "heavy"
 IO = "io"
+AUDIO = "audio"
 
-_LIMITS = {LIGHT: 8, HEAVY: 1, IO: 8}
+_LIMITS = {LIGHT: 8, HEAVY: 1, IO: 8, AUDIO: 1}
 
 
 def max_concurrent_activities(queue: str) -> int:

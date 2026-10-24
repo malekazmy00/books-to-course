@@ -1,5 +1,34 @@
-"""L4 Knowledge Graph: LightRAG client, entity resolution, concept layer.
+"""Knowledge-graph storage and optional retrieval adapters."""
+from .concepts import (
+    ConceptEvidence,
+    ConceptRelationStore,
+    EvidenceBackedRelation,
+    InMemoryConceptRelationStore,
+    RelationWrite,
+)
+from .postgres_concepts import PostgresConceptRelationStore
+from .extraction import (
+    ConceptExtractionOutput,
+    ConceptExtractionResult,
+    ConceptExtractionService,
+    ExtractionRejection,
+    ExtractedEntity,
+    ExtractedRelation,
+    GroundedConceptEntity,
+)
+from .graph_retriever import (
+    ConceptGraphRetriever,
+    GraphAdapterConfig,
+    GraphBackend,
+    GraphHit,
+    GraphRetriever,
+    GraphRetrieverAdapter,
+)
 
-Placeholder created in Phase 0 so layer boundaries are enforced from day one (import-linter).
-Implemented in Phase 4. May import only b2c_contracts, b2c_core, b2c_llm_gateway.
-"""
+__all__ = [
+    "ConceptEvidence", "ConceptRelationStore", "EvidenceBackedRelation",
+    "InMemoryConceptRelationStore", "RelationWrite", "PostgresConceptRelationStore", "ConceptGraphRetriever",
+    "ConceptExtractionOutput", "ConceptExtractionResult", "ConceptExtractionService",
+    "ExtractionRejection", "ExtractedEntity", "ExtractedRelation", "GroundedConceptEntity",
+    "GraphAdapterConfig", "GraphBackend", "GraphHit", "GraphRetriever", "GraphRetrieverAdapter",
+]

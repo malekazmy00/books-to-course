@@ -14,7 +14,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION = "1.1.0"
+SCHEMA_VERSION = "1.2.0"
 
 
 class Contract(BaseModel):
@@ -323,16 +323,97 @@ class QEResult(Contract):
     route: Literal["auto_accept", "retranslate", "human_review"]
 
 
+# Translation rebuild (D-028, docs/proposals/2026-10-24-translation-rebuild.md).
+TranslationUnitKind = Literal[
+    "prose", "heading", "list_item", "caption", "table_cell",
+    "footnote", "reference", "toc", "index", "noise",
+]
+# MQM-aligned categories, as used by the 2026-10-24 segment audit.
+QACategory = Literal[
+    "omission", "addition", "prompt_leakage", "meaning_error", "polarity_error", "number_error",
+    "date_error", "footnote_marker", "named_entity", "terminology", "untranslated_english",
+    "foreign_script", "quotation", "bibliographic", "structure_formatting", "grammar",
+    "fluency_style", "repetition", "segmentation", "other",
+]
+Severity = Literal["critical", "major", "minor"]
+
+
 class TranslationUnit(Contract):
-    tu_id: str
-    lesson_id: str
-    src_sids: list[str] = Field(min_length=1)
-    src_text: str
-    tgt_text: str
-    glossary_injected: list[str] = []
-    model: dict[str, str]
-    qe: QEResult
-    review: dict[str, Any] | None = None  # {"reviewer": ..., "action": "accept|edit", "mqm": {...}}
+    """One unit sent to (or handled instead of) a translation engine.
+
+    Units never cross a paragraph boundary and always end at a footnote marker, so markers
+    are restored by appending them in order after the translated text.
+    """
+    unit_id: str  # f"{book_id}:u{seq:05d}"
+    book_id: str
+    block_ids: list[str] = Field(min_length=1)
+    kind: TranslationUnitKind
+    source_text: str = Field(min_length=1)
+    footnote_markers: list[str] = []
+    pages: list[int] = Field(min_length=1)
+    section_path: list[str]
+    prev_unit_id: str | None = None
+    next_unit_id: str | None = None
+    normalization: list[str] = []  # applied source repairs, e.g. "joined_page_break"
+
+    @field_validator("source_text")
+    @classmethod
+    def not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("source_text must not be blank")
+        return v
+
+
+class QAIssue(Contract):
+    check_id: str
+    category: QACategory
+    severity: Severity
+    origin: Literal["deterministic", "qe", "human"]
+    evidence: dict[str, Any] = {}
+
+
+class EngineIdentity(Contract):
+    provider: str
+    model_id: str
+    revision: str | None = None
+    prompt_version: str
+
+
+class UnitTranslation(Contract):
+    unit_id: str
+    target_text: str
+    origin: Literal["engine", "rule", "memory", "human"]
+    engine: EngineIdentity | None = None
+    attempts: int = Field(default=0, ge=0)
+    issues: list[QAIssue] = []
+    qe: QEResult | None = None
+    decision: Literal["accepted", "needs_review", "rejected", "dropped"]
+    decided_by: Literal["policy", "human"]
+    decided_at: datetime
+
+    @field_validator("decided_at")
+    @classmethod
+    def check_utc(cls, v: datetime) -> datetime:
+        return _utc(v)
+
+    @model_validator(mode="after")
+    def decision_invariants(self) -> "UnitTranslation":
+        if self.origin == "engine" and self.engine is None:
+            raise ValueError("engine output must record the engine identity")
+        if self.decision == "dropped":
+            if self.target_text:
+                raise ValueError("dropped units carry no target text")
+            return self
+        if not self.target_text.strip():
+            raise ValueError("target_text must not be blank unless the unit is dropped")
+        if self.decision == "accepted":
+            if any(issue.severity in ("critical", "major") for issue in self.issues):
+                raise ValueError("accepted translations cannot carry major or critical issues")
+            if self.origin == "human" and self.decided_by != "human":
+                raise ValueError("a human translation is accepted by a human decision")
+            if self.origin == "engine" and self.decided_by == "policy" and self.qe is None:
+                raise ValueError("policy acceptance of engine output requires semantic QE")
+        return self
 
 
 # ---------------------------------------------------------------- L8 speech

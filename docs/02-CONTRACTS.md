@@ -1,6 +1,6 @@
 # 02 — العقود بين الطبقات (Layer Contracts)
 
-المصدر الوحيد للحقيقة هو `packages/contracts/src/b2c_contracts/models.py` (SCHEMA_VERSION 1.1.0).
+المصدر الوحيد للحقيقة هو `packages/contracts/src/b2c_contracts/models.py` (SCHEMA_VERSION 1.2.0).
 الوثيقة دي بتشرح **إزاي** كل طبقة بتسلّم للطبقة اللي بعدها. والتعريفات نفسها موجودة في الكود.
 
 > الكود ده اتشغّل واتختبر: `tests/contract/test_contracts_invariants.py` ونتيجته 8 passed. الاختبارات دي بتتأكد من القيود الأساسية (negative controls).
@@ -52,7 +52,7 @@ s3://artifacts/{course_id}/{stage}/{key}/<files>
 | L5 ← L6 | `LessonDraft` | كل جملة ليها citation ≥ 1 والـ citation موجود فعلًا، وfaithfulness ≥ العتبة | إعادة توليد ← مراجعة |
 | L6 ← L7 | `LessonSummary`، `GlossaryTerm[]`، `Question[]` | الأسئلة عدّت الـ solver والـ linter | إعادة توليد ← G2 |
 | Termbase ← L7 | `TermbaseEntry[]` | كل entry ليها `approved_by` | Gate G3 |
-| L7 ← L8 | `TranslationUnit[]` | `qe.route == auto_accept` أو `review.action` موجود | G4 |
+| L7 ← L8 | `UnitTranslation[]` (لكل `TranslationUnit`) | `decision == accepted`: بلا issue major/critical، ومخرج المحرك مقبول آليًا فقط بعد QE دلالي؛ وإلا `needs_review` (D-028) | G4 |
 | L8 ← Release | `AudioAsset` | `acx_pass` و`asr_cer ≤` العتبة؛ والصوت المستنسخ ليه consent ساري | إعادة توليد المقطع ← G5 |
 | Release | `CourseRelease` | كل الكتب `cleared`؛ والنسخ مجمّدة | non-retryable |
 
@@ -60,7 +60,7 @@ s3://artifacts/{course_id}/{stage}/{key}/<files>
 
 ### CourseOutline
 ```json
-{"schema_version":"1.1.0","course_id":"crs_01","spine_book_id":"bk_stats",
+{"schema_version":"1.2.0","course_id":"crs_01","spine_book_id":"bk_stats",
  "supplementary_book_ids":["bk_bizstats"],"requires_review":false,
  "modules":[{"module_id":"m02","title":"Descriptive Statistics","order":2,
    "lessons":[{"lesson_id":"m02.l03","title":"Measures of the Center","order":3,
@@ -70,20 +70,33 @@ s3://artifacts/{course_id}/{stage}/{key}/<files>
 
 ### LessonSentence
 ```json
-{"schema_version":"1.1.0","sid":"m02.l03:s017",
+{"schema_version":"1.2.0","sid":"m02.l03:s017",
  "text_en":"The median is less sensitive to outliers than the mean.",
  "citations":["c_bk_bizstats_0412"],"kind":"supplementary"}
 ```
 
-### TranslationUnit (مسار المراجعة)
+### TranslationUnit و UnitTranslation (D-028، SCHEMA 1.2.0)
+`TranslationUnit` وحدة ترجمة واحدة: لا تعبر حدود الفقرة، وتنتهي دائمًا عند علامة حاشية، فتُعاد العلامات بإلحاقها بنهاية الترجمة.
+`kind` يحدد المسار: `prose|heading|list_item|caption|table_cell` للمحرك، و`reference|toc|index|footnote` بقواعد، و`noise` يُسقط.
 ```json
-{"tu_id":"tu_m02.l03_004","lesson_id":"m02.l03","src_sids":["m02.l03:s017"],
- "src_text":"The median is less sensitive to outliers than the mean.",
- "tgt_text":"الوسيط أقل تأثرًا بالقيم المتطرفة من الوسط الحسابي.",
- "glossary_injected":["median","outlier","mean"],
- "model":{"id":"qwen3-30b-a3b-instruct-2507-q4_k_m","prompt_version":"tr-v1"},
- "qe":{"deterministic_pass":true,"term_violations":[],"cometkiwi":0.71,"xcomet":0.83,
-       "xcomet_error_spans":[],"llm_mqm":{"major":0,"minor":1},"route":"human_review"}}
+{"schema_version":"1.2.0","unit_id":"bk_stats:u00412","book_id":"bk_stats",
+ "block_ids":["bk_stats:112:3"],"kind":"prose",
+ "source_text":"The median is less sensitive to outliers than the mean.",
+ "footnote_markers":["12"],"pages":[112],"section_path":["Ch 4"],
+ "prev_unit_id":"bk_stats:u00411","next_unit_id":"bk_stats:u00413",
+ "normalization":["joined_page_break"]}
+```
+`UnitTranslation` نتيجة الوحدة. ثوابت يفرضها العقد:
+- `accepted` لا يحمل أي `QAIssue` بخطورة major/critical.
+- مخرج المحرك (`origin=engine`) لا يُقبل بقرار `policy` إلا ومعه `qe` (فحص دلالي). بدون QE تكون الحالة `needs_review`.
+- ترجمة بشرية تُقبل بقرار `human` فقط. `dropped` بلا نص.
+```json
+{"schema_version":"1.2.0","unit_id":"bk_stats:u00412",
+ "target_text":"الوسيط أقل تأثرًا بالقيم المتطرفة من الوسط الحسابي.12",
+ "origin":"engine","engine":{"provider":"local","model_id":"<model>","revision":"<sha>","prompt_version":"tr-v2.1"},
+ "attempts":1,"issues":[{"check_id":"fluency.punct","category":"fluency_style","severity":"minor","origin":"deterministic","evidence":{}}],
+ "qe":{"deterministic_pass":true,"term_violations":[],"cometkiwi":0.84,"xcomet":null,"xcomet_error_spans":[],"llm_mqm":null,"route":"auto_accept"},
+ "decision":"accepted","decided_by":"policy","decided_at":"2026-10-24T12:00:00Z"}
 ```
 
 ### Provenance (جملة عربية ← مصدرها)

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import httpx
 from b2c_api.app import create_app, _deduplicate_library_books
 from b2c_contracts import (
+    SCHEMA_VERSION,
     ArtifactRef,
     Block,
     CourseOutline,
@@ -459,7 +460,7 @@ async def test_system_structural_review_approves_with_machine_provenance_only():
     approved = json.loads(store.put_calls[-1][3]["approved-outline.json"])
     assert approved["reviewer_id"] is None
     assert approved["outline"]["requires_review"] is False
-    assert approved["outline"]["schema_version"] == "1.1.0"
+    assert approved["outline"]["schema_version"] == SCHEMA_VERSION
 
 
 async def test_system_review_rejects_forged_human_reviewer_id():

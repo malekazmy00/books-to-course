@@ -34,6 +34,7 @@
 | D-018 | Spaced repetition: py-fsrs (FSRS-6) | Accepted |
 | D-019 | المعالجة بالإنجليزي، والترجمة للعربي الفصحى في النهاية قبل السرد | Accepted |
 | D-027 | Next-book front-matter exclusions and topic-focused questions | Accepted owner requirement; source prepared, deployment pending |
+| D-028 | Translation rebuild: source-only engine input, rule-based references, sentence units, footnotes restored by code, locked termbase, deterministic + semantic QA, explicit acceptance, human review queue, TM; model choice deferred | Accepted 2026-10-24 (owner); see docs/proposals/2026-10-24-translation-rebuild.md |
 
 ---
 

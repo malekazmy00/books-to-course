@@ -142,7 +142,7 @@ services:
       B2C_MAX_UPLOAD_BYTES: ${B2C_MAX_UPLOAD_BYTES:-209715200}
       B2C_RETRIEVAL_MODE: ${B2C_RETRIEVAL_MODE:-lexical}
       B2C_RETRIEVAL_TOP_K: ${B2C_RETRIEVAL_TOP_K:-20}
-      B2C_API_AUTH_REQUIRED: ${B2C_API_AUTH_REQUIRED:-false}
+      B2C_API_AUTH_REQUIRED: ${B2C_API_AUTH_REQUIRED:-true}
       B2C_APP_API_TOKEN_FILE: /run/secrets/b2c_mobile_api_token
       B2C_MODEL_PREFERENCES_FILE: /var/lib/b2c-models/model-preferences.json
       B2C_GEMMA4_ENABLED: ${B2C_GEMMA4_ENABLED:-false}

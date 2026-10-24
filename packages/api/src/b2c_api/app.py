@@ -69,7 +69,7 @@ def create_app(
     # refused first, then oversized PDF uploads are cut off before spooling.
     app.add_middleware(UploadSizeLimitMiddleware, path="/v1/books",
                        max_body_bytes=settings.max_upload_bytes + UPLOAD_MULTIPART_ALLOWANCE)
-    api_auth_required = os.getenv("B2C_API_AUTH_REQUIRED", "false").strip().lower() in {"1", "true", "yes"}
+    api_auth_required = os.getenv("B2C_API_AUTH_REQUIRED", "true").strip().lower() in {"1", "true", "yes"}
     api_token = os.getenv("B2C_APP_API_TOKEN", "").strip()
     token_file = os.getenv("B2C_APP_API_TOKEN_FILE", "").strip()
     if not api_token and token_file:

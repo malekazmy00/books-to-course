@@ -140,10 +140,10 @@ The B2C worker mounts the pinned local CAMeL-Lab QALB14 NoPnx/Pnx models and rea
 
 ## 9. Android operator access from mobile (updated 2026-10-08)
 - The operator APK uses the fixed HTTPS Tailscale hostname https://desktop-3khe91s.tail7385b1.ts.net; the operator does not enter a server address. The app connection button checks /health only when pressed.
-- Keep the API bound to loopback; Funnel is the HTTPS path to the computer. Do not publish port 8100 directly. Set B2C_API_AUTH_REQUIRED=true; the API bearer token remains in the server-side secret file mounted read-only at /run/secrets/b2c_mobile_api_token.
+- (D-030, 2026-10-24) Funnel is OFF. The API is reachable only inside the tailnet through Tailscale Serve (HTTPS 443 and 8443 -> 127.0.0.1:8100). Keep the API bound to loopback. Do not publish port 8100 directly. Set B2C_API_AUTH_REQUIRED=true; the API bearer token remains in the server-side secret file mounted read-only at /run/secrets/b2c_mobile_api_token.
 - The 32-bit debug APK does not embed the bearer token. On first protected API operation, the user enters it once; Android Keystore encrypts it locally. Treat this as a private operator credential, not a public-release login model.
 - The audio generation activity is routed to the isolated audio Temporal task queue. Its single-activity worker has a 512 MiB/0.5 CPU limit and does not replace the existing HEAVY worker. Build/deploy it with the normal B2C Compose service graph and speech overlay.
-- The Windows Tailscale service and B2C Docker startup task must both start at login/reboot; verify the Funnel after reboot before considering remote access persistent.
+- The Windows Tailscale service and B2C Docker startup task must both start at login/reboot; after a reboot verify `tailscale serve status` shows "tailnet only" and that `tailscale funnel status` lists nothing.
 - APK 0.3.2 supports API 24+ and armeabi-v7a; Android 7/8 device-level E2E and learner-facing app readiness are still unverified.
 
 
@@ -156,7 +156,7 @@ The same post-mount task now runs `scripts/recover-lost-b2c-activities.sh`: it c
 
 The local API and MagicDNS path returned HTTP 200, but this did not prove public access: host DNS resolved to the private tailnet IP. Forced public-DNS address tests found the default HTTPS port 443 stalling during connection/TLS. Refreshing Funnel and rebinding did not fix that path. The same persistent background Funnel proxy on HTTPS 8443 worked instead.
 
-Public APK base URL: `https://desktop-3khe91s.tail7385b1.ts.net:8443`. Keep the existing bearer credential unchanged. Public health returned HTTP 200 from Windows; authenticated library checks from WSL, forcing each of the three public ingress addresses, all returned HTTP 200. No credential or library payload was logged. Keep port 443 configured for existing clients, but its public path remains faulty; clients must select 8443 for the verified working path. This is a public connectivity workaround, not proof of a repaired upstream 443 service. The background Funnel configuration is persistent; another full reboot has not been performed.
+Superseded by D-030 (tailnet only; the APK base URL works only on devices joined to the tailnet). Historical note: public APK base URL was `https://desktop-3khe91s.tail7385b1.ts.net:8443`. Keep the existing bearer credential unchanged. Public health returned HTTP 200 from Windows; authenticated library checks from WSL, forcing each of the three public ingress addresses, all returned HTTP 200. No credential or library payload was logged. Keep port 443 configured for existing clients, but its public path remains faulty; clients must select 8443 for the verified working path. This is a public connectivity workaround, not proof of a repaired upstream 443 service. The background Funnel configuration is persistent; another full reboot has not been performed.
 
 
 ### Arabic speech punctuation fallback (2026-10-12)

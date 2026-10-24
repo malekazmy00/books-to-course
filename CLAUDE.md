@@ -22,7 +22,10 @@ Docs are in Arabic with English technical terms. Before every work session, read
 4. **Layer boundaries.** Layer packages must not import each other. They communicate only through
    `b2c_contracts` models + stored artifacts. Only `packages/orchestration` knows the order of layers.
 5. **LLM access only through `packages/llm_gateway`.** No direct HTTP calls to model servers elsewhere.
-6. **B2C runtime defaults to local models** (D-004). Temporary D-022 allows CodeCraft/OpenRouter API access only for owner-approved synthetic-data tests, with explicit opt-in and a secret file outside the repository. Keep local mode as the default; do not send real book content to external APIs. D-021 remains a separate coding-assistance exception.
+6. **B2C runtime defaults to local models** (D-004). External model APIs are allowed during development for
+   quick proofs of concept, including on real book text, when the owner chooses (D-029); they stay opt-in
+   (explicit overlay/profile, key file outside the repository) and never become the runtime default.
+   D-021 remains a separate coding-assistance exception.
 7. **Shared server — do not touch other projects.** Never stop, restart, reconfigure, or exec into
    containers outside compose project `b2c` (e.g. `firecrawl-*`, `ai-company-*`, `memory-qdrant`,
    `infisical-*`, `searxng`, `ollama`, `playwright`, their redis/postgres). Never run global commands

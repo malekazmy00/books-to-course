@@ -35,6 +35,8 @@
 | D-019 | المعالجة بالإنجليزي، والترجمة للعربي الفصحى في النهاية قبل السرد | Accepted |
 | D-027 | Next-book front-matter exclusions and topic-focused questions | Accepted owner requirement; source prepared, deployment pending |
 | D-028 | Translation rebuild: source-only engine input, rule-based references, sentence units, footnotes restored by code, locked termbase, deterministic + semantic QA, explicit acceptance, human review queue, TM; model choice deferred | Accepted 2026-10-24 (owner); see docs/proposals/2026-10-24-translation-rebuild.md |
+| D-029 | واجهات النماذج الخارجية مسموحة **أثناء التطوير** لإثبات فكرة بسرعة بدل النموذج المحلي البطيء، حتى على نص الكتب الحقيقية، بقرار المالك. التشغيل الإنتاجي يبقى محليًا افتراضيًا. الإرسال السابق إلى OpenRouter/DeepSeek تم بقرار المالك، وتُحفظ سجلاته ولا تُحذف | Accepted 2026-10-24 (owner) |
+| D-030 | الـ API متاح داخل الـ tailnet فقط (Tailscale Serve)، ولا نشر عام (Funnel مُغلق منذ 2026-10-24)؛ والتوثيق برمز إلزامي افتراضيًا | Accepted 2026-10-24 (owner) |
 
 ---
 

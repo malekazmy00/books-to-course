@@ -199,3 +199,22 @@ def test_build_rejects_mixed_books():
     units = make_units() + make_units(book_id="other")
     with pytest.raises(ValueError):
         build_book_termbase(units, sources=[], source_language="en", target_language="ar")
+
+
+def test_proposer_template_version_is_locked():
+    # changing the wording requires a new version (same rule as engines/test_prompts.py)
+    assert PROPOSER_TEMPLATE.version_id == "termbase.propose.system@v1"
+    assert PROPOSER_TEMPLATE.sha256 == "3eb0109ce5dcd54433d6998a8b517e8b1bd0c684c44ae18fc503ec16600321b2"
+    assert PROPOSER_TEMPLATE.placeholders == set()
+
+
+def test_approved_termbase_feeds_unit_translator_mappings():
+    from b2c_translation.book_pipeline import terms_in
+
+    tb = build_book_termbase(make_units(), sources=[TransliterationSource()],
+                             source_language="en", target_language="ar")
+    tb.approve("Signal Mapping", "خريطة الإشارات", reviewer="rev")
+    tb.approve("Lena Vasquez", "لينا فاسكيز", reviewer="rev")
+    unit_text = "Dr. Lena Vasquez taught Signal Mapping."
+    assert terms_in(unit_text, tb.locked_terms()) == {"Signal Mapping": "خريطة الإشارات"}
+    assert terms_in(unit_text, tb.entity_table()) == {"Lena Vasquez": "لينا فاسكيز"}

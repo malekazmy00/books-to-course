@@ -67,7 +67,16 @@ from temporalio.exceptions import WorkflowAlreadyStartedError
 from temporalio.service import RPCError, RPCStatusCode
 from b2c_translation.generation import validate_manual_translation
 from b2c_api.ingestion_recovery import recover_extraction, recover_index
-from b2c_api.deps import s3_bytes, s3_json
+from b2c_api.deps import (
+    STAGE_CONTROL_ID,
+    is_course_id,
+    is_workflow_id,
+    require_book_id,
+    require_course_id,
+    require_workflow_id,
+    s3_bytes,
+    s3_json,
+)
 from b2c_api.workflow_resume import (
     FAILED as RETRY_STATUSES,
     ResumeStageRequest,
@@ -650,8 +659,7 @@ def create_app(
 
     @app.get("/v1/courses/{course_id}/books")
     async def list_course_books(course_id: str) -> dict[str, Any]:
-        if not course_id or len(course_id) > 80 or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-" for c in course_id):
-            raise HTTPException(status_code=422, detail="invalid course_id")
+        require_course_id(course_id)
         store = app.state.artifact_store or ArtifactStore.from_settings(settings)
         app.state.artifact_store = store
         try:
@@ -720,10 +728,8 @@ def create_app(
 
     @app.get("/v1/courses/{course_id}/books/{book_id}/progress")
     async def book_progress(course_id: str, book_id: str) -> dict[str, Any]:
-        if not course_id or len(course_id) > 80 or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-" for c in course_id):
-            raise HTTPException(status_code=422, detail="invalid course_id")
-        if not book_id or len(book_id) > 120 or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-" for c in book_id):
-            raise HTTPException(status_code=422, detail="invalid book_id")
+        require_course_id(course_id)
+        require_book_id(book_id)
         store = app.state.artifact_store or ArtifactStore.from_settings(settings)
         app.state.artifact_store = store
         key = f"{course_id}/book-progress/{hashlib.sha256(book_id.encode()).hexdigest()}.json"
@@ -864,7 +870,8 @@ def create_app(
                 if exc.status == RPCStatusCode.NOT_FOUND and stage in {"ingest", "index", "outline"}:
                     try:
                         recovered = (await ingestion_status(workflow_id, recovery_course_id=course_id)
-                                     if stage == "ingest" else await indexing_status(workflow_id))
+                                     if stage == "ingest" else
+                                     await indexing_status(workflow_id, recovery_course_id=course_id))
                         item["status"] = recovered["status"]
                         item["recovered_from_artifact"] = recovered.get("recovered_from_artifact", False)
                     except HTTPException:
@@ -896,8 +903,7 @@ def create_app(
     @app.get("/v1/ingestions/{workflow_id}/text")
     async def ingestion_text_preview(workflow_id: str, course_id: str | None = None, offset: int = Query(0, ge=0),
                                      limit: int = Query(40, ge=1, le=100)) -> dict[str, Any]:
-        if not workflow_id.startswith("b2c-ingest-") or len(workflow_id) != 75:
-            raise HTTPException(status_code=404, detail="ingestion not found")
+        require_workflow_id("ingest", workflow_id, "ingestion not found")
         status = await ingestion_status(workflow_id, recovery_course_id=course_id)
         if status["status"] != "COMPLETED":
             raise HTTPException(status_code=409, detail="OCR extraction is not complete")
@@ -916,8 +922,9 @@ def create_app(
                         "pages": sorted({r.page_no for r in b.refs})} for b in blocks]}
     @app.get("/v1/ingestions/{workflow_id}")
     async def ingestion_status(workflow_id: str, recovery_course_id: str | None = None) -> dict[str, Any]:
-        if not workflow_id.startswith("b2c-ingest-") or len(workflow_id) != 75:
-            raise HTTPException(status_code=404, detail="ingestion not found")
+        require_workflow_id("ingest", workflow_id, "ingestion not found")
+        if recovery_course_id is not None:
+            require_course_id(recovery_course_id)
         try:
             client = await get_temporal_client()
             handle = client.get_workflow_handle(workflow_id)
@@ -973,8 +980,7 @@ def create_app(
         include_questions: bool = True,
     ) -> dict[str, Any]:
         """Plan dependencies from server-verified extraction and book progress."""
-        if not workflow_id.startswith("b2c-ingest-") or len(workflow_id) != 75:
-            raise HTTPException(status_code=404, detail="ingestion not found")
+        require_workflow_id("ingest", workflow_id, "ingestion not found")
         try:
             status_response = await ingestion_status(workflow_id, recovery_course_id=course_id)
             if status_response["status"] != "COMPLETED":
@@ -1018,7 +1024,7 @@ def create_app(
                     index_item.get("source_parsed_sha256") == parsed_sha and
                     index_item.get("outline_sha256") == approved_ref.sha256):
                 try:
-                    index_state = await indexing_status(index_item["workflow_id"])
+                    index_state = await indexing_status(index_item["workflow_id"], recovery_course_id=course_id)
                     index_valid = (index_state.get("status") == "COMPLETED" and
                                    index_state.get("result", {}).get("outline_sha256") == approved_ref.sha256 and
                                    index_state.get("result", {}).get("course_id") == course_id)
@@ -1064,8 +1070,7 @@ def create_app(
 
     @app.get("/v1/ingestions/{workflow_id}/outline")
     async def ingestion_outline(workflow_id: str) -> dict[str, Any]:
-        if not workflow_id.startswith("b2c-ingest-") or len(workflow_id) != 75:
-            raise HTTPException(status_code=404, detail="ingestion not found")
+        require_workflow_id("ingest", workflow_id, "ingestion not found")
         try:
             status_response = await ingestion_status(workflow_id)
             if status_response["status"] != "COMPLETED":
@@ -1109,8 +1114,7 @@ def create_app(
 
     @app.post("/v1/ingestions/{workflow_id}/outline/approve", status_code=201)
     async def approve_outline(workflow_id: str, review: OutlineReview) -> dict[str, Any]:
-        if not workflow_id.startswith("b2c-ingest-") or len(workflow_id) != 75:
-            raise HTTPException(status_code=404, detail="ingestion not found")
+        require_workflow_id("ingest", workflow_id, "ingestion not found")
         try:
             status_response = await ingestion_status(workflow_id)
             if status_response["status"] != "COMPLETED":
@@ -1182,7 +1186,7 @@ def create_app(
             raise HTTPException(status_code=422, detail="provide a completed ingestion workflow for every supplementary book")
         supplementary_parsed_refs: dict[str, dict[str, Any]] = {}
         for book_id, supplementary_workflow_id in review.supplementary_workflow_ids.items():
-            if not supplementary_workflow_id.startswith("b2c-ingest-") or len(supplementary_workflow_id) != 75:
+            if not is_workflow_id("ingest", supplementary_workflow_id):
                 raise HTTPException(status_code=422, detail=f"invalid ingestion workflow for supplementary book {book_id}")
             try:
                 supplement_handle = client.get_workflow_handle(supplementary_workflow_id)
@@ -1287,9 +1291,10 @@ def create_app(
                 "approved_at": payload["approved_at"], "index_workflow_id": index_workflow_id}
 
     @app.get("/v1/indexings/{workflow_id}")
-    async def indexing_status(workflow_id: str) -> dict[str, Any]:
-        if not workflow_id.startswith("b2c-index-") or len(workflow_id) != 74:
-            raise HTTPException(status_code=404, detail="indexing workflow not found")
+    async def indexing_status(workflow_id: str, recovery_course_id: str | None = None) -> dict[str, Any]:
+        require_workflow_id("index", workflow_id, "indexing workflow not found")
+        if recovery_course_id is not None:
+            require_course_id(recovery_course_id)
         try:
             client = await get_temporal_client()
             handle = client.get_workflow_handle(workflow_id)
@@ -1300,7 +1305,8 @@ def create_app(
             store = app.state.artifact_store or ArtifactStore.from_settings(settings)
             app.state.artifact_store = store
             try:
-                recovered = await recover_index(store, PostgresChunkStore(lambda: psycopg.connect(settings.pg_dsn)), workflow_id)
+                recovered = await recover_index(store, PostgresChunkStore(lambda: psycopg.connect(settings.pg_dsn)),
+                                                workflow_id, course_id=recovery_course_id)
             except Exception as recovery_exc:
                 log.exception("failed to recover committed index")
                 raise HTTPException(status_code=503, detail="stored index is unavailable") from recovery_exc
@@ -1329,10 +1335,9 @@ def create_app(
         return response
 
     @app.get("/v1/indexings/{workflow_id}/chunks")
-    async def indexing_chunks(workflow_id: str) -> dict[str, Any]:
-        if not workflow_id.startswith("b2c-index-") or len(workflow_id) != 74:
-            raise HTTPException(status_code=404, detail="indexing workflow not found")
-        status = await indexing_status(workflow_id)
+    async def indexing_chunks(workflow_id: str, course_id: str | None = None) -> dict[str, Any]:
+        require_workflow_id("index", workflow_id, "indexing workflow not found")
+        status = await indexing_status(workflow_id, recovery_course_id=course_id)
         if status["status"] != "COMPLETED":
             raise HTTPException(status_code=409, detail="indexing is not complete")
         try:
@@ -1480,8 +1485,7 @@ def create_app(
 
     @app.get("/v1/translations/{workflow_id}")
     async def translation_status(workflow_id: str) -> dict[str, Any]:
-        if not workflow_id.startswith("b2c-translate-") or len(workflow_id) != 78:
-            raise HTTPException(status_code=404, detail="translation workflow not found")
+        require_workflow_id("translate", workflow_id, "translation workflow not found")
         try:
             client = await get_temporal_client()
             handle = client.get_workflow_handle(workflow_id)
@@ -1688,8 +1692,7 @@ def create_app(
 
     @app.get("/v1/translations/{workflow_id}/checkpoints")
     async def translation_checkpoints(workflow_id: str) -> dict[str, Any]:
-        if not workflow_id.startswith("b2c-translate-") or len(workflow_id) != 78:
-            raise HTTPException(status_code=404,detail="translation workflow not found")
+        require_workflow_id("translate", workflow_id, "translation workflow not found")
         store=app.state.artifact_store or ArtifactStore.from_settings(settings); app.state.artifact_store=store
         prefix=f"_system/translation-checkpoints/{workflow_id}/"
         def read_batches() -> list[dict[str,Any]]:
@@ -1725,8 +1728,7 @@ def create_app(
 
     @app.get("/v1/translations/{workflow_id}/units")
     async def translation_units(workflow_id: str) -> dict[str, Any]:
-        if not workflow_id.startswith("b2c-translate-") or len(workflow_id) != 78:
-            raise HTTPException(status_code=404, detail="translation workflow not found")
+        require_workflow_id("translate", workflow_id, "translation workflow not found")
         try:
             original = await original_translation_input(workflow_id)
             store = app.state.artifact_store
@@ -1787,8 +1789,7 @@ def create_app(
             raise HTTPException(status_code=503, detail="original source or checkpoints could not be verified") from exc
 
     async def terminal_translation(workflow_id: str) -> TranslateContentInput:
-        if not workflow_id.startswith("b2c-translate-") or len(workflow_id) != 78:
-            raise HTTPException(status_code=404, detail="translation workflow not found")
+        require_workflow_id("translate", workflow_id, "translation workflow not found")
         client = await get_temporal_client()
         description = await client.get_workflow_handle(workflow_id).describe()
         if getattr(getattr(description, "status", None), "name", "") not in {"COMPLETED", "FAILED", "CANCELED", "TERMINATED", "TIMED_OUT"}:
@@ -1816,8 +1817,7 @@ def create_app(
             "status":"queued","other_segments_unchanged":True}
 
     async def selected_candidate(workflow_id: str, candidate_id: str, revision_id: str | None = None) -> dict[str, Any]:
-        if not candidate_id.startswith("b2c-retranslate-") or len(candidate_id) != 48 or any(c not in "0123456789abcdef" for c in candidate_id[16:]):
-            raise HTTPException(status_code=404, detail="candidate not found")
+        require_workflow_id("retranslate", candidate_id, "candidate not found")
         original = await original_translation_input(workflow_id)
         store = app.state.artifact_store
         record = await s3_json(store.s3, settings.s3_bucket, (f"_system/translation-candidate-revisions/{candidate_id}/{revision_id}.json" if revision_id else f"_system/translation-candidates/{candidate_id}.json"))
@@ -1950,8 +1950,7 @@ def create_app(
 
     @app.post("/v1/translations/{workflow_id}/corrections", status_code=201)
     async def correct_translation_unit(workflow_id: str, request: TranslationCorrectionRequest) -> dict[str, Any]:
-        if not workflow_id.startswith("b2c-translate-") or len(workflow_id) != 78:
-            raise HTTPException(status_code=404, detail="translation workflow not found")
+        require_workflow_id("translate", workflow_id, "translation workflow not found")
         client = await get_temporal_client()
         description = await client.get_workflow_handle(workflow_id).describe()
         status = getattr(getattr(description, "status", None), "name", "")
@@ -2076,7 +2075,7 @@ def create_app(
 
     @app.get("/v1/audio/{workflow_id}")
     async def audio_status(workflow_id: str) -> dict[str, Any]:
-        if not workflow_id.startswith("b2c-mp3-") or len(workflow_id) != 72: raise HTTPException(status_code=404, detail="audio workflow not found")
+        require_workflow_id("mp3", workflow_id, "audio workflow not found")
         try:
             client = await get_temporal_client(); handle = client.get_workflow_handle(workflow_id); desc = await handle.describe()
         except Exception as exc:
@@ -2117,7 +2116,7 @@ def create_app(
 
     @app.get("/v1/audio/{workflow_id}/manifest")
     async def audio_manifest(workflow_id: str) -> dict[str, Any]:
-        if not workflow_id.startswith("b2c-mp3-") or len(workflow_id) != 72: raise HTTPException(status_code=404, detail="audio workflow not found")
+        require_workflow_id("mp3", workflow_id, "audio workflow not found")
         try:
             client = await get_temporal_client(); handle = client.get_workflow_handle(workflow_id)
             status = getattr(getattr(await handle.describe(), "status", None), "name", "")
@@ -2165,8 +2164,7 @@ def create_app(
 
 
     async def audio_course_name(course_id: str) -> str:
-        if not course_id or len(course_id) > 80 or any(c not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-" for c in course_id):
-            raise HTTPException(422, "invalid course_id")
+        require_course_id(course_id)
         store = app.state.artifact_store or ArtifactStore.from_settings(settings)
         app.state.artifact_store = store
         try:
@@ -2235,9 +2233,7 @@ def create_app(
 
     @app.get("/v1/audio/{workflow_id}/request")
     async def original_audio_request(workflow_id: str) -> dict[str, Any]:
-        import re
-        if not re.fullmatch(r"b2c-mp3-[0-9a-f]{64}", workflow_id):
-            raise HTTPException(404, "audio workflow not found")
+        require_workflow_id("mp3", workflow_id, "audio workflow not found")
         store = app.state.artifact_store or ArtifactStore.from_settings(settings)
         app.state.artifact_store = store
         try:
@@ -2274,7 +2270,7 @@ def create_app(
 
     @app.get("/v1/audio/{workflow_id}/file")
     async def download_audio(workflow_id: str) -> StreamingResponse:
-        if not workflow_id.startswith("b2c-mp3-") or len(workflow_id) != 72: raise HTTPException(status_code=404, detail="audio workflow not found")
+        require_workflow_id("mp3", workflow_id, "audio workflow not found")
         try:
             client = await get_temporal_client(); handle = client.get_workflow_handle(workflow_id)
             if getattr(getattr(await handle.describe(), "status", None), "name", "") != "COMPLETED": raise HTTPException(status_code=409, detail="MP3 is not ready")
@@ -2318,7 +2314,7 @@ def create_app(
             raise HTTPException(status_code=422, detail="approved outline is outside the requested course")
         try:
             client = await get_temporal_client()
-            saved_index = await indexing_status(request.index_workflow_id)
+            saved_index = await indexing_status(request.index_workflow_id, recovery_course_id=course_id)
             if saved_index["status"] != "COMPLETED":
                 raise HTTPException(status_code=409, detail="course indexing must complete before question generation")
             index_result = saved_index["result"]
@@ -2392,8 +2388,11 @@ def create_app(
 
     @app.get("/v1/course-qa/{workflow_id}")
     async def course_qa_status(workflow_id: str, recovery_course_id: str | None = None, recovery_book_id: str | None = None) -> dict[str, Any]:
-        if not workflow_id.startswith("b2c-qa-") or len(workflow_id) != 71:
-            raise HTTPException(status_code=404, detail="question generation workflow not found")
+        require_workflow_id("qa", workflow_id, "question generation workflow not found")
+        if recovery_course_id is not None:
+            require_course_id(recovery_course_id)
+        if recovery_book_id is not None:
+            require_book_id(recovery_book_id)
         try:
             client = await get_temporal_client()
             handle = client.get_workflow_handle(workflow_id)
@@ -2401,9 +2400,10 @@ def create_app(
         except Exception as exc:
             if isinstance(exc, RPCError) and exc.status == RPCStatusCode.NOT_FOUND and not (recovery_course_id and recovery_book_id):
                 # Older APKs know only the workflow ID. Discover its exact saved
-                # owner, then use the same source-lineage validation as new APKs.
+                # owner (within the given course when one is supplied), then use
+                # the same source-lineage validation as new APKs.
                 from b2c_api.qa_recovery import saved_qa_owner
-                owner = await run_in_threadpool(saved_qa_owner, library_store(), workflow_id)
+                owner = await run_in_threadpool(saved_qa_owner, library_store(), workflow_id, recovery_course_id)
                 if owner:
                     recovery_course_id, recovery_book_id = owner
             if isinstance(exc, RPCError) and exc.status == RPCStatusCode.NOT_FOUND and recovery_course_id and recovery_book_id:
@@ -2504,8 +2504,7 @@ def create_app(
         return response
 
     def stage_control_kind(workflow_id: str) -> str:
-        import re
-        match = re.fullmatch(r"b2c-(ingest|index|translate|mp3|qa)-[0-9a-f]{64}", workflow_id)
+        match = STAGE_CONTROL_ID.fullmatch(workflow_id)
         if match is None:
             raise HTTPException(status_code=404, detail="workflow not found")
         return match.group(1)
@@ -2614,8 +2613,7 @@ def create_app(
 
     @app.post("/v1/course-qa/{workflow_id}/pause")
     async def pause_course_qa(workflow_id: str) -> dict[str, Any]:
-        if not workflow_id.startswith("b2c-qa-") or len(workflow_id) != 71:
-            raise HTTPException(status_code=404, detail="question generation workflow not found")
+        require_workflow_id("qa", workflow_id, "question generation workflow not found")
         try:
             client = await get_temporal_client()
             handle = client.get_workflow_handle(workflow_id)
@@ -2639,8 +2637,7 @@ def create_app(
 
     @app.post("/v1/course-qa/{workflow_id}/resume")
     async def resume_course_qa(workflow_id: str) -> dict[str, Any]:
-        if not workflow_id.startswith("b2c-qa-") or len(workflow_id) != 71:
-            raise HTTPException(status_code=404, detail="question generation workflow not found")
+        require_workflow_id("qa", workflow_id, "question generation workflow not found")
         try:
             client = await get_temporal_client()
             old_handle = client.get_workflow_handle(workflow_id)
@@ -2699,8 +2696,7 @@ def create_app(
 
     @app.get("/v1/course-qa/{workflow_id}/checkpoints")
     async def course_qa_checkpoints(workflow_id: str) -> dict[str, Any]:
-        if not workflow_id.startswith("b2c-qa-") or len(workflow_id) != 71:
-            raise HTTPException(status_code=404,detail="question generation workflow not found")
+        require_workflow_id("qa", workflow_id, "question generation workflow not found")
         store=app.state.artifact_store or ArtifactStore.from_settings(settings); app.state.artifact_store=store
         prefix=f"_system/qa-checkpoints/{workflow_id}/"
         def read_scopes() -> list[dict[str,Any]]:

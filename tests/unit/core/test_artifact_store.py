@@ -64,6 +64,28 @@ def test_get_or_compute_runs_once(store):
     assert r1 == r2 and len(calls) == 1
 
 
+@pytest.mark.parametrize("streamed", [False, True])
+def test_racing_writer_never_replaces_a_committed_manifest(store, streamed):
+    winner = store.put("crs_01", "outline", KEY, {"out.json": b"winner"})
+    # The loser checked exists() before the winner committed its manifest.
+    real_exists = store.exists
+    calls = []
+
+    def stale_exists(*args):
+        calls.append(args)
+        return None if len(calls) == 1 else real_exists(*args)
+    store.exists = stale_exists
+    if streamed:
+        data = b"loser"
+        loser = store.put_stream("crs_01", "outline", KEY, {"out.json": io.BytesIO(data)},
+                                 {"out.json": hashlib.sha256(data).hexdigest()})
+    else:
+        loser = store.put("crs_01", "outline", KEY, {"out.json": b"loser"})
+    assert loser == winner
+    store.exists = real_exists
+    assert store.exists("crs_01", "outline", KEY) == winner
+
+
 def test_artifact_row_is_recorded_idempotently_on_every_access(store):
     class Recorder:
         def __init__(self):

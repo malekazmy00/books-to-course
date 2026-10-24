@@ -48,6 +48,13 @@ def content_sha256(files: Mapping[str, bytes]) -> str:
                                         for name, data in files.items()})
 
 
+def _is_precondition_conflict(exc: Exception) -> bool:
+    response = getattr(exc, "response", None) or {}
+    status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+    code = response.get("Error", {}).get("Code")
+    return status in {409, 412} or code in {"PreconditionFailed", "ConditionalRequestConflict"}
+
+
 class ArtifactStore:
     def __init__(self, s3_client: Any, bucket: str = "artifacts",
                  recorder: ProvRecorder | None = None) -> None:
@@ -87,6 +94,26 @@ class ArtifactStore:
         if self.recorder is not None:
             self.recorder.record_artifact(course_id, ref)
 
+    def _commit_manifest(self, course_id: str, prefix: str, ref: ArtifactRef) -> ArtifactRef:
+        """Create the manifest only if absent; a racing writer adopts the winner.
+
+        Uses S3 conditional writes (If-None-Match: *), which MinIO and AWS S3
+        support; the same pinned MinIO already serves IfNoneMatch writes for
+        translation candidates and review records.
+        """
+        try:
+            self.s3.put_object(Bucket=self.bucket, Key=prefix + MANIFEST,
+                               Body=ref.model_dump_json().encode("utf-8"), IfNoneMatch="*")
+        except Exception as exc:
+            if not _is_precondition_conflict(exc):
+                raise
+            winner = self.exists(course_id, ref.stage, ref.key)
+            if winner is None:  # 409: the other writer has not finished yet
+                raise
+            ref = winner
+        self._record(course_id, ref)
+        return ref
+
     # ---------------------------------------------------------------- api
     def ensure_bucket(self) -> None:
         try:
@@ -122,11 +149,7 @@ class ArtifactStore:
             created_at=datetime.now(timezone.utc),
         )
         # manifest last: its presence marks the artifact complete
-        self.s3.put_object(Bucket=self.bucket, Key=prefix + MANIFEST,
-                           Body=ref.model_dump_json().encode("utf-8"))
-        if self.recorder is not None:
-            self.recorder.record_artifact(course_id, ref)
-        return ref
+        return self._commit_manifest(course_id, prefix, ref)
 
     def put_stream(self, course_id: str, stage: str, key: str,
                    files: Mapping[str, BinaryIO], file_hashes: Mapping[str, str]) -> ArtifactRef:
@@ -155,11 +178,7 @@ class ArtifactStore:
             sha256=_content_sha256_from_hashes(file_hashes),
             created_at=datetime.now(timezone.utc),
         )
-        self.s3.put_object(Bucket=self.bucket, Key=prefix + MANIFEST,
-                           Body=ref.model_dump_json().encode("utf-8"))
-        if self.recorder is not None:
-            self.recorder.record_artifact(course_id, ref)
-        return ref
+        return self._commit_manifest(course_id, prefix, ref)
 
     def get_or_compute(self, course_id: str, stage: str, key: str,
                        compute: Callable[[], Mapping[str, bytes]]) -> tuple[ArtifactRef, bool]:

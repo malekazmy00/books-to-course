@@ -4,7 +4,7 @@ Self-hosted TTS for the Muslim voice agent (drop-in for the cloud TTS). Full Ara
 (normalize -> numbers -> CATT diacritization -> sacred-term lexicon -> chunking) + XTTS synthesis.
 
 Endpoints:
-  GET  /health                      -> {"status": "ok", ...}
+  GET  /health                      -> {"status": "ok"|"degraded"|"loading", "diacritizer": bool, ...}
   GET  /info                        -> model/voice info
   POST /v1/tts   {"text": "..."}    -> WAV (audio/wav)     [batch]
   POST /tts/stream {"text": "..."}  -> raw PCM16 mono @ 24 kHz [low-latency]
@@ -53,6 +53,8 @@ _model = None
 _gpt = None
 _spk = None
 _pipe = None
+_diacritizer_loaded = False
+_diacritizer_error: str | None = None
 # XTTS mutates a shared prefix embedding. Serialize model use across HTTP requests.
 _inference_lock = threading.Lock()
 
@@ -71,8 +73,22 @@ class TTSRequest(BaseModel):
     auto_diacritize: bool = Field(True, description="Add tashkeel via CATT if text is under-diacritized.")
 
 
+def health_payload(model_loaded: bool, diacritizer_loaded: bool, diacritizer_error: str | None) -> dict:
+    """Health is 'degraded' (not 'ok') when CATT failed: speech would be undiacritized."""
+    if not model_loaded:
+        status = "loading"
+    elif not diacritizer_loaded:
+        status = "degraded"
+    else:
+        status = "ok"
+    payload = {"status": status, "model": MODEL_ID, "device": DEVICE, "diacritizer": diacritizer_loaded}
+    if diacritizer_error:
+        payload["diacritizer_error"] = diacritizer_error
+    return payload
+
+
 def load():
-    global _model, _gpt, _spk, _pipe
+    global _model, _gpt, _spk, _pipe, _diacritizer_loaded, _diacritizer_error
     if _model is not None:
         return
     from tts.text.pipeline import TextPipeline
@@ -96,8 +112,10 @@ def load():
         from tts.text.diacritize import Diacritizer
         from catt_bounds import BoundedDiacritizer
         diac = BoundedDiacritizer(Diacritizer(ckpt=CATT_CKPT, device=DEVICE))
-    except Exception as e:  # noqa: BLE001
-        print("diacritizer unavailable:", e)
+        _diacritizer_loaded, _diacritizer_error = True, None
+    except Exception as e:  # noqa: BLE001 - surfaced as degraded /health, not hidden
+        _diacritizer_loaded, _diacritizer_error = False, type(e).__name__
+        print("diacritizer unavailable; /health reports degraded:", e, flush=True)
     globals()["_pipe"] = TextPipeline(diacritizer=diac)
     globals()["_model"] = m
     print(f"Fasih-TTS ready on {DEVICE}")
@@ -133,7 +151,7 @@ def _synth(text: str, temperature: float, auto: bool) -> np.ndarray:
 
 @app.get("/health")
 def health():
-    return {"status": "ok" if _model is not None else "loading", "model": MODEL_ID, "device": DEVICE}
+    return health_payload(_model is not None, _diacritizer_loaded, _diacritizer_error)
 
 
 @app.get("/info")

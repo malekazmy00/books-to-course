@@ -1,5 +1,12 @@
-"""L3 Chunking & Index: ParsedBook -> StructuredChunk[] + embeddings.
+"""L3 source-aware chunking and retrieval baselines."""
+from .chunking import chunk_book, estimate_tokens
+from .retrieval import dense_search, lexical_search, reciprocal_rank_fusion
+from .postgres_store import PostgresChunkStore
+from .query_service import QueryRetrievalService, RetrievalHit
+from .embedding_client import OpenAIEmbeddingClient
 
-Placeholder created in Phase 0 so layer boundaries are enforced from day one (import-linter).
-Implemented in Phase 3. May import only b2c_contracts, b2c_core, b2c_llm_gateway.
-"""
+__all__ = [
+    "chunk_book", "estimate_tokens", "dense_search", "lexical_search",
+    "reciprocal_rank_fusion", "PostgresChunkStore", "QueryRetrievalService",
+    "RetrievalHit", "OpenAIEmbeddingClient",
+]

@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from b2c_contracts import CourseOutline, Lesson, LessonSpan, Module, Question
@@ -61,7 +61,7 @@ def test_fsrs_wrapper_matches_pinned_py_fsrs_deterministic_fixture() -> None:
 
 
 def test_fsrs_wrapper_requires_utc_and_persists_card_state() -> None:
-    local = datetime(2026, 10, 5, 12).astimezone()
+    local = datetime(2026, 10, 5, 12, tzinfo=timezone(timedelta(hours=3)))  # explicit: host tz may be UTC
     with pytest.raises(ValueError, match="UTC"):
         review_card(user_id="learner", rating=3, reviewed_at=local)
 

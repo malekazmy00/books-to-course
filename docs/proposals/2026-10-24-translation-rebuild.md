@@ -99,6 +99,8 @@ workflow جديد باسم `TranslateBookWorkflow` في `packages/orchestration/
 | الخطوة | الـ activity | ما تفعله |
 |---|---|---|
 | 1 | `prepare_translation_units` | تقرأ `ParsedBook` من artifact المرحلة `ingest-parse-pdf` للكورس نفسه، وتبني الوحدات بـ `build_units_with_provenance`، وتخزّنها artifact ثابتًا بالمرحلة `translation-units`. الملفات: `units.json` و`build.json`. المفتاح `stage_key` يُحسب من sha الكتاب المحلَّل و`max_unit_chars` و`UNITS_BUILDER_VERSION`. تسجّل الـ run في Postgres. |
+| 1أ | `build_book_termbase` | تستخرج المرشّحين من الوحدات المخزّنة، وتجمع المقترحات العربية، وتدمجها في حالة المراجعة في Postgres دون أن تمسّ أي قرار بشري، وتخزّن الـ termbase المدموج artifact مُرقّم الإصدار بالمرحلة `book-termbase`. لا تعتمد شيئًا. التفاصيل في §8.8. |
+| 1ب | `check_book_termbase` | بوابة الاعتماد: تحسب الإدخالات المعلّقة. إذا كانت البوابة مفتوحة، تجمّد الإدخالات **المعتمدة فقط** في artifact بالمرحلة `book-termbase-approved` وتعيد الـ digest الخاص بها. |
 | 2 | `translate_unit_batch` | دفعة محدودة الحجم (`batch_size`، الافتراضي 25، والحد الأقصى 200). تتخطى كل وحدة لها نتيجة نهائية (`accepted`/`dropped`/`rejected`) أو قرار بشري. تشغّل `UnitTranslator` مع سياق الوحدتين المجاورتين، وترسل heartbeat لكل وحدة، وتكتب نتيجة كل وحدة فور صدورها. لذلك لا يضيع عند السقوط أكثر من وحدة واحدة. أخطاء المحرك الحتمية (وحدة أطول من حد المحرك، `LLMOutputTruncated`، `LLMRequestRejected`، `InvalidLLMOutput`) تُسجَّل وحدةً `rejected` فيها issue ‏`engine_error`، وتذهب إلى المراجعة بدل أن تُفشل الدفعة. |
 | 3 | `assemble_translation` | تجمع النص لكل block بـ `assemble_blocks`، من الوحدات `accepted`/`dropped` فقط. نص المحرك غير المتحقق منه لا يدخل الـ artifact أبدًا. تكتب artifact بالمرحلة `translate-book` يحتوي `translation.json` = `{blocks: {block_id: {text, complete, pending_unit_ids, merged_into}}, counts, engines, units_ref, results_digest, run_id}`. مفتاحه يتضمن digest النتائج، فكل تعديل بشري لاحق ينتج artifact جديدًا ولا يُكتب فوق القديم. |
 
@@ -112,6 +114,8 @@ workflow جديد باسم `TranslateBookWorkflow` في `packages/orchestration/
 
 - `translation_unit_results(run_id, unit_id, book_id, seq, decision, origin, decided_by, translation_json, drafts_json, updated_at)`، مفتاحه `(run_id, unit_id)`. في جملة الـ upsert شرط `WHERE` يمنع أي نتيجة policy من الكتابة فوق قرار بشري، ولا يستبدل القرار البشري إلا قرار بشري لاحق.
 - `translation_runs(run_id, course_id, workflow_id, book_id, input_json, units_ref_json, unit_count, assembly_json, assembly_snapshot_at, …)`. تجميع مبني على لقطة أقدم لا يحل محل تجميع أحدث.
+- عمود `termbase_digest` في `translation_unit_results` (يُضاف بـ `ADD COLUMN IF NOT EXISTS`): digest الـ termbase المعتمد الذي أُنتجت به النتيجة. نتيجة الـ policy لا تُعدّ نهائية إلا مع الـ digest نفسه، والقرار البشري نهائي دائمًا.
+- `book_termbase_entries` و`book_termbase_builds` في `termbase_store.py` (انظر §8.8).
 - يُنشأ الـ schema مرة واحدة لكل instance.
 
 ### 8.3 الطابور والعامل
@@ -150,7 +154,7 @@ workflow جديد باسم `TranslateBookWorkflow` في `packages/orchestration/
 
 | الطلب | الوظيفة |
 |---|---|
-| `POST /v2/courses/{course_id}/book-translations` | بدء run. الجسم: `source_artifact_ref` (artifact ‏`ingest-parse-pdf` ملتزم في الكورس نفسه)، و`source_language`، و`target_language`، و`engine_profile`، و`qe_profile` (اختياري)، و`max_unit_chars` (الافتراضي 400)، و`batch_size` (الافتراضي 25). يُرفض أي حقل زائد. الرد 202 ومعه `run_id` و`workflow_id` و`existing`. |
+| `POST /v2/courses/{course_id}/book-translations` | بدء run. الجسم: `source_artifact_ref` (artifact ‏`ingest-parse-pdf` ملتزم في الكورس نفسه)، و`source_language`، و`target_language`، و`engine_profile`، و`qe_profile` (اختياري)، و`max_unit_chars` (الافتراضي 400)، و`batch_size` (الافتراضي 25)، و`require_approved_termbase` (الافتراضي `true`)، و`termbase_min_frequency` (الافتراضي 1). يُرفض أي حقل زائد. الرد 202 ومعه `run_id` و`workflow_id` و`existing`. |
 | `GET /v2/book-translations/{run_id}` | حالة الـ run وحالة الـ workflow، والعدد لكل قرار (`accepted`/`needs_review`/`rejected`/`dropped`/`pending`)، و`units_ref`، وآخر تجميع. |
 | `GET /v2/book-translations/{run_id}/review-queue?decision=needs_review&decision=rejected&limit=50&offset=0` | طابور المراجعة البشرية. لكل وحدة: نص المصدر، والعلامات، والصفحات، وآخر مسودة، والـ issues، وتاريخ المسودات كاملًا. |
 | `POST /v2/book-translations/{run_id}/units/{unit_id}/review` | قرار بشري: `{"action": "accept"}` لقبول النص الحالي كما هو، أو `{"action": "edit", "text": "…"}`، ومع أيٍّ منهما `"reviewer_id": "…"`. يُفحص النص أولًا بفحص التسريب وفحص علامات الحواشي، فإن فشل أُعيد 422 مع الـ issues ولم يُكتب شيء. إن نجح خُزّن `origin=human, decided_by=human, accepted` في جدول النتائج وفي الـ translation memory، ودخل معرّف المراجع ونتائج كل الفحوص في تاريخ المسودات. |
@@ -169,10 +173,67 @@ workflow جديد باسم `TranslateBookWorkflow` في `packages/orchestration/
      -d '{"source_artifact_ref": {…ArtifactRef ingest-parse-pdf…}, "source_language": "en",
           "target_language": "ar", "engine_profile": "hy-mt2"}'
    ```
-4. المتابعة عبر `GET /v2/book-translations/<run_id>`، ثم المراجعة عبر `review-queue`، ثم القرار البشري، ثم `assemblies`.
+4. مراجعة الـ termbase واعتماده (§8.8)، ثم `termbase/done`. قبل ذلك لا تُترجم أي وحدة.
+5. المتابعة عبر `GET /v2/book-translations/<run_id>`، ثم المراجعة عبر `review-queue`، ثم القرار البشري، ثم `assemblies`.
 
 ### 8.7 حدود معروفة
 
-- الـ termbase وجدول الكيانات لم يُربطا بعد (`terms={}`). فحصا terminology وnamed_entity لا يعملان إلا بعد بناء `termbase.py`.
+- الـ termbase وجدول الكيانات مربوطان الآن (§8.8). مصادر Wikidata/AGROVOC ‏(`ConceptIndexSource`) لها نقطة توصيل (`concept_sources`) في الـ activities، لكن الـ worker لا يمرّر فهارس بعد، فهي غير مفعّلة.
 - لم يُختبر المسار على Temporal وPostgres ونماذج حقيقية. اختبار التكامل `tests/integration/test_translation_store_postgres.py` يعمل فقط داخل شبكة b2c (`make test-integration`).
 - الوحدة التي نتيجتها `needs_review` تُترجم مرة أخرى عند استئناف دفعة. هذا مقصود: الطلب نفسه بـ temperature 0 يُخدم من cache الـ gateway، والـ judge الذي فشل لخلل مؤقت (فشل مغلق) يحصل على فرصة ثانية. CometKiwi لا يمر عبر cache، فيُحسب من جديد.
+- الـ termbase في Postgres لا يُقفل بين مراجِعَين متزامنين: قراران متزامنان على الإدخال نفسه يفوز فيهما الأخير. التحقق من "هدف واحد لكل مصدر" ومن الأهداف المشتركة يجري على الحالة المقروءة لحظة الطلب.
+
+### 8.8 الـ termbase وبوابة الاعتماد (المبدأ 5، Gate G3 — 2026-10-24)
+
+القاعدة: المصطلحات المقفلة **يعتمدها إنسان قبل الترجمة، وتُفرض بعدها**. لا يُعتمد أي إدخال آليًا في أي مسار.
+
+**الخطوة في الـ workflow.** بعد `prepare_translation_units` وقبل أول دفعة، ومحميّة بـ `workflow.patched("book-termbase-gate-v1")`. لهذا يُعاد تشغيل أي تاريخ سُجّل قبلها بالأوامر القديمة نفسها. يوجد اختبار replay لذلك.
+
+1. `build_book_termbase(course_id, units_ref, engine_profile, …)`:
+   - تقرأ الوحدات المخزّنة، وتستخرج المرشّحين بـ `b2c_translation.termbase.build_book_termbase`، وهي الواجهة العامة فقط.
+   - المقترحات، مرتّبة حسب المصدر: الـ glossary السياقي إن أُرسل في الطلب (`contextual_glossary`)، ثم الإدخالات المعتمدة للكتاب نفسه في أي كورس (`prior_termbase`)، ثم الترجمات البشرية في الـ translation memory، ثم نموذج المحرك **فقط إذا فعّله ملف المحرك** (`"propose_terms": true`، لملف `chat` محلي فقط، وعبر `llm_gateway`)، ثم النقل الحرفي لأسماء الأشخاص.
+   - الدمج مع حالة المراجعة يكون بالصيغة المطبّعة للمصدر (`source_key`). الاستخراج الجديد يحدّث أعمدته فقط (النوع، التكرار، المرشّح، المقترحات)، ولا يكتب أبدًا `status` أو `target` أو `reviewer` أو `decided_at`. الإدخال الذي لم يعد يُستخرج يبقى بقراره، مع `present = false`.
+   - تُكتب الحالة المدموجة كاملة artifact بالمرحلة `book-termbase` (`termbase.json`، JSON قانوني مع sha256). كل تغيير ينتج إصدارًا جديدًا.
+2. `check_book_termbase`: الإدخالات "الحاجزة" هي المعلّقة (`pending`) التي ما زالت مستخرجة وتكرارها ≥ `termbase_min_frequency`.
+   - مع `require_approved_termbase = true` (الافتراضي للكتب الحقيقية): إذا وُجد إدخال حاجز، ينتظر الـ workflow إشارة `termbase_approved` (`{"reviewer_id": "…"}`)، ثم يعيد الفحص بعد كل إشارة. إذا لم يوجد إدخال حاجز من البداية، يتابع مباشرة.
+   - مع `require_approved_termbase = false`: لا انتظار. تُستعمل الإدخالات المعتمدة فقط، وتُتجاهل المعلّقة ولا تُعتمد.
+   - عند فتح البوابة تُجمَّد الإدخالات المعتمدة وحدها في artifact بالمرحلة `book-termbase-approved`، مع digest يغطي بالضبط ما تستعمله الترجمة: `locked_terms()` و`entity_table()` و`forbidden_variants()` واللغتين.
+3. كل دفعة تقرأ اللقطة المجمّدة، وتتحقق من الـ digest (`TermbaseChanged` غير قابل لإعادة المحاولة عند الاختلاف)، ثم تمرّر `locked_terms()` → `UnitTranslator.terms` و`entity_table()` → `entities`.
+
+**إعادة استعمال النتائج.** `run_id` لا يتغير بخيارات البوابة. كل نتيجة تُخزَّن مع `termbase_digest`. الدفعة المستأنفة بالـ termbase المعتمد نفسه تتخطى نتائجها النهائية. إذا تغيّر الـ termbase المعتمد (run أُعيد تشغيله بعد فشل مثلًا)، يتغير الـ digest، فتُترجم الوحدات من جديد، ولا تُعاد نتائج أُنتجت بمصطلحات مقفلة مختلفة. القرارات البشرية على الوحدات تبقى دائمًا.
+
+**الـ query.** `termbase_state` يعيد: `phase` (`building` / `awaiting_approval` / `approved`)، و`counts` (`pending_blocking`, `pending_total`, `approved`, `rejected`, `absent`, `min_frequency`)، و`checks`، و`signals`، و`last_reviewer`، و`digest`، و`approved_ref`. يظهر أيضًا في `GET /v2/book-translations/{run_id}` تحت `termbase` ما دام الـ workflow يعمل.
+
+**حالة المراجعة في Postgres** (`termbase_store.py`):
+
+- `book_termbase_entries`، مفتاحه `(course_id, book_id, source_language, target_language, source_key)`: `source`، و`kind`، و`frequency`، و`candidate_json`، و`proposals_json`، و`present`، و`status` (`pending`/`approved`/`rejected`)، و`target` (هدف واحد لكل مصدر)، و`forbidden_variants_json`، و`allow_shared_target`، و`reviewer`، و`decided_at`، و`rejection_reason`، و`extracted_at`، و`updated_at`.
+- `book_termbase_builds`: آخر artifact مستخرج لكل نطاق، مع الـ sha وعدد الإدخالات.
+
+**الـ API** (المصادقة bearer كباقي المسارات؛ `run_id` يتكون من 64 حرفًا hex؛ `reviewer_id` إلزامي في كل قرار):
+
+| الطلب | الوظيفة |
+|---|---|
+| `GET /v2/book-translations/{run_id}/termbase?status=pending&kind=person&min_frequency=2&q=…&include_absent=false&limit=100&offset=0` | الإدخالات مرتّبة بالتكرار، مع المقترحات ومصادرها، وسياق التعريف، وعدّادات البوابة، وartifact آخر استخراج. |
+| `POST …/termbase/approve` `{"source": "…", "target": "…" (اختياري، وإلا أول مقترح), "reviewer_id": "…", "replace": false, "allow_shared_target": false}` | اعتماد إدخال واحد، مع هدف معدَّل اختياريًا. |
+| `POST …/termbase/reject` `{"source": "…", "reviewer_id": "…", "reason": "…"}` | رفض صريح. الإدخال المرفوض لا يحجز البوابة ولا يُستعمل. |
+| `POST …/termbase/bulk-approve` `{"reviewer_id": "…", "selections": [{"source": "…", "target": "…" (اختياري)}]}` | اعتماد المقترحات التي اختارها المراجع، حتى 500 في الطلب. كل هدف يجب أن يكون أحد مقترحات الإدخال نفسه. الطلب كله يُقبل أو يُرفض كله. |
+| `POST …/termbase/done` `{"reviewer_id": "…"}` | يرسل الإشارة `termbase_approved` إلى الـ workflow المنتظر. يعيد 409 مع العدّادات ما دام هناك إدخال حاجز، و409 إذا لم يكن الـ workflow منتظرًا. |
+
+**التحقق.** الهدف نص عربي غير فارغ: حرف عربي واحد على الأقل، ولا حروف لاتينية، وحتى 120 حرفًا (أرقام ومسافات وشرطات مسموحة). كل مصدر له هدف واحد: تغيير هدف معتمد يحتاج `"replace": true`، والهدف المقفل لمصدر آخر يُرفض إلا مع `"allow_shared_target": true`. المراجع الآلي (`g3-policy-*`) مرفوض. الأخطاء: 422 للقرار غير الصالح، و404 للمصدر أو الـ run غير الموجود، و409 إذا لم تُحضَّر الوحدات أو لم يُبنَ الـ termbase بعد.
+
+مثال لدورة كاملة:
+
+```bash
+RUN=…  # run_id من POST /v2/courses/<course>/book-translations
+curl -H "authorization: Bearer $TOKEN" "http://localhost:8000/v2/book-translations/$RUN/termbase?status=pending&min_frequency=2"
+curl -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"reviewer_id": "aly", "selections": [{"source": "Signal Mapping"}, {"source": "Lena Vasquez"}]}' \
+  "http://localhost:8000/v2/book-translations/$RUN/termbase/bulk-approve"
+curl -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"source": "ARH", "target": "تحليل الفرضيات المتنافسة", "reviewer_id": "aly"}' \
+  "http://localhost:8000/v2/book-translations/$RUN/termbase/approve"
+curl -H "authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"reviewer_id": "aly"}' "http://localhost:8000/v2/book-translations/$RUN/termbase/done"
+```
+
+**ما لم يُنفَّذ:** لم يُبنَ أي image، ولم يُعد تشغيل أي خدمة، ولم يُشغَّل المسار على Temporal وPostgres حقيقيين. الاختبارات تستعمل fakes لـ Postgres، وmoto لـ S3، وبيئة Temporal ذات الوقت المتسارع (time-skipping).

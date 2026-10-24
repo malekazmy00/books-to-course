@@ -1,117 +1,117 @@
-# Translation v2 QA (D-028 part B): deterministic checks on the audit gold set, 2026-10-24
+# ضبط جودة الترجمة v2 (D-028، الجزء B): الفحوص الحتمية على مجموعة التقييم، 2026-10-24
 
-Status: **measurement only, not a gate.** No gate passes or fails on the basis of this report.
+الحالة: **قياس فقط، وليس بوابة.** لا تنجح أي بوابة ولا تفشل بناءً على هذا التقرير.
 
-## What was executed (verified)
+## ما نُفِّذ فعلًا (مُتحقَّق منه)
 
-- `uv run python -m b2c_translation.evaluation --gold /mnt/wsl/b2cdata/eval-datasets/translation-audit-2026-10-24/gold.jsonl --out <file>`
-  - Gold sha256 is `bc795b7e0b03d9423858bb9473b90e7e3d4f2d87503ecf67d3e3a8d04725508f`, which matches `SHA256SUMS`.
-  - The run took about 20 s on CPU.
-  - The generated tables are reproduced below this analysis.
-- `DEFAULT_CHECKS` were run on (a) `pipeline_target` and (b) `corrected_translation` for all 3396 rows. One `TranslationUnit` was built per row, with the kind taken from `block_type`.
-- Splits:
-  - A deterministic hash of `book|segment_id` holds out 30% as **test**; the other 70% is **calibration**.
-  - Per-book results are also reported: book1 has 776 rows and book2 has 2620.
-- No semantic QE (LLM judge or CometKiwi) was run. Every number below is for the deterministic layer alone.
+- الأمر: `uv run python -m b2c_translation.evaluation --gold /mnt/wsl/b2cdata/eval-datasets/translation-audit-2026-10-24/gold.jsonl --out <file>`
+  - بصمة مجموعة التقييم `bc795b7e0b03d9423858bb9473b90e7e3d4f2d87503ecf67d3e3a8d04725508f`، وتطابق `SHA256SUMS`.
+  - استغرق التشغيل نحو 20 ثانية على المعالج.
+  - الجداول المولَّدة منقولة في آخر هذا التقرير.
+- شُغِّلت `DEFAULT_CHECKS` على (أ) `pipeline_target` و(ب) `corrected_translation` لكل الصفوف الـ 3396. بُنيت `TranslationUnit` واحدة لكل صف، ونوعها مأخوذ من `block_type`.
+- الأقسام:
+  - تقسيم حتمي بحسب hash لـ `book|segment_id`: ‏30% **اختبار** محجوز، و70% **معايرة**.
+  - النتائج معروضة أيضًا لكل كتاب: الكتاب 1 فيه 776 صفًا، والكتاب 2 فيه 2620.
+- لم يُشغَّل أي تقدير جودة دلالي (لا LLM judge ولا CometKiwi). كل الأرقام أدناه للطبقة الحتمية وحدها.
 
-## Results against the targets
+## النتائج مقابل الأهداف
 
-| target | all | held-out test | met? |
+| الهدف | الكل | قسم الاختبار المحجوز | تحقق؟ |
 |---|---|---|---|
-| leakage recall 100% | 99.4% same-category (475/478); 99.6% blocked by some check (476/478) | 99.3% (145/146); 100% blocked | **no** (3 misses, below) |
-| leakage false positives < 1% | 0.0% corrected (0/923); 0.1% approved (1/797) | 0.0% (0/278); 0.4% (1/239) | yes |
-| false positives on corrected translations < 5% | 2.1% (19/923) | 2.5% (7/278) | yes overall; **book1 alone 5.7% (9/159)** |
-| numbers / footnotes recall 100% (design §6) | number_error 12.5% same-category (40% blocked); date_error 88.0%; footnote_marker 88.5% blocked | 20% / 72% / 94.1% | **no** |
-| share of the 1904 false accepts stopped by deterministic checks alone | **30.2% (575/1904)** | 29.9% (168/562) | no target; semantic QE must stop the rest |
+| التقاط التسريب 100% | 99.4% بالفئة نفسها (475/478)؛ و99.6% أوقفها فحص ما (476/478) | 99.3% (145/146)؛ و100% أُوقفت | **لا** (3 حالات فائتة، أدناه) |
+| إنذار التسريب الكاذب < 1% | 0.0% على المصحَّحة (0/923)؛ و0.1% على المعتمدة (1/797) | 0.0% (0/278)؛ و0.4% (1/239) | نعم |
+| الإنذار الكاذب على الترجمات المصحَّحة < 5% | 2.1% (19/923) | 2.5% (7/278) | نعم إجمالًا؛ **الكتاب 1 وحده 5.7% (9/159)** |
+| التقاط الأرقام والحواشي 100% (التصميم §6) | `number_error` ‏12.5% بالفئة نفسها (40% أُوقفت)؛ و`date_error` ‏88.0%؛ و`footnote_marker` ‏88.5% أُوقفت | 20% / 72% / 94.1% | **لا** |
+| نسبة ما توقفه الفحوص الحتمية وحدها من الـ 1904 قبولًا خاطئًا | **30.2% (575/1904)** | 29.9% (168/562) | لا هدف محدد؛ الباقي مسؤولية الفحص الدلالي |
 
-### The 3 leakage misses
+### حالات التسريب الثلاث الفائتة
 
-All three were checked by hand. No pattern was tuned to them.
+راجعتُ الثلاث يدويًا، ولم يُضبط أي نمط خصيصًا لها.
 
-1. The leak occurred only in an earlier attempt. The final `pipeline_target` has no instruction text, so no check on the final text can see it.
-2. The model output a bare list of glossary *target* terms, with no JSON, labels or brackets. Catching this needs the termbase: the check would flag Arabic termbase entries that appear without their English source term. That check has not been built.
-3. One pipeline word replaced the subject: "this source" became «هذه المصدر». This is ordinary Arabic, and a pattern for it would not generalise.
+1. حدث التسريب في محاولة سابقة فقط. النص النهائي `pipeline_target` خالٍ من التعليمات، فلا يستطيع أي فحص على النص النهائي رؤيته.
+2. أخرج النموذج قائمة مجردة بمصطلحات الـ glossary *العربية*، بلا JSON ولا عناوين ولا أقواس. التقاط ذلك يحتاج الـ termbase: فحص يعلّم مصطلحات عربية من الـ termbase تظهر دون مصطلحها الإنجليزي في المصدر. هذا الفحص لم يُبنَ بعد.
+3. كلمة واحدة من الـ pipeline حلّت محل الفاعل: «this source» صارت «هذه المصدر». هذه عربية عادية، ونمط لها لن يعمّم.
 
-The single leakage hit on an audit-approved target is the false-reject segment. Its evaluated text still contains unrestored `[[B2C_NUM_n]]` placeholders, so the hit is a genuine defect.
+الإنذار الوحيد على ترجمة اعتمدتها المراجعة هو مقطع الرفض الخاطئ. نصه الذي قُيِّم ما زال يحتوي علامات `[[B2C_NUM_n]]` لم تُستعد، فالإنذار عيب حقيقي.
 
-### Why numbers and footnotes are below 100%
+### لماذا الأرقام والحواشي دون 100%
 
-- Most gold `number_error` issues are **number words** the model translated wrongly:
-  - "two dozen" became 22;
-  - "seventy-one million" became 47 million;
-  - "thirty-two" became 33.
-- Other cases:
-  - figure labels lost their letter suffix ("3.3a" became "3.3");
-  - a percent sign was dropped.
-- A digit multiset cannot see these errors without an Arabic number-word parser, so they are left to semantic QE.
-- Gold footnote markers are inline in the source, because the rows are pre-rebuild segments. A marker defect therefore shows up as a number mismatch.
-- The `footnote_markers` check itself is exercised only by unit tests. It requires the markers to appear exactly at the end, as `unit.footnote_markers` lists them.
+- معظم أخطاء `number_error` في مجموعة التقييم **أعداد مكتوبة بالكلمات** ترجمها النموذج خطأ:
+  - «two dozen» صارت 22؛
+  - «seventy-one million» صارت 47 مليونًا؛
+  - «thirty-two» صارت 33.
+- حالات أخرى:
+  - أرقام الأشكال فقدت لاحقتها الحرفية («3.3a» صارت «3.3»)؛
+  - سقطت علامة النسبة المئوية.
+- مقارنة الأرقام كمجموعة لا ترى هذه الأخطاء دون محلل للأعداد العربية المكتوبة بالكلمات، فتُترك للفحص الدلالي.
+- علامات الحواشي في مجموعة التقييم موجودة داخل نص المصدر، لأن الصفوف من مقاطع ما قبل إعادة البناء. لذلك يظهر عيب العلامة كاختلاف في الأرقام.
+- فحص `footnote_markers` نفسه لا تختبره إلا اختبارات الوحدة. يشترط أن تأتي العلامات في النهاية تمامًا، بالترتيب الوارد في `unit.footnote_markers`.
 
-### Why the semantic categories are low
+### لماذا الفئات الدلالية منخفضة
 
-- meaning_error, terminology, named_entity and polarity_error have **0–1% same-category recall**. They need semantic judgement or a termbase/entity table.
-- The audit had no termbase or entity table, so the `terminology` and `named_entity` checks are **not exercised** here.
-- The 16–20% of these segments that are "blocked by any check" are blocked by co-occurring defects, mostly leakage.
-- Polarity: the cue check catches 1 of 90 polarity errors.
-  - Most of these errors are lexical reversals, such as easy↔hard or "disservice".
-  - The others sit in long segments that also contain other negations.
-  - Rebuild units are at most 400 chars, which should help this check. That has not been measured.
-- Omission: 62.6% of omission segments are blocked, mostly through leakage. The length and sentence checks on their own catch 1.5%.
-  - The gold omissions are partial drops inside long segments.
-  - On the calibration split, their length and sentence ratios overlap with those of the corrected translations.
+- `meaning_error` و`terminology` و`named_entity` و`polarity_error` نسبة التقاطها **0–1% بالفئة نفسها**. تحتاج حكمًا دلاليًا أو termbase وجدول أسماء.
+- لم يكن في المراجعة termbase ولا جدول أسماء، فلم **يُختبر** فحصا `terminology` و`named_entity` هنا.
+- الـ 16–20% من هذه المقاطع التي «أوقفها أي فحص» أُوقفت بسبب عيوب مصاحبة، معظمها تسريب.
+- النفي: فحص المؤشرات يلتقط 1 من 90 خطأ قطبية.
+  - معظم هذه الأخطاء انعكاسات معجمية، مثل سهل↔صعب أو «disservice».
+  - الباقي في مقاطع طويلة فيها نفي آخر.
+  - وحدات إعادة البناء لا تتجاوز 400 حرف، وهذا يُتوقع أن يساعد هذا الفحص. لم يُقَس ذلك بعد.
+- الحذف: 62.6% من مقاطع الحذف أُوقفت، معظمها عبر التسريب. فحصا الطول وعدد الجمل وحدهما يلتقطان 1.5%.
+  - حالات الحذف في مجموعة التقييم حذف جزئي داخل مقاطع طويلة.
+  - في قسم المعايرة تتداخل نسب طولها وعدد جملها مع نسب الترجمات المصحَّحة.
 
-## Calibration and generalisation
+## المعايرة والتعميم
 
-- **Length ratio.** Bounds are on non-space characters and sit *outside* the range observed in corrected and approved translations on the calibration split.
-  - Prose with a source of 40 or more chars: observed 0.55–1.37, bounds 0.50–1.60.
-  - Sources under 40 chars: bounds 0.35–2.50.
-  - Sources under 12 chars are skipped.
-- **Sentence check.** It fires when the source has 3 or more sentences and the target has at most 50% of that count.
-  - On the calibration split, a 70% threshold would flag 13 of 371 corrected translations but only 7 of 157 gold omissions, so 50% was kept.
-- **Rules added after reading calibration-split misses and false positives.** Each is a general rule:
-  - a decade written as a bare year ("1970s" → "1970") is a number error, unless the target also has the Arabic decade word;
-  - Latin text glued to Arabic inside one token is flagged;
-  - a Latin-only gloss in parentheses or quotes is not counted as untranslated;
-  - a surplus copy of a number that is in the source is only minor;
-  - a negation stem with a pronoun suffix counts as a negation cue.
-- **Calibration vs test.** The test split is consistent:
-  - false accepts stopped: 29.9% on test, 30.3% on calibration;
-  - false positives on corrected translations: 2.5% on test, 1.9% on calibration;
-  - date_error recall: 72% on test, 88% on all rows. This gap is how far the decade rule generalises.
-- **Leak patterns are not a held-out measure.** They were built from leak excerpts across **all** rows, as the brief asked.
-  - They are Arabic renderings of the retired prompt (protected marker, source label, inventory list, retry feedback, JSON). They are not book text.
-- **Remaining false positives on corrected translations:**
-  - English bibliographic titles kept verbatim;
-  - lexically expressed negation, e.g. "little or no influence".
-  - Both occur mostly in reference-like rows. Rebuild `reference`/`toc`/`index` units skip the script and untranslated checks.
+- **نسبة الطول.** الحدود على الحروف دون المسافات، وتقع *خارج* المدى الملاحظ في الترجمات المصحَّحة والمعتمدة في قسم المعايرة.
+  - النثر بمصدر 40 حرفًا فأكثر: المدى الملاحظ 0.55–1.37، والحدود 0.50–1.60.
+  - المصادر الأقصر من 40 حرفًا: الحدود 0.35–2.50.
+  - المصادر الأقصر من 12 حرفًا لا تُفحص.
+- **فحص الجمل.** يُطلق حين يحتوي المصدر 3 جمل أو أكثر، ولا تتجاوز جمل الهدف 50% من عددها.
+  - في قسم المعايرة، عتبة 70% كانت ستعلّم 13 من 371 ترجمة مصحَّحة، ولا تلتقط إلا 7 من 157 حالة حذف، فبقيت 50%.
+- **قواعد أُضيفت بعد قراءة الحالات الفائتة والإنذارات الكاذبة في قسم المعايرة.** كل قاعدة عامة:
+  - العقد المكتوب كسنة مجردة («1970s» ← «1970») خطأ رقمي، إلا إذا احتوى الهدف كلمة العقد العربية؛
+  - نص لاتيني ملتصق بعربي داخل كلمة واحدة يُعلَّم؛
+  - شرح لاتيني فقط بين قوسين أو علامتي تنصيص لا يُعدّ غير مترجم؛
+  - نسخة زائدة من رقم موجود في المصدر خطأ بسيط فقط؛
+  - جذر النفي مع ضمير متصل يُعدّ مؤشر نفي.
+- **المعايرة مقابل الاختبار.** قسم الاختبار متسق:
+  - القبول الخاطئ الذي أُوقف: 29.9% في الاختبار، و30.3% في المعايرة؛
+  - الإنذار الكاذب على المصحَّحة: 2.5% في الاختبار، و1.9% في المعايرة؛
+  - التقاط `date_error`: ‏72% في الاختبار، و88% على الكل. هذه الفجوة تبيّن حدود تعميم قاعدة العقود.
+- **أنماط التسريب ليست قياسًا محجوزًا.** بُنيت من مقتطفات التسريب في **كل** الصفوف، كما طلب التكليف.
+  - هي صياغات عربية للـ prompt المتقاعد (علامة محمية، عنوان المصدر، قائمة الجرد، ملاحظات إعادة المحاولة، JSON). ليست نص كتاب.
+- **الإنذارات الكاذبة المتبقية على الترجمات المصحَّحة:**
+  - عناوين مراجع إنجليزية محفوظة كما هي؛
+  - نفي معبَّر عنه معجميًا، مثل «little or no influence».
+  - كلاهما يقع غالبًا في صفوف شبيهة بالمراجع. وحدات `reference` و`toc` و`index` في إعادة البناء تتخطى فحصي الخط والنص غير المترجم.
 
-## Limitations
+## القيود
 
-- Gold rows are pre-rebuild page segments:
-  - the median length is 160 chars, and 695 rows are over 1000 chars;
-  - rebuild units are sentence-based and at most 400 chars.
-- Recall is measured per segment. "Blocked" means some major or critical deterministic issue fired, not necessarily on the gold error's span.
-- No termbase, no entity table, no rebuild footnote handling and no QE were involved.
+- صفوف مجموعة التقييم مقاطع صفحات من قبل إعادة البناء:
+  - وسيط طولها 160 حرفًا، و695 صفًا تتجاوز 1000 حرف؛
+  - وحدات إعادة البناء جُملية ولا تتجاوز 400 حرف.
+- الالتقاط مقيس على مستوى المقطع. «أُوقف» يعني أن فحصًا حتميًا ما أطلق خطأ major أو critical، لا بالضرورة على موضع الخطأ في مجموعة التقييم.
+- لم يدخل في القياس termbase ولا جدول أسماء ولا معالجة الحواشي الجديدة ولا فحص دلالي.
 
-## Open
+## المفتوح
 
-- Run semantic QE on the same set (T-TR-03/06) and calibrate its thresholds. Policy never accepts engine output without QE.
-- Build a termbase-aware addition check, which would cover leakage miss 2 and catalogue §2.5.
-- Add English and Arabic number-word parsing to raise number_error recall.
+- تشغيل الفحص الدلالي على المجموعة نفسها (T-TR-03/06) ومعايرة عتباته. سياسة القرار لا تقبل مخرج المحرك أبدًا دون فحص دلالي.
+- بناء فحص إضافة يعتمد على الـ termbase، يغطي الحالة الفائتة 2 والقسم §2.5 من الكتالوج.
+- إضافة تحليل الأعداد المكتوبة بالكلمات بالإنجليزية والعربية لرفع التقاط `number_error`.
 
 ---
 
-## Generated tables (`b2c_translation.evaluation`)
+## الجداول المولَّدة (`b2c_translation.evaluation`)
 
-Gold set: `/mnt/wsl/b2cdata/eval-datasets/translation-audit-2026-10-24/gold.jsonl` (3396 rows; 27 rows without a pipeline target skipped for (a)). Leak patterns version `2026-10-24.1`. Checks: empty_target, prompt_leakage, foreign_script, latin_not_in_source, untranslated_english, numbers, footnote_markers, length_ratio, sentence_alignment, repetition, terminology, named_entity, brackets, quotes, polarity.
+مجموعة التقييم: `/mnt/wsl/b2cdata/eval-datasets/translation-audit-2026-10-24/gold.jsonl` (3396 صفًا؛ تُخطِّي 27 صفًا بلا مخرج pipeline في (أ)). إصدار أنماط التسريب `2026-10-24.1`. الفحوص: empty_target، prompt_leakage، foreign_script، latin_not_in_source، untranslated_english، numbers، footnote_markers، length_ratio، sentence_alignment، repetition، terminology، named_entity، brackets، quotes، polarity.
 
-A segment counts as *blocked* when any check raises a major or critical issue. *Same-category* means the blocking issue has the gold category (date_error -> number_error, segmentation -> omission/addition, other:* -> foreign_script, footnote_marker -> footnote_marker/number_error, untranslated_english -> untranslated_english/foreign_script).
+يُعدّ المقطع *موقوفًا* حين يطلق أي فحص خطأ major أو critical. و*بالفئة نفسها* تعني أن الخطأ الموقِف من فئة خطأ مجموعة التقييم (date_error ← number_error، وsegmentation ← omission/addition، وother:* ← foreign_script، وfootnote_marker ← footnote_marker/number_error، وuntranslated_english ← untranslated_english/foreign_script).
 
-## Recall on gold issues (major/critical, segment level, `pipeline_target`)
+## نسبة الالتقاط على أخطاء مجموعة التقييم (major/critical، على مستوى المقطع، على `pipeline_target`)
 
-### Split: all
+### القسم: الكل
 
-| category | positives | same-category | blocked by any check |
+| الفئة | المقاطع المصابة | التُقطت بالفئة نفسها | أوقفها أي فحص |
 |---|---:|---:|---:|
 | meaning_error | 1026 | 0.0% (0/1026) | 19.4% (199/1026) |
 | terminology | 716 | 0.0% (0/716) | 16.6% (119/716) |
@@ -133,9 +133,9 @@ A segment counts as *blocked* when any check raises a major or critical issue. *
 | fluency_style | 6 | 0.0% (0/6) | 0.0% (0/6) |
 | repetition | 6 | 16.7% (1/6) | 50.0% (3/6) |
 
-### Split: calibration
+### القسم: المعايرة
 
-| category | positives | same-category | blocked by any check |
+| الفئة | المقاطع المصابة | التُقطت بالفئة نفسها | أوقفها أي فحص |
 |---|---:|---:|---:|
 | meaning_error | 713 | 0.0% (0/713) | 19.1% (136/713) |
 | terminology | 497 | 0.0% (0/497) | 14.9% (74/497) |
@@ -157,9 +157,9 @@ A segment counts as *blocked* when any check raises a major or critical issue. *
 | repetition | 6 | 16.7% (1/6) | 50.0% (3/6) |
 | fluency_style | 5 | 0.0% (0/5) | 0.0% (0/5) |
 
-### Split: test
+### القسم: الاختبار
 
-| category | positives | same-category | blocked by any check |
+| الفئة | المقاطع المصابة | التُقطت بالفئة نفسها | أوقفها أي فحص |
 |---|---:|---:|---:|
 | meaning_error | 313 | 0.0% (0/313) | 20.1% (63/313) |
 | terminology | 219 | 0.0% (0/219) | 20.5% (45/219) |
@@ -180,9 +180,9 @@ A segment counts as *blocked* when any check raises a major or critical issue. *
 | segmentation | 4 | 25.0% (1/4) | 75.0% (3/4) |
 | fluency_style | 1 | 0.0% (0/1) | 0.0% (0/1) |
 
-### Split: book1
+### القسم: الكتاب 1
 
-| category | positives | same-category | blocked by any check |
+| الفئة | المقاطع المصابة | التُقطت بالفئة نفسها | أوقفها أي فحص |
 |---|---:|---:|---:|
 | meaning_error | 298 | 0.0% (0/298) | 16.8% (50/298) |
 | terminology | 235 | 0.0% (0/235) | 14.0% (33/235) |
@@ -204,9 +204,9 @@ A segment counts as *blocked* when any check raises a major or critical issue. *
 | repetition | 4 | 0.0% (0/4) | 50.0% (2/4) |
 | segmentation | 2 | 0.0% (0/2) | 0.0% (0/2) |
 
-### Split: book2
+### القسم: الكتاب 2
 
-| category | positives | same-category | blocked by any check |
+| الفئة | المقاطع المصابة | التُقطت بالفئة نفسها | أوقفها أي فحص |
 |---|---:|---:|---:|
 | meaning_error | 728 | 0.0% (0/728) | 20.5% (149/728) |
 | terminology | 481 | 0.0% (0/481) | 17.9% (86/481) |
@@ -228,36 +228,36 @@ A segment counts as *blocked* when any check raises a major or critical issue. *
 | fluency_style | 2 | 0.0% (0/2) | 0.0% (0/2) |
 | repetition | 2 | 50.0% (1/2) | 50.0% (1/2) |
 
-## False positives
+## الإنذارات الكاذبة
 
-`corrected` = corrected translations from the audit; `approved` = pipeline targets the audit judged `correct`.
+`corrected` = الترجمات المصحَّحة من المراجعة؛ `approved` = مخرجات الـ pipeline التي حكمت عليها المراجعة بأنها `correct`.
 
-| split | set | flagged (any major/critical) | leakage | top checks |
+| القسم | المجموعة | عُلِّمت (أي major/critical) | تسريب | أكثر الفحوص إطلاقًا |
 |---|---|---:|---:|---|
-| all | corrected | 2.1% (19/923) | 0.0% (0/923) | untranslated_english 6, polarity 5, numbers 3, repetition 3, sentence_alignment 3 |
-| all | approved | 0.9% (7/797) | 0.1% (1/797) | untranslated_english 6, prompt_leakage 1, latin_not_in_source 1, numbers 1 |
-| calibration | corrected | 1.9% (12/645) | 0.0% (0/645) | untranslated_english 4, polarity 4, numbers 2, repetition 2, sentence_alignment 2 |
-| calibration | approved | 0.9% (5/558) | 0.0% (0/558) | untranslated_english 5 |
-| test | corrected | 2.5% (7/278) | 0.0% (0/278) | untranslated_english 2, latin_not_in_source 1, sentence_alignment 1, repetition 1, polarity 1 |
-| test | approved | 0.8% (2/239) | 0.4% (1/239) | untranslated_english 1, prompt_leakage 1, latin_not_in_source 1, numbers 1 |
-| book1 | corrected | 5.7% (9/159) | 0.0% (0/159) | untranslated_english 4, latin_not_in_source 2, numbers 2, repetition 2, polarity 1 |
-| book1 | approved | 0.0% (0/83) | 0.0% (0/83) | - |
-| book2 | corrected | 1.3% (10/764) | 0.0% (0/764) | polarity 4, sentence_alignment 2, untranslated_english 2, repetition 1, numbers 1 |
-| book2 | approved | 1.0% (7/714) | 0.1% (1/714) | untranslated_english 6, prompt_leakage 1, latin_not_in_source 1, numbers 1 |
+| الكل | corrected | 2.1% (19/923) | 0.0% (0/923) | untranslated_english 6, polarity 5, numbers 3, repetition 3, sentence_alignment 3 |
+| الكل | approved | 0.9% (7/797) | 0.1% (1/797) | untranslated_english 6, prompt_leakage 1, latin_not_in_source 1, numbers 1 |
+| المعايرة | corrected | 1.9% (12/645) | 0.0% (0/645) | untranslated_english 4, polarity 4, numbers 2, repetition 2, sentence_alignment 2 |
+| المعايرة | approved | 0.9% (5/558) | 0.0% (0/558) | untranslated_english 5 |
+| الاختبار | corrected | 2.5% (7/278) | 0.0% (0/278) | untranslated_english 2, latin_not_in_source 1, sentence_alignment 1, repetition 1, polarity 1 |
+| الاختبار | approved | 0.8% (2/239) | 0.4% (1/239) | untranslated_english 1, prompt_leakage 1, latin_not_in_source 1, numbers 1 |
+| الكتاب 1 | corrected | 5.7% (9/159) | 0.0% (0/159) | untranslated_english 4, latin_not_in_source 2, numbers 2, repetition 2, polarity 1 |
+| الكتاب 1 | approved | 0.0% (0/83) | 0.0% (0/83) | - |
+| الكتاب 2 | corrected | 1.3% (10/764) | 0.0% (0/764) | polarity 4, sentence_alignment 2, untranslated_english 2, repetition 1, numbers 1 |
+| الكتاب 2 | approved | 1.0% (7/714) | 0.1% (1/714) | untranslated_english 6, prompt_leakage 1, latin_not_in_source 1, numbers 1 |
 
-## False accepts stopped by deterministic checks alone
+## القبول الخاطئ الذي توقفه الفحوص الحتمية وحدها
 
-| split | accepted major/critical segments | stopped |
+| القسم | مقاطع مقبولة فيها major/critical | أُوقفت |
 |---|---:|---:|
-| all | 1904 | 30.2% (575/1904) |
-| calibration | 1342 | 30.3% (407/1342) |
-| test | 562 | 29.9% (168/562) |
-| book1 | 504 | 17.9% (90/504) |
-| book2 | 1400 | 34.6% (485/1400) |
+| الكل | 1904 | 30.2% (575/1904) |
+| المعايرة | 1342 | 30.3% (407/1342) |
+| الاختبار | 562 | 29.9% (168/562) |
+| الكتاب 1 | 504 | 17.9% (90/504) |
+| الكتاب 2 | 1400 | 34.6% (485/1400) |
 
-## Calibration (length ratio, corrected translations, calibration split, source >= 40 chars)
+## المعايرة (نسبة الطول، الترجمات المصحَّحة، قسم المعايرة، المصدر ≥ 40 حرفًا)
 
-| kind | observed non-space ratio target/source | configured bounds |
+| النوع | النسبة الملاحظة (الهدف/المصدر، دون المسافات) | الحدود المضبوطة |
 |---|---|---|
 | list_item | n=106, min 0.69, p1 0.72, median 0.88, p99 1.23, max 1.49 | (0.5, 1.7) |
 | prose | n=374, min 0.64, p1 0.69, median 0.82, p99 1.09, max 1.34 | (0.5, 1.6) |

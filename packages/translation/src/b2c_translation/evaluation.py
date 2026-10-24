@@ -177,46 +177,50 @@ def _quantiles(values: list[float]) -> str:
     return f"n={len(v)}, min {v[0]:.2f}, p1 {pick(0.01):.2f}, median {pick(0.5):.2f}, p99 {pick(0.99):.2f}, max {v[-1]:.2f}"
 
 
+_SPLIT_AR = {"all": "الكل", "calibration": "المعايرة", "test": "الاختبار", "book1": "الكتاب 1", "book2": "الكتاب 2"}
+
+
 def render_markdown(report: EvalReport, *, gold_path: str = "") -> str:
+    """Report text is Arabic like the rest of docs/ and eval/reports/; identifiers stay as in the code."""
     splits = list(report.recall)
     lines = [
-        "# Translation v2 deterministic QA: gold-set evaluation",
+        "# ضبط جودة الترجمة v2: تقييم الفحوص الحتمية على مجموعة التقييم",
         "",
-        f"Gold set: `{gold_path}` ({report.rows_total} rows; {report.rows_skipped} rows without a "
-        f"pipeline target skipped for (a)). Leak patterns version `{LEAK_PATTERNS_VERSION}`. "
-        f"Checks: {', '.join(c.check_id for c in DEFAULT_CHECKS)}.",
+        f"مجموعة التقييم: `{gold_path}` ({report.rows_total} صفًا؛ تُخطِّي {report.rows_skipped} صفًا بلا "
+        f"مخرج pipeline في (أ)). إصدار أنماط التسريب `{LEAK_PATTERNS_VERSION}`. "
+        f"الفحوص: {'، '.join(c.check_id for c in DEFAULT_CHECKS)}.",
         "",
-        "A segment counts as *blocked* when any check raises a major or critical issue. "
-        "*Same-category* means the blocking issue has the gold category (date_error -> number_error, "
-        "segmentation -> omission/addition, other:* -> foreign_script, footnote_marker -> footnote_marker/number_error, "
-        "untranslated_english -> untranslated_english/foreign_script).",
+        "يُعدّ المقطع *موقوفًا* حين يطلق أي فحص خطأ major أو critical. و*بالفئة نفسها* تعني أن الخطأ "
+        "الموقِف من فئة خطأ مجموعة التقييم (date_error ← number_error، وsegmentation ← omission/addition، "
+        "وother:* ← foreign_script، وfootnote_marker ← footnote_marker/number_error، "
+        "وuntranslated_english ← untranslated_english/foreign_script).",
         "",
-        "## Recall on gold issues (major/critical, segment level, `pipeline_target`)",
+        "## نسبة الالتقاط على أخطاء مجموعة التقييم (major/critical، على مستوى المقطع، على `pipeline_target`)",
         "",
     ]
     for split in splits:
-        lines += [f"### Split: {split}", "", "| category | positives | same-category | blocked by any check |",
+        lines += [f"### القسم: {_SPLIT_AR.get(split, split)}", "", "| الفئة | المقاطع المصابة | التُقطت بالفئة نفسها | أوقفها أي فحص |",
                   "|---|---:|---:|---:|"]
         for category, r in sorted(report.recall[split].items(), key=lambda kv: -kv[1].positives):
             lines.append(f"| {category} | {r.positives} | {_pct(r.detected, r.positives)} | "
                          f"{_pct(r.blocked_any, r.positives)} |")
         lines.append("")
-    lines += ["## False positives", "",
-              "`corrected` = corrected translations from the audit; `approved` = pipeline targets the audit "
-              "judged `correct`.", "",
-              "| split | set | flagged (any major/critical) | leakage | top checks |", "|---|---|---:|---:|---|"]
+    lines += ["## الإنذارات الكاذبة", "",
+              "`corrected` = الترجمات المصحَّحة من المراجعة؛ `approved` = مخرجات الـ pipeline التي حكمت عليها "
+              "المراجعة بأنها `correct`.", "",
+              "| القسم | المجموعة | عُلِّمت (أي major/critical) | تسريب | أكثر الفحوص إطلاقًا |", "|---|---|---:|---:|---|"]
     for split in splits:
         for name, fp in report.false_positives[split].items():
             top = ", ".join(f"{k} {v}" for k, v in fp.by_check.most_common(5)) or "-"
-            lines.append(f"| {split} | {name} | {_pct(fp.flagged, fp.total)} | "
+            lines.append(f"| {_SPLIT_AR.get(split, split)} | {name} | {_pct(fp.flagged, fp.total)} | "
                          f"{_pct(fp.by_check.get('prompt_leakage', 0), fp.total)} | {top} |")
-    lines += ["", "## False accepts stopped by deterministic checks alone", "",
-              "| split | accepted major/critical segments | stopped |", "|---|---:|---:|"]
+    lines += ["", "## القبول الخاطئ الذي توقفه الفحوص الحتمية وحدها", "",
+              "| القسم | مقاطع مقبولة فيها major/critical | أُوقفت |", "|---|---:|---:|"]
     for split in splits:
         fa = report.false_accepts[split]
-        lines.append(f"| {split} | {fa.total} | {_pct(fa.stopped, fa.total)} |")
-    lines += ["", "## Calibration (length ratio, corrected translations, calibration split, source >= 40 chars)", "",
-              "| kind | observed non-space ratio target/source | configured bounds |", "|---|---|---|"]
+        lines.append(f"| {_SPLIT_AR.get(split, split)} | {fa.total} | {_pct(fa.stopped, fa.total)} |")
+    lines += ["", "## المعايرة (نسبة الطول، الترجمات المصحَّحة، قسم المعايرة، المصدر ≥ 40 حرفًا)", "",
+              "| النوع | النسبة الملاحظة (الهدف/المصدر، دون المسافات) | الحدود المضبوطة |", "|---|---|---|"]
     for kind, values in sorted(report.calibration.items()):
         lines.append(f"| {kind} | {_quantiles(values)} | {LENGTH_RATIO_BOUNDS.get(kind)} |")
     lines.append("")

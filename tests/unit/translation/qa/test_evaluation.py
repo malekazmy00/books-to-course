@@ -42,7 +42,7 @@ def test_markdown_report_has_numbers_but_no_text(tmp_path):
     out = tmp_path / "r.md"
     assert E.main(["--gold", str(FIXTURE), "--out", str(out)]) == 0
     md = out.read_text(encoding="utf-8")
-    assert "prompt_leakage" in md and "False accepts" in md and "Calibration" in md
+    assert "prompt_leakage" in md and "القبول الخاطئ" in md and "المعايرة" in md
     for row in E.load_gold(FIXTURE):
         assert row["source"] not in md
         if row["pipeline_target"]:

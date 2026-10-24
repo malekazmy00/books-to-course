@@ -1130,7 +1130,11 @@ def create_app(
         draft = await ingestion_outline(workflow_id)
         options = request
         draft_outline = CourseOutline.model_validate(draft["outline"])
-        selected_supplementary_ids = list(options.supplementary_workflow_ids)
+        # The selection is a set; keep the draft's order for the books it lists.
+        selected = set(options.supplementary_workflow_ids)
+        selected_supplementary_ids = (
+            [book_id for book_id in draft_outline.supplementary_book_ids if book_id in selected]
+            + sorted(selected - set(draft_outline.supplementary_book_ids)))
         draft_outline = CourseOutline.model_validate({
             **draft_outline.model_dump(mode="python"),
             "supplementary_book_ids": selected_supplementary_ids,
@@ -1185,7 +1189,8 @@ def create_app(
         if (
             outline.course_id != draft.course_id
             or outline.spine_book_id != draft.spine_book_id
-            or outline.supplementary_book_ids != draft.supplementary_book_ids
+            or len(set(outline.supplementary_book_ids)) != len(outline.supplementary_book_ids)
+            or set(outline.supplementary_book_ids) != set(draft.supplementary_book_ids)
         ):
             raise HTTPException(status_code=422, detail="reviewed outline identity does not match the draft")
         system_review = None

@@ -7,8 +7,9 @@ services:
       B2C_HY_TRANSLATION_ENABLED: "true"
       B2C_HY_TRANSLATION_BASE_URL: http://hy-translation:3007/v1
     depends_on:
-      hy-translation: {condition: service_healthy}
-      hy-translation-worker: {condition: service_started}
+      # required: false — api must still start when the hy-translation profile is off
+      hy-translation: {condition: service_healthy, required: false}
+      hy-translation-worker: {condition: service_started, required: false}
 
   hy-translation:
     profiles: [hy-translation]
@@ -25,7 +26,8 @@ services:
         bind: {create_host_path: false}
     networks: [b2c_internal]
     mem_limit: 16g
-    cpus: 8
+    cpus: 4          # matches HY_CPU_THREADS=4 (rule 8)
+    cpu_shares: 512
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3007/health',timeout=5)"]
@@ -50,6 +52,7 @@ services:
     networks: [b2c_internal]
     mem_limit: 16g
     cpus: 4
+    cpu_shares: 512
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3007/health',timeout=5)"]
@@ -66,6 +69,7 @@ services:
     networks: [b2c_internal]
     mem_limit: 256m
     cpus: 0.5
+    cpu_shares: 512
     restart: unless-stopped
     depends_on:
       hy-translation: {condition: service_healthy}
@@ -167,6 +171,7 @@ services:
     networks: [b2c_internal]
     mem_limit: 12g
     cpus: 8
+    cpu_shares: 512
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3007/health',timeout=5)"]
@@ -191,6 +196,7 @@ services:
     networks: [b2c_internal]
     mem_limit: 12g
     cpus: 4
+    cpu_shares: 512
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3007/health',timeout=5)"]

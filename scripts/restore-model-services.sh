@@ -3,7 +3,11 @@
 set -euo pipefail
 cd /root/projects/book2course
 bash scripts/data-disk.sh check
-for container in b2c-fasih-tts-1 b2c-embeddinggemma-1 b2c-bge-embed; do
+# Only services of the profiles started at boot (PROFILES, as in the Makefile); starting
+# anything else here would bypass the rule-8 budget check done by `make start`.
+containers=()
+[[ " ${PROFILES:-local-llm} " == *" speech "* ]] && containers+=(b2c-fasih-tts-1)
+for container in "${containers[@]}"; do
   if ! docker inspect "$container" >/dev/null 2>&1; then
     printf '%s not configured; skipped\n' "$container"
     continue

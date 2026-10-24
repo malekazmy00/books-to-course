@@ -30,7 +30,8 @@ services:
         bind: {create_host_path: false}
     networks: [b2c_internal]
     mem_limit: 50g
-    cpus: 24
+    cpus: 8          # OMP/MKL use 4 threads; 24 only inflated the declared budget (rule 8)
+    cpu_shares: 512
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,json,sys; d=json.load(urllib.request.urlopen('http://127.0.0.1:3006/health',timeout=10)); sys.exit(0 if d.get('status')=='ok' else 1)"]
@@ -60,6 +61,7 @@ services:
     networks: [b2c_internal]
     mem_limit: 4g
     cpus: 4
+    cpu_shares: 512
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,json,sys; d=json.load(urllib.request.urlopen('http://127.0.0.1:3007/health',timeout=10)); sys.exit(0 if d.get('status')=='ok' else 1)"]
@@ -99,6 +101,7 @@ services:
     networks: [b2c_internal]
     mem_limit: 8g
     cpus: 8
+    cpu_shares: 512
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,json,sys; d=json.load(urllib.request.urlopen('http://127.0.0.1:3008/health',timeout=10)); sys.exit(0 if d.get('status')=='ok' else 1)"]

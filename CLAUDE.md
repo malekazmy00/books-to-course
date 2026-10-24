@@ -58,9 +58,16 @@ Docs are in Arabic with English technical terms. Before every work session, read
 ## Commands (created in Phase 0)
 
 ```
-make up / make down            # docker compose -p b2c --env-file .env -f docker/compose.yml ... only
+make up [PROFILES=local-llm|speech|hy-translation] [EXTERNAL=1]
+                               # build + start compose project b2c (data-disk + budget guarded)
+make start                     # same, without rebuilding (boot path: scripts/windows/start-b2c-stack.ps1)
+make down                      # stop every b2c service in every profile; volumes kept
+make budget                    # rule 8: fail if the selected profiles exceed 85 GiB / 40 CPUs
+make check                     # CI gate: ruff, import-linter, unit + contract tests, compose budget
 make test                      # all tests
 make test-unit | test-contract | test-golden | test-integration | test-e2e
-make eval PHASE=N              # runs the phase's eval suite, writes eval/reports/phase-N.md
-make bench-llm                 # Phase 1 benchmark protocol
+make eval PHASE=N              # runs the phase's eval suite; evidence in eval/reports/phase-N-evidence/
 ```
+
+Heavy model servers are in mutually exclusive compose profiles (`local-llm`, `speech`, `hy-translation`).
+The OpenRouter generation route lives only in `docker/compose.external-generation.yml` (`EXTERNAL=1`).

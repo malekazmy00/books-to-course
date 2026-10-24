@@ -1,6 +1,11 @@
 # Start only the B2C Compose project after its dedicated disk is mounted.
+param(
+    [string]$Distro = "B2C-On-D",
+    # Heavy-service profiles to start (Makefile PROFILES); must fit the rule-8 budget.
+    [string]$Profiles = "local-llm"
+)
 $ErrorActionPreference = "Stop"
-$distro = "B2C-On-D"
+$distro = $Distro
 $logPath = Join-Path $env:ProgramData "B2C\start-b2c-stack.log"
 New-Item -ItemType Directory -Path (Split-Path -Parent $logPath) -Force | Out-Null
 function Write-Log([string]$Message) {
@@ -15,7 +20,7 @@ while ((Get-Date) -lt $deadline) {
             Write-Log "Verified B2C data mount and Docker daemon; starting only Compose project b2c."
             $savedPreference = $ErrorActionPreference
             $ErrorActionPreference = "Continue"
-            $output = & wsl.exe -d $distro -- bash -lc "cd /root/projects/book2course && bash scripts/data-disk.sh check && docker compose -p b2c --env-file .env --profile speech --profile hy-translation -f docker/compose.yml -f docker/compose.observability.yml -f docker/compose.qa-local.yml -f docker/compose.speech.yml -f docker/compose.hy-translation.yml up -d --no-build && bash scripts/restore-model-services.sh && bash scripts/recover-lost-b2c-activities.sh && docker compose -p b2c --env-file .env --profile speech --profile hy-translation -f docker/compose.yml -f docker/compose.observability.yml -f docker/compose.qa-local.yml -f docker/compose.speech.yml -f docker/compose.hy-translation.yml restart cadvisor" 2>&1
+            $output = & wsl.exe -d $distro -- bash -lc "cd /root/projects/book2course && make start PROFILES='$Profiles' && PROFILES='$Profiles' bash scripts/restore-model-services.sh && bash scripts/recover-lost-b2c-activities.sh && docker restart b2c-cadvisor-1" 2>&1
             $result = $LASTEXITCODE
             $ErrorActionPreference = $savedPreference
             foreach ($line in $output) { Write-Log ([string]$line) }

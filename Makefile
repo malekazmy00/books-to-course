@@ -2,7 +2,20 @@
 SHELL := /bin/bash
 export PATH := $(HOME)/.local/bin:$(PATH)
 
-COMPOSE := docker compose -p b2c --env-file .env --profile speech --profile hy-translation -f docker/compose.yml -f docker/compose.observability.yml -f docker/compose.qa-local.yml -f docker/compose.speech.yml -f docker/compose.hy-translation.yml
+# Heavy model servers live in mutually exclusive profiles so the started set fits the
+# 85 GiB / 40 CPU budget (rule 8; `make budget` enforces it before every `make up`):
+#   local-llm (llama.cpp, 50g)   speech (fasih + renderer)   hy-translation (Hy-MT servers)
+# e.g.  make up                         -> core + local-llm
+#       make up PROFILES=speech         -> core + speech
+# EXTERNAL=1 adds the opt-in OpenRouter generation route (D-022); never on by default (rule 6).
+PROFILES ?= local-llm
+EXTERNAL ?= 0
+ALL_PROFILES := local-llm speech hy-translation surya mock
+COMPOSE_FILES := -f docker/compose.yml -f docker/compose.observability.yml -f docker/compose.qa-local.yml \
+	-f docker/compose.speech.yml -f docker/compose.hy-translation.yml \
+	$(if $(filter 1,$(EXTERNAL)),-f docker/compose.external-generation.yml)
+COMPOSE_BASE := docker compose -p b2c --env-file .env $(COMPOSE_FILES)
+COMPOSE := $(COMPOSE_BASE) $(foreach p,$(PROFILES),--profile $(p))
 PYTEST  := uv run pytest
 PHASE   ?= 0
 
@@ -11,7 +24,7 @@ define allow_empty
 	$(1) || { rc=$$?; [ $$rc -eq 5 ] && echo "(no tests yet)" || exit $$rc; }
 endef
 
-.PHONY: help env data-init build up down ps logs limits lint-imports test test-unit test-contract \
+.PHONY: help env data-init build up start down ps logs limits budget lint-imports test test-unit test-contract \
 	test-golden test-integration test-e2e eval bench-llm
 
 help:
@@ -21,17 +34,24 @@ env:                 ## create .env with random secrets (never overwrites)
 	@bash scripts/gen-env.sh
 
 build:
-	$(COMPOSE) build worker api generation-worker hy-translation hy-translation-worker
+	$(COMPOSE) build
 
 data-init:           ## once, after the data VHDX is mounted (D-020)
 	@bash scripts/data-disk.sh init
 
-up: env              ## start the b2c stack (refuses if the dedicated data disk is not mounted)
+budget:              ## rule 8: fail if the selected profiles exceed the RAM/CPU budget
+	@$(COMPOSE) config --format json | python3 scripts/check-budget.py
+
+up: env budget       ## build + start (refuses if the dedicated data disk is not mounted)
 	@bash scripts/data-disk.sh check
 	$(COMPOSE) up -d --build
 
-down:                ## stop the b2c stack (volumes kept; never -v here)
-	$(COMPOSE) down
+start: budget        ## boot path (scripts/windows/start-b2c-stack.ps1): no rebuild
+	@bash scripts/data-disk.sh check
+	$(COMPOSE) up -d --no-build
+
+down:                ## stop every b2c service in any profile (volumes kept; never -v here)
+	$(COMPOSE_BASE) $(foreach p,$(ALL_PROFILES),--profile $(p)) down
 
 ps:
 	$(COMPOSE) ps -a

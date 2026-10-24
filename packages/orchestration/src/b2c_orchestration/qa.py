@@ -29,6 +29,9 @@ with workflow.unsafe.imports_passed_through():
     from b2c_pedagogy.qa_generation import CourseQAResult, ScopeCheckpointError, ScopeResult, _derive_scopes, generate_course_qa
 
 
+QA_PROMPT_VERSION = "phase5-grounded-qa-v4"
+
+
 def _compatible_checkpoint_identity(stored: dict, current: dict, *, allow_model_switch: bool) -> bool:
     """Only model execution settings may change during explicit recovery."""
     if not isinstance(stored, dict):
@@ -223,8 +226,6 @@ class CourseQAActivities:
             "include_review_assessments": inp.include_review_assessments,
             "assessment_question_count": inp.assessment_question_count,
         }
-        key = stage_key("generate-course-qa", "3", [approved_ref.sha256], cache_config,
-                        model_id=self.gateway.model_id, prompt_version="phase5-lesson-enrichment-v3")
         source_index_identity = [
             {"chunk_id": chunk.chunk_id, "book_id": chunk.book_id, "role": chunk.role,
              "pages": chunk.pages, "text_sha256": hashlib.sha256(chunk.text.encode("utf-8")).hexdigest()}
@@ -241,12 +242,26 @@ class CourseQAActivities:
             ).hexdigest(),
             "model_id": self.gateway.model_id,
             "config": config,
-            "qa_prompt_version": "phase5-grounded-qa-v4",
+            "qa_prompt_version": QA_PROMPT_VERSION,
             "enrichment_prompt_version": "phase5-lesson-enrichment-v2",
         }
         checkpoint_fingerprint = hashlib.sha256(
             json.dumps(checkpoint_identity, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
+        # The final-result cache must change whenever the indexed evidence or
+        # the QA prompt changes; same chunk ids with re-indexed text used to
+        # reuse a stale artifact. Per-book cache_hit flags describe how the
+        # index run executed, not what it produced, so they are excluded.
+        stable_index_result = {**index_result, "books": {
+            book_id: {name: value for name, value in entry.items() if name != "cache_hit"}
+            for book_id, entry in index_result.get("books", {}).items()}}
+        cache_config["index_result_sha256"] = hashlib.sha256(
+            json.dumps(stable_index_result, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        cache_config["indexed_sources_sha256"] = checkpoint_identity["indexed_sources_sha256"]
+        cache_config["qa_prompt_version"] = QA_PROMPT_VERSION
+        key = stage_key("generate-course-qa", "3", [approved_ref.sha256], cache_config,
+                        model_id=self.gateway.model_id, prompt_version="phase5-lesson-enrichment-v3")
         try:
             workflow_id = activity.info().workflow_id
         except RuntimeError:
@@ -406,7 +421,7 @@ class CourseQAActivities:
             restored_scopes = load_scope_checkpoints()
             result = generate_course_qa(
                 outline, spine, chunks, self.gateway,
-                prompt_version="phase5-grounded-qa-v4",
+                prompt_version=QA_PROMPT_VERSION,
                 lesson_question_count=inp.lesson_question_count,
                 group_question_count=inp.group_question_count,
                 course_question_count=inp.course_question_count,
@@ -501,7 +516,7 @@ class CourseQAActivities:
                     status="paused", expected_lesson_ids=expected_ids,
                     covered_lesson_ids=sorted({lesson_id for scope in saved_scopes for lesson_id in scope.lesson_ids}),
                     scopes=saved_scopes, errors=[], model_id=self.gateway.model_id,
-                    prompt_version="phase5-grounded-qa-v4",
+                    prompt_version=QA_PROMPT_VERSION,
                     approved_outline_sha256=approved_ref.sha256, spine_parsed_sha256=parsed_ref.sha256,
                     spine_book_id=outline.spine_book_id,
                     retrieval_mode=inp.retrieval_mode, retrieval_top_k=inp.retrieval_top_k,

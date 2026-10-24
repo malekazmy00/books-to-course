@@ -112,3 +112,54 @@ def test_runtime_cometkiwi_not_configured_is_reported():
                                                                     model_path="/nope.ckpt", threshold=0.8)})
     with pytest.raises(NotConfigured):
         ProfileRuntime(profiles, gateway_factory=FakeGateway).estimator("kiwi")
+
+
+# ------------------------------------------------------------------ termbase proposer (D-028 principle 5)
+def test_term_proposer_only_when_the_profile_enables_it():
+    from b2c_translation.engines.base import TextCompletion
+    from b2c_translation.termbase import TermCandidate
+
+    from b2c_orchestration.translation_profiles import TolerantTermProposer
+
+    class AnsweringGateway(FakeGateway):
+        def __init__(self, profile, answer="تخطيط الإشارات", error=None):
+            super().__init__(profile)
+            self.answer, self.error = answer, error
+
+        def complete_text(self, messages, **kwargs):
+            if self.error is not None:
+                raise self.error
+            return TextCompletion(text=self.answer, model="m")
+
+    builtins = load_translation_profiles(SETTINGS, env={}).engines
+    proposing = EngineProfile(id="gemma-terms", kind="chat", provider="local", base_url="http://llm:8080/v1",
+                              model_id="gemma", propose_terms=True)
+    runtime = ProfileRuntime(TranslationProfiles(engines={**builtins, "gemma-terms": proposing}),
+                             gateway_factory=AnsweringGateway)
+    assert runtime.term_proposer("hy-mt2") is None and runtime.term_proposer("configured-llm") is None
+    proposer = runtime.term_proposer("gemma-terms")
+    assert isinstance(proposer, TolerantTermProposer) and runtime.term_proposer("gemma-terms") is proposer
+    candidate = TermCandidate(source="Signal Mapping", kind="term", frequency=3)
+    assert [p.target for p in proposer.propose(candidate)] == ["تخطيط الإشارات"]
+    with pytest.raises(UnknownProfile):
+        runtime.term_proposer("nope")
+
+    from b2c_llm_gateway import InvalidLLMOutput
+    proposer.gateway = AnsweringGateway(proposing, error=InvalidLLMOutput("bad", attempts=1, last_output="x", errors=[]))
+    assert proposer.propose(candidate) == []  # deterministic model failure: no proposal, no crash
+    proposer.gateway = AnsweringGateway(proposing, error=ConnectionError("down"))
+    with pytest.raises(ConnectionError):  # transient: the activity is retried
+        proposer.propose(candidate)
+
+
+def test_term_proposer_needs_a_local_chat_profile_and_stays_out_of_the_fingerprint():
+    with pytest.raises(ValueError):
+        EngineProfile(id="x", kind="plain_mt", provider="p", base_url="http://u/v1", model_id="m",
+                      template_id="hy-mt2", propose_terms=True)
+    with pytest.raises(ValueError):
+        EngineProfile(id="x", kind="chat", provider="p", base_url="https://api.example/v1", model_id="m",
+                      allow_remote=True, api_key_file="/k", propose_terms=True)
+    base = dict(id="x", kind="chat", provider="p", base_url="http://u/v1", model_id="m")
+    off = TranslationProfiles(engines={"x": EngineProfile(**base)})
+    on = TranslationProfiles(engines={"x": EngineProfile(**base, propose_terms=True)})
+    assert off.fingerprint("x", None) == on.fingerprint("x", None)

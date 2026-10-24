@@ -64,13 +64,14 @@ _DDL = (
 )
 
 _UPSERT = """INSERT INTO translation_unit_results
-    (run_id, unit_id, book_id, seq, decision, origin, decided_by, translation_json, drafts_json, updated_at)
-    VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s)
+    (run_id, unit_id, book_id, seq, decision, origin, decided_by, translation_json, drafts_json, updated_at,
+     termbase_digest)
+    VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s)
     ON CONFLICT (run_id, unit_id) DO UPDATE SET
         book_id = EXCLUDED.book_id, seq = EXCLUDED.seq, decision = EXCLUDED.decision,
         origin = EXCLUDED.origin, decided_by = EXCLUDED.decided_by,
         translation_json = EXCLUDED.translation_json, drafts_json = EXCLUDED.drafts_json,
-        updated_at = EXCLUDED.updated_at
+        updated_at = EXCLUDED.updated_at, termbase_digest = EXCLUDED.termbase_digest
     WHERE translation_unit_results.decided_by <> 'human' OR EXCLUDED.decided_by = 'human'"""
 
 _COLUMNS = "run_id, unit_id, book_id, seq, translation_json, drafts_json, updated_at"
@@ -82,8 +83,10 @@ _SELECT_BY_DECISION = (f"SELECT {_COLUMNS} FROM translation_unit_results WHERE r
                        "AND decision = ANY(%s) ORDER BY seq LIMIT %s OFFSET %s")
 _COUNT_BY_DECISION = "SELECT count(*) FROM translation_unit_results WHERE run_id = %s AND decision = ANY(%s)"
 _COUNTS = "SELECT decision, count(*) FROM translation_unit_results WHERE run_id = %s GROUP BY decision"
+# A policy result only counts as final for the approved termbase it was produced with: when
+# the locked terms change, the unit is translated again (human decisions always stay).
 _FINAL = """SELECT unit_id FROM translation_unit_results WHERE run_id = %s AND unit_id = ANY(%s)
-    AND (decision IN ('accepted', 'dropped', 'rejected') OR decided_by = 'human')"""
+    AND (decided_by = 'human' OR (decision IN ('accepted', 'dropped', 'rejected') AND termbase_digest = %s))"""
 _REVISION_ROWS = """SELECT unit_id, decision, decided_by, updated_at FROM translation_unit_results
     WHERE run_id = %s ORDER BY unit_id"""
 
@@ -198,8 +201,10 @@ class TranslationResultStore:
 
     # ------------------------------------------------------------------ unit results
     def upsert(self, run_id: str, book_id: str, translation: UnitTranslation,
-               drafts: Iterable[dict[str, Any]] = ()) -> bool:
-        """Insert or replace one unit result. Returns False when a human result was kept."""
+               drafts: Iterable[dict[str, Any]] = (), *, termbase_digest: str = "") -> bool:
+        """Insert or replace one unit result. Returns False when a human result was kept.
+
+        ``termbase_digest`` names the approved termbase the result was produced with."""
         _run_id(run_id)
         if not translation.unit_id.startswith(f"{book_id}:"):
             raise ValueError(f"unit {translation.unit_id!r} does not belong to book {book_id!r}")
@@ -207,7 +212,7 @@ class TranslationResultStore:
         drafts_payload = json.dumps(list(drafts), ensure_ascii=False)
         written = self._write(_UPSERT, (
             run_id, translation.unit_id, book_id, unit_seq(translation.unit_id), translation.decision,
-            translation.origin, translation.decided_by, payload, drafts_payload, self._clock()))
+            translation.origin, translation.decided_by, payload, drafts_payload, self._clock(), termbase_digest))
         return written > 0
 
     def fetch(self, run_id: str, unit_id: str) -> StoredUnitResult | None:
@@ -237,10 +242,12 @@ class TranslationResultStore:
     def counts(self, run_id: str) -> dict[str, int]:
         return {decision: int(n) for decision, n in self._rows(_COUNTS, (_run_id(run_id),))}
 
-    def final_unit_ids(self, run_id: str, unit_ids: Sequence[str]) -> set[str]:
+    def final_unit_ids(self, run_id: str, unit_ids: Sequence[str], *, termbase_digest: str = "") -> set[str]:
+        """Units not to translate again: human decisions, and final policy results produced
+        with the same approved termbase."""
         if not unit_ids:
             return set()
-        return {r[0] for r in self._rows(_FINAL, (_run_id(run_id), list(unit_ids)))}
+        return {r[0] for r in self._rows(_FINAL, (_run_id(run_id), list(unit_ids), termbase_digest))}
 
     def revision(self, run_id: str) -> str:
         """Digest of the run's current results (changes whenever any unit result changes)."""

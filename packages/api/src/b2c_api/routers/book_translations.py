@@ -11,7 +11,7 @@ from typing import Any, Literal
 
 from b2c_contracts import ArtifactRef, TranslationUnit
 from b2c_orchestration.queues import TRANSLATE_BOOK
-from b2c_orchestration.translate_book import (PARSED_STAGE, UNITS_STAGE, AssembleBookTranslationWorkflow,
+from b2c_orchestration.translate_book import (PARSED_STAGE, TERMBASE_QUERY, UNITS_STAGE, AssembleBookTranslationWorkflow,
                                               AssembleTranslationInput, TranslateBookInput, TranslateBookWorkflow,
                                               UnitsCache, assembly_workflow_id, translate_book_workflow_id,
                                               translation_run_id)
@@ -41,6 +41,9 @@ class BookTranslationRequest(BaseModel):
     qe_profile: str | None = Field(default=None, pattern=PROFILE_ID_PATTERN)
     max_unit_chars: int = Field(default=400, ge=40, le=4000)
     batch_size: int = Field(default=25, ge=1, le=200)
+    # D-028 principle 5: translation waits until the book termbase is reviewed (see book_termbase.py)
+    require_approved_termbase: bool = True
+    termbase_min_frequency: int = Field(default=1, ge=1, le=1000)
 
 
 class HumanReviewRequest(BaseModel):
@@ -146,7 +149,9 @@ def book_translations_router(ctx: ApiContext, router: Any = None) -> Any:
                                      target_language=request.target_language,
                                      engine_profile=request.engine_profile, qe_profile=request.qe_profile,
                                      max_unit_chars=request.max_unit_chars, batch_size=request.batch_size,
-                                     profile_fingerprint=fingerprint)
+                                     profile_fingerprint=fingerprint,
+                                     require_approved_termbase=request.require_approved_termbase,
+                                     termbase_min_frequency=request.termbase_min_frequency)
         except ValidationError as exc:
             raise HTTPException(status_code=422, detail="invalid translation request") from exc
         run_id = translation_run_id(inp)
@@ -165,16 +170,19 @@ def book_translations_router(ctx: ApiContext, router: Any = None) -> Any:
         counts.update(await db(result_store().counts, run_id))
         decided = sum(counts.values())
         counts["pending"] = None if run.unit_count is None else max(0, run.unit_count - decided)
-        status = None
+        status = termbase = None
         try:
             client = await ctx.get_temporal_client()
-            status = (await client.get_workflow_handle(run.workflow_id).describe()).status.name
+            handle = client.get_workflow_handle(run.workflow_id)
+            status = (await handle.describe()).status.name
+            if status == "RUNNING":
+                termbase = await handle.query(TERMBASE_QUERY)
         except Exception:
             log.warning("could not describe %s", run.workflow_id)
         return {"run_id": run.run_id, "course_id": run.course_id, "workflow_id": run.workflow_id,
                 "workflow_status": status, "book_id": run.book_id, "input": run.input_json,
                 "unit_count": run.unit_count, "counts": counts, "units_ref": run.units_ref,
-                "assembly": run.assembly, "updated_at": run.updated_at.isoformat()}
+                "assembly": run.assembly, "termbase": termbase, "updated_at": run.updated_at.isoformat()}
 
     @router.get("/v2/book-translations/{run_id}/review-queue")
     async def book_translation_review_queue(

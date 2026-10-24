@@ -74,7 +74,9 @@ def test_translate_book_worker_registers_new_names_on_its_own_queue(monkeypatch)
     assert captured["task_queue"] == TRANSLATE_BOOK
     assert captured["workflows"] == [TranslateBookWorkflow, AssembleBookTranslationWorkflow]
     names = sorted(fn.__temporal_activity_definition.name for fn in captured["activities"])
-    assert names == ["assemble_translation", "prepare_translation_units", "translate_unit_batch"]
+    assert names == ["assemble_translation", "build_book_termbase", "check_book_termbase",
+                     "prepare_translation_units", "translate_unit_batch"]
+    assert captured["activities"][0].__self__.termbase_store is not None
     assert captured["max_concurrent_activities"] == max_concurrent_activities(TRANSLATE_BOOK) == 1
 
 
@@ -99,6 +101,8 @@ def test_invalid_translation_profiles_do_not_stop_the_worker(monkeypatch, tmp_pa
     runtime = captured["activities"][0].__self__.runtime
     with pytest.raises(UnknownProfile):
         runtime.engine("hy-mt2")
+    with pytest.raises(UnknownProfile):
+        runtime.term_proposer("hy-mt2")
 
 
 def test_translation_gateway_factory_stays_local_by_default():

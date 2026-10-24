@@ -36,9 +36,11 @@ from b2c_translation.engines.mt import PlainMTEngine
 from b2c_translation.prompts import language_name
 from b2c_translation.qa import QualityEstimator
 from b2c_translation.qa.estimators import CometKiwiEstimator, LLMJudge
+from b2c_translation.termbase import GatewayTermProposer, Proposal, TermCandidate
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from b2c_contracts import EngineIdentity
+from b2c_llm_gateway import InvalidLLMOutput, LLMOutputTruncated, LLMRequestRejected
 
 PROFILE_ID_PATTERN = r"^[a-z0-9][a-z0-9-]{0,63}$"
 PROFILES_FILE_ENV = "B2C_TRANSLATION_PROFILES_FILE"
@@ -46,7 +48,9 @@ HY_PLAIN_URL_ENV = "B2C_HY_PLAIN_BASE_URL"
 HY_MT2_MODEL_ID = "tencent/Hy-MT2-1.8B"
 # Model card revision the PlainMTEngine template was verified against (engines/mt.py).
 HY_MT2_REVISION = "9a341cd1b679d3efd23b46e847b01745a71ed792"
-_SECRET_OR_TRANSPORT = {"api_key_file", "timeout_s"}
+# Not part of the fingerprint: secrets/transport, and the termbase proposer switch (it only adds
+# proposals for a human to approve; what translation uses is the approved-termbase digest).
+_SECRET_OR_TRANSPORT = {"api_key_file", "timeout_s", "propose_terms"}
 
 
 class UnknownProfile(LookupError):
@@ -82,11 +86,16 @@ class EngineProfile(_GatewayFields, _Profile):
     supports_repair: bool = False   # chat only
     max_source_chars: int = Field(default=1200, ge=40, le=20000)
     max_output_tokens: int = Field(default=4096, ge=64, le=32768)
+    # Ask this profile's model for termbase proposals of unresolved candidates (chat, local only).
+    propose_terms: bool = False
 
     @model_validator(mode="after")
     def _kind_rules(self) -> "EngineProfile":
         if not (self.provider and self.base_url and self.model_id):
             raise ValueError("engine profile needs provider, base_url and model_id")
+        if self.propose_terms and (self.kind != "chat" or self.allow_remote):
+            raise ValueError("propose_terms needs a local chat profile: the proposer sends book text "
+                             "with instructions to the model")
         if self.kind == "plain_mt":
             if not self.template_id:
                 raise ValueError("a plain_mt profile names its documented template_id")
@@ -189,6 +198,17 @@ def load_translation_profiles(settings: Any, *, env: Mapping[str, str] | None = 
     return TranslationProfiles(engines=engines, qe=qe)
 
 
+class TolerantTermProposer(GatewayTermProposer):
+    """A model answer that a retry cannot change (temperature 0, cached) yields no proposal
+    for that candidate instead of failing the whole termbase build."""
+
+    def propose(self, candidate: TermCandidate) -> list[Proposal]:
+        try:
+            return super().propose(candidate)
+        except (InvalidLLMOutput, LLMOutputTruncated, LLMRequestRejected):
+            return []
+
+
 GatewayFactory = Callable[[EngineProfile | QEProfile], TextCompletionGateway]
 
 
@@ -200,6 +220,7 @@ class ProfileRuntime:
         self._gateway_factory = gateway_factory
         self._engines: dict[str, TranslationEngine] = {}
         self._estimators: dict[tuple[str, str, str], QualityEstimator] = {}
+        self._proposers: dict[str, GatewayTermProposer | None] = {}
         self._lock = threading.Lock()
 
     def fingerprint(self, engine_profile: str, qe_profile: str | None) -> str:
@@ -218,6 +239,18 @@ class ProfileRuntime:
                                            profile.template_id or "", max_output_tokens=profile.max_output_tokens)
                 self._engines[profile_id] = engine
             return self._engines[profile_id]
+
+    def term_proposer(self, profile_id: str) -> GatewayTermProposer | None:
+        """The termbase proposer of an engine profile, or None unless the profile enables it."""
+        with self._lock:
+            if profile_id not in self._proposers:
+                profile = self.profiles.engine(profile_id)
+                proposer = None
+                if profile.propose_terms:
+                    proposer = TolerantTermProposer(self._gateway_factory(profile), profile.identity(),
+                                                    local_gateway_confirmed=not profile.allow_remote)
+                self._proposers[profile_id] = proposer
+            return self._proposers[profile_id]
 
     def estimator(self, profile_id: str | None, *, source_language: str = "en",
                   target_language: str = "ar") -> QualityEstimator | None:
@@ -242,5 +275,5 @@ class ProfileRuntime:
 
 
 __all__ = ["EngineProfile", "GatewayFactory", "HY_MT2_MODEL_ID", "HY_MT2_REVISION", "PROFILES_FILE_ENV",
-           "PROFILE_ID_PATTERN", "ProfileRuntime", "QEProfile", "TranslationProfiles", "UnknownProfile",
+           "PROFILE_ID_PATTERN", "ProfileRuntime", "QEProfile", "TolerantTermProposer", "TranslationProfiles", "UnknownProfile",
            "builtin_profiles", "load_translation_profiles"]

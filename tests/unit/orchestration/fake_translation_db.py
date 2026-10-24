@@ -53,14 +53,14 @@ class FakeConn:
             db.ddl += 1
             return FakeCursor()
         if sql == ts._UPSERT:
-            (run_id, unit_id, book_id, seq, decision, origin, decided_by, translation, drafts, at) = params
+            (run_id, unit_id, book_id, seq, decision, origin, decided_by, translation, drafts, at, digest) = params
             old = db.results.get((run_id, unit_id))
             if old is not None and old["decided_by"] == "human" and decided_by != "human":
                 return FakeCursor(rowcount=0)  # the ON CONFLICT ... WHERE guard
             db.results[(run_id, unit_id)] = dict(
                 run_id=run_id, unit_id=unit_id, book_id=book_id, seq=seq, decision=decision, origin=origin,
                 decided_by=decided_by, translation_json=json.loads(translation), drafts_json=json.loads(drafts),
-                updated_at=at)
+                updated_at=at, termbase_digest=digest)
             return FakeCursor(rowcount=1)
         if sql == ts._SELECT_ONE:
             run_id, unit_id = params
@@ -86,9 +86,10 @@ class FakeConn:
                 counts[r["decision"]] = counts.get(r["decision"], 0) + 1
             return FakeCursor(sorted(counts.items()))
         if sql == ts._FINAL:
-            run_id, ids = params
+            run_id, ids, digest = params
             return FakeCursor([(r["unit_id"],) for r in self._sorted(run_id) if r["unit_id"] in ids
-                               and (r["decision"] in ts.FINAL_DECISIONS or r["decided_by"] == "human")])
+                               and (r["decided_by"] == "human" or (r["decision"] in ts.FINAL_DECISIONS
+                                                                   and r["termbase_digest"] == digest))])
         if sql == ts._REVISION_ROWS:
             (run_id,) = params
             return FakeCursor([(r["unit_id"], r["decision"], r["decided_by"], r["updated_at"])

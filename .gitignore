@@ -7,3 +7,35 @@ models/*
 !models/.gitkeep
 .pytest_cache/
 docker/secrets/
+
+# tooling caches
+.ruff_cache/
+.mypy_cache/
+.import_linter_cache/
+
+# generated / private runtime artifacts (kept on disk, never versioned)
+outputs/
+*.apk
+*.aab
+*.wav
+*.mp3
+*.py.new
+*.bak
+*.orig
+*.tmp
+**/__pycache__/
+
+# private book content in diagnostics
+**/*private*.json
+eval/reports/terminology-rollout-saved-baseline-*.json
+eval/reports/live-translation-terminology-audit-*.json
+eval/reports/book2-body-structural-deferred-audit-*.json
+
+# android build products
+android/**/.cxx/
+android/**/build/
+android/**/.gradle/
+android/**/local.properties
+
+# emulator screenshots / UI dumps (summaries live in eval/reports/*.md)
+eval/android/

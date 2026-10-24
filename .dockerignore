@@ -7,3 +7,12 @@ models
 eval
 docs
 web
+outputs
+android
+eval/android
+*.apk
+*.wav
+*.mp3
+.ruff_cache
+.import_linter_cache
+.pytest_cache

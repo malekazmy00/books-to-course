@@ -10,6 +10,22 @@ from typing import Literal, Protocol
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
 from b2c_core.arabic_text import strip_arabic_marks
+from b2c_llm_gateway import (
+    InvalidLLMOutput,
+    LLMOutputTruncated,
+    LLMRequestRejected,
+    LLMUnavailable,
+    OpenRouterRateLimited,
+)
+
+# Failures a translation unit may recover from by retry, split or deferral:
+# per-request gateway outcomes plus validation (ValueError, incl. pydantic
+# ValidationError). Configuration errors (CloudProviderNotAllowed), budget
+# exhaustion, checkpoint/pause control flow and programming errors propagate.
+_RECOVERABLE_ERRORS: tuple[type[Exception], ...] = (
+    LLMUnavailable, InvalidLLMOutput, LLMOutputTruncated, LLMRequestRejected,
+    OpenRouterRateLimited, ValueError,
+)
 
 
 class TranslationGateway(Protocol):
@@ -976,9 +992,7 @@ def _request_translation_batch(
                         raise ValueError(str(completeness_issue["reason"]))
                     if terminology_violations(source.text, translated.text, request_glossary):
                         raise ValueError("terminology_mismatch")
-                except Exception as exc:
-                    if isinstance(exc, _TranslationCheckpointError) or getattr(exc, "type", None) == "StageCheckpointPaused":
-                        raise
+                except ValueError as exc:
                     last_error = exc
                     feedback_by_id[source.segment_id] = _make_retry_feedback(
                         source, by_id[source.segment_id].text if source.segment_id in by_id else "",
@@ -1005,17 +1019,17 @@ def _request_translation_batch(
                         })
             if all(source.segment_id in local or (checkpoint_full_units and source.segment_id in accepted_by_id) for source in pending):
                 return list(local.values()), len(local)
-        except Exception as exc:
-            if isinstance(exc, _TranslationCheckpointError) or getattr(exc, "type", None) == "StageCheckpointPaused":
-                raise
+        except _RECOVERABLE_ERRORS as exc:
             last_error = exc
             try:
                 setattr(exc, "translation_attempts", attempt)
-            except Exception:
+            except AttributeError:
                 pass
             if getattr(exc, "outcome_unknown", False):
                 break
-    assert last_error is not None
+    if last_error is None:
+        # Unreachable while attempts >= 1: every loop pass returns or records an error.
+        raise RuntimeError("translation batch exhausted without a recorded error")
     if feedback_by_id:
         raise _RetryableTranslationValidationError(_translation_error_reason(last_error), feedback_by_id) from last_error
     raise last_error
@@ -1113,9 +1127,7 @@ def _translate_adaptive_unit(
                 prompt_version=f"{prompt_version}:adaptive-{source.segment_id}:{child_path}",
                 progress_callback=progress_callback, attempts=2, deferred=True, checkpoint_full_units=False, target_language=target_language)
             translated = items[0]
-        except Exception as exc:
-            if isinstance(exc, _TranslationCheckpointError) or getattr(exc, "type", None) == "StageCheckpointPaused":
-                raise
+        except _RECOVERABLE_ERRORS:
             if depth + 1 >= 6 or (len(child.text) < 120 and _leading_heading_split(child.text) is None) or _split_translation_source(child.text, minimum_piece_chars=40 if len(child.text) < 600 else 150) is None:
                 raise
             translated = _translate_adaptive_unit(child, gateway, part_messages,
@@ -1179,7 +1191,8 @@ def translate_segments(
                            "suspect_segment_ids": [x["segment_id"] for x in suspect_details],
                            "suspect_segments": len(suspect_details), "suspect_details": suspect_details,
                            "completeness_policy": "English prose blocks in Arabic output are rejected; source_chars>=200 and target/source<0.45; conservative triage"})
-    number_checks = 0
+    # Units whose bounded adaptive split already failed in this run: never re-run it.
+    adaptive_failures: dict[str, Exception] = {}
 
     for batch_no, batch in enumerate(batches):
         resumed_items: list[TranslatedSegment] = []
@@ -1191,7 +1204,6 @@ def translate_segments(
             if (normalized.text.strip() and _number_tokens(source.text) == _number_tokens(normalized.text)
                 and translation_completeness_issue(source.text, normalized.text, target_language=validation_target_language) is None and _table_saved_valid(source.text, normalized.text) and not terminology_violations(source.text, normalized.text, glossary or {})):
                 resumed_items.append(normalized)
-                number_checks += 1
         accepted_by_id.update({item.segment_id: item for item in resumed_items})
         pending = [item for item in batch if item.segment_id not in accepted_by_id]
         if not pending:
@@ -1266,31 +1278,33 @@ def translate_segments(
                         "completed_citations": sorted({c for x in segments if x.segment_id in accepted_by_id for c in x.citations}),
                         "failed_segment_ids": [], "recovery_method": "adaptive_split",
                     })
-            except Exception as exc:
-                if isinstance(exc, _TranslationCheckpointError) or getattr(exc, "type", None) == "StageCheckpointPaused":
-                    raise
-                pass  # The normal/deferred path still retries this original.
+            except _RECOVERABLE_ERRORS as exc:
+                # The normal/deferred path still retries this original as a whole unit.
+                adaptive_failures[source.segment_id] = exc
         pending = [source for source in pending if source.segment_id not in accepted_by_id]
         if not pending:
             continue
         schema, messages = _translation_request_subset(schema, messages, pending, batch_no=batch_no)
         try:
             if len(pending) == 1 and (len(pending[0].text) > 2400 or _leading_heading_split(pending[0].text) is not None):
-                translated_items = [_translate_adaptive_unit(pending[0], gateway, messages,
-                    batch_no=batch_no, total_batches=total_batches, segments=segments,
-                    accepted_by_id=accepted_by_id, max_tokens=max_tokens,
-                    prompt_version=prompt_version, progress_callback=progress_callback, target_language=validation_target_language)]
-                checks = 1
+                if pending[0].segment_id in adaptive_failures:
+                    # Same unit, same split: defer instead of repeating identical requests.
+                    raise adaptive_failures[pending[0].segment_id]
+                try:
+                    translated_items = [_translate_adaptive_unit(pending[0], gateway, messages,
+                        batch_no=batch_no, total_batches=total_batches, segments=segments,
+                        accepted_by_id=accepted_by_id, max_tokens=max_tokens,
+                        prompt_version=prompt_version, progress_callback=progress_callback, target_language=validation_target_language)]
+                except _RECOVERABLE_ERRORS as exc:
+                    adaptive_failures[pending[0].segment_id] = exc
+                    raise
             else:
-                translated_items, checks = _request_translation_batch(
+                translated_items, _ = _request_translation_batch(
                     gateway, schema, messages, pending, batch_no=batch_no, total_batches=total_batches,
                     segments=segments, accepted_by_id=accepted_by_id, max_tokens=max_tokens,
                     prompt_version=prompt_version, progress_callback=progress_callback, attempts=2, target_language=validation_target_language,
                     deferred_batch_indexes=[item[0] + 1 for item in deferred_batches], checkpoint_batch=batch)
-            number_checks += checks
-        except Exception as exc:
-            if isinstance(exc, _TranslationCheckpointError) or getattr(exc, "type", None) == "StageCheckpointPaused":
-                raise
+        except _RECOVERABLE_ERRORS as exc:
             pending = [source for source in pending if source.segment_id not in accepted_by_id]
             schema, messages = _translation_request_subset(schema, messages, pending, batch_no=batch_no)
             retry_feedback = getattr(exc, "feedback_by_id", {})
@@ -1338,26 +1352,24 @@ def translate_segments(
                 # exact same source payload; proceed directly to bounded splitting.
                 if getattr(initial_error, "outcome_unknown", False):
                     raise initial_error
-                translated_items, checks = _request_translation_batch(
+                translated_items, _ = _request_translation_batch(
                     gateway, unit_schema, unit_messages, [source], batch_no=batch_no,
                     total_batches=total_batches, segments=segments, accepted_by_id=accepted_by_id,
                     max_tokens=max_tokens, prompt_version=prompt_version,
                     progress_callback=progress_callback, attempts=1, deferred=True,
                     deferred_batch_indexes=[item[0] + 1 for item in deferred_batches],
                     checkpoint_batch=batch, target_language=validation_target_language)
-                number_checks += checks
                 accepted_by_id.update({item.segment_id: item for item in translated_items})
-            except Exception as exc:
-                if isinstance(exc, _TranslationCheckpointError) or getattr(exc, "type", None) == "StageCheckpointPaused":
-                    raise
+            except _RECOVERABLE_ERRORS as exc:
                 if _is_bibliographic_fragment(source.text):
                     accepted_by_id[source.segment_id] = TranslatedSegment(
                         segment_id=source.segment_id, text=source.text)
-                    number_checks += 1
                     recovery_method = "source_preserved_reference"
                 elif len(source.text) < 120 and _leading_heading_split(source.text) is None and not _recognized_rating_table(source.text):
                     deferred_failures.append((batch_no, [source], exc))
                     continue
+                elif source.segment_id in adaptive_failures:
+                    deferred_failures.append((batch_no, [source], exc))
                 else:
                     try:
                         translated = _translate_adaptive_unit(
@@ -1367,11 +1379,9 @@ def translate_segments(
                             prompt_version=prompt_version, progress_callback=progress_callback,
                             target_language=validation_target_language)
                         accepted_by_id[source.segment_id] = translated
-                        number_checks += 1
                         recovery_method = "adaptive_split"
-                    except Exception as adaptive_exc:
-                        if isinstance(adaptive_exc, _TranslationCheckpointError) or getattr(adaptive_exc, "type", None) == "StageCheckpointPaused":
-                            raise
+                    except _RECOVERABLE_ERRORS as adaptive_exc:
+                        adaptive_failures[source.segment_id] = adaptive_exc
                         deferred_failures.append((batch_no, [source], adaptive_exc))
 
             # A deferred retry is isolated per source unit. Commit each repaired

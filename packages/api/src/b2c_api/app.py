@@ -1,6 +1,7 @@
 """HTTP interface for source-book ingestion."""
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import inspect
 import io
@@ -415,9 +416,15 @@ def create_app(
             app.state.artifact_store = ArtifactStore.from_settings(settings)
         return app.state.artifact_store
 
+    temporal_client_lock = asyncio.Lock()
+
     async def get_temporal_client() -> Any:
+        # Concurrent first requests must share one connection, not race to
+        # open several and leak all but the last.
         if app.state.temporal_client is None:
-            app.state.temporal_client = await temporal_connect(settings)
+            async with temporal_client_lock:
+                if app.state.temporal_client is None:
+                    app.state.temporal_client = await temporal_connect(settings)
         return app.state.temporal_client
 
     async def connected_temporal() -> Any:

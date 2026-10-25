@@ -104,6 +104,8 @@ class ScopeResult(BaseModel):
     items: list[GroundedQA] = []
     errors: list[str] = []
     attempts: int = 0
+    # The chunks handed to the generator (run-log evidence of lesson coverage, audit 03 C1).
+    source_chunk_ids: list[str] = []
 
 
 class CourseQAResult(BaseModel):
@@ -260,6 +262,8 @@ def _derive_scopes(outline: CourseOutline, spine_book: ParsedBook, chunks: list[
         raise ValueError("accepted outline and ParsedBook spine identity do not match")
     positions = {block.block_id: index for index, block in enumerate(spine_book.blocks)}
     supplementary_ids = set(outline.supplementary_book_ids)
+    # Notes are evidence of their own class (index v2, SCHEMA 1.5.0), never lesson content.
+    chunks = [chunk for chunk in chunks if chunk.evidence_class == "body"]
     for chunk in chunks:
         if chunk.book_id != spine_book.book_id and chunk.book_id not in supplementary_ids:
             raise ValueError(f"chunk {chunk.chunk_id} belongs to a book outside the accepted outline")
@@ -604,7 +608,10 @@ def generate_course_qa(
                     if scope_checkpoint_callback:
                         scope_checkpoint_callback(inherited_result)
                     continue
-            if scope_retriever is not None:
+            # A lesson's content is its whole accepted span (coverage by construction, audit 03
+            # C1): a title query over its own chunks only ever dropped content. Retrieval ranks
+            # cross-lesson scopes (group/course/assessments), where it chooses evidence.
+            if scope_retriever is not None and scope.kind != "lesson":
                 query = " ".join([scope.scope_title, *scope.lesson_titles]).strip()
                 ranked = list(scope_retriever(query, scope.chunks, retrieval_top_k))
                 eligible = {(chunk.book_id, chunk.role, chunk.chunk_id): chunk for chunk in scope.chunks}
@@ -689,7 +696,8 @@ def generate_course_qa(
                     completed = True
                     all_questions.update(accepted_questions)
                     completed_result = ScopeResult(scope_id=scope.scope_id, kind=scope.kind,
-                        lesson_ids=scope.lesson_ids, status="final", items=accepted, attempts=attempt)
+                        lesson_ids=scope.lesson_ids, status="final", items=accepted, attempts=attempt,
+                        source_chunk_ids=[chunk.chunk_id for chunk in scope.chunks])
                     successful.append(completed_result)
                     if scope_checkpoint_callback:
                         scope_checkpoint_callback(completed_result)
@@ -699,7 +707,8 @@ def generate_course_qa(
                 all_questions.update(accepted_questions)
                 failed.append(ScopeResult(scope_id=scope.scope_id, kind=scope.kind,
                     lesson_ids=scope.lesson_ids, status="failed", items=accepted, errors=errors,
-                    attempts=max_regeneration_rounds + 1))
+                    attempts=max_regeneration_rounds + 1,
+                    source_chunk_ids=[chunk.chunk_id for chunk in scope.chunks]))
         except (ScopeCheckpointError, OpenRouterQuotaExceeded, FreeTokenQuotaExceeded, OpenRouterRateLimited):
             raise
         except Exception as exc:  # noqa: BLE001 - fail closed with a machine-readable scope failure

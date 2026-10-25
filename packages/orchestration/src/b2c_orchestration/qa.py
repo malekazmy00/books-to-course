@@ -25,6 +25,7 @@ with workflow.unsafe.imports_passed_through():
     from .heartbeat import LONG_ACTIVITY_HEARTBEAT_TIMEOUT, activity_heartbeats
     from b2c_llm_gateway import LLMRequestRejected, OpenRouterQuotaExceeded, FreeTokenQuotaExceeded, OpenRouterRateLimited
     from b2c_indexing import PostgresChunkStore, QueryRetrievalService
+    from b2c_indexing.linking import SUPPLEMENT_LINK_POLICY, link_supplementary
     from b2c_pedagogy.lesson_enrichment import (LESSON_ENRICHMENT_PROMPT_VERSION, LessonEnrichment,
                                                 generate_lesson_enrichments)
     from b2c_pedagogy.qa_generation import CourseQAResult, ScopeCheckpointError, ScopeResult, _derive_scopes, generate_course_qa
@@ -445,6 +446,7 @@ class CourseQAActivities:
                     "retrieval_top_k": inp.retrieval_top_k})
                 raise _PartialQAResult({"course-qa.json": result.model_dump_json(indent=2).encode("utf-8")})
             enrichments = []
+            link_files: dict[str, bytes] = {}
             if inp.include_lesson_enrichment:
                 enrichment_scopes, _ = _derive_scopes(
                     outline, spine, chunks, lesson_question_count=inp.lesson_question_count,
@@ -454,17 +456,19 @@ class CourseQAActivities:
                 supplementary = [chunk for chunk in chunks if chunk.role == "supplementary"]
                 conflict_candidates = {}
                 if supplementary:
-                    for scope in enrichment_scopes:
-                        if scope.kind != "lesson" or (
-                            inp.lesson_ids is not None and scope.scope_id not in inp.lesson_ids
-                        ):
-                            continue
-                        query = scope.scope_title + " " + " ".join(
-                            chunk.text[:600] for chunk in scope.chunks[:4]
-                        )
-                        conflict_candidates[scope.scope_id] = retrieve_scope(
-                            query, supplementary, top_k=5, allow_no_hits=True
-                        )
+                    # R5 / audit 03 H1: a supplementary passage is linked only when its relevance
+                    # reaches the policy threshold; every candidate's judgement is stored.
+                    lessons = {scope.scope_id: scope.chunks for scope in enrichment_scopes
+                               if scope.kind == "lesson"
+                               and (inp.lesson_ids is None or scope.scope_id in inp.lesson_ids)}
+                    conflict_candidates, judgements = link_supplementary(lessons, supplementary)
+                    link_files["supplement-links.json"] = json.dumps({
+                        "policy": {"method": SUPPLEMENT_LINK_POLICY.method,
+                                   "threshold": SUPPLEMENT_LINK_POLICY.threshold,
+                                   "top_k": SUPPLEMENT_LINK_POLICY.top_k,
+                                   "version": SUPPLEMENT_LINK_POLICY.version, "calibrated": False},
+                        "judgements": [j.model_dump(mode="json") for j in judgements],
+                    }, ensure_ascii=False, indent=1).encode("utf-8")
                 enrichments = generate_lesson_enrichments(
                     outline, spine, chunks, self.gateway,
                     question_count=inp.lesson_mcq_count,
@@ -494,7 +498,7 @@ class CourseQAActivities:
                 "retrieval_model_id": inp.retrieval_model_id,
                 "retrieval_top_k": inp.retrieval_top_k})
             return {"course-qa.json": result.model_dump_json(indent=2).encode("utf-8"),
-                    "source-identity.json": source_identity_file(source_identity)}
+                    "source-identity.json": source_identity_file(source_identity), **link_files}
 
         try:
             try:

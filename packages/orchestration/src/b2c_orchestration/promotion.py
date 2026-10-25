@@ -18,7 +18,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from b2c_contracts import ArtifactRef, GateResult, OutlineQualityReport, ProducerIdentity, StageOutputRecord
+from b2c_contracts import (ArtifactRef, GateResult, IndexQualityReport, OutlineQualityReport, ProducerIdentity,
+                           StageOutputRecord)
 from b2c_core import get_logger
 from b2c_core.revision import code_revision as running_code_revision
 from b2c_core.revision import is_clean_revision
@@ -58,6 +59,21 @@ TRANSLATION_ASSEMBLY_POLICY = GatePolicy(
     gate_id="translate-book.unit-decisions", kind="deterministic",
     definition={"publishable_decisions": ["accepted", "dropped"], "max_needs_review": 0, "max_rejected": 0,
                 "max_pending": 0, "min_units": 1, "all_units_decided": True})
+
+
+# Index build (R5, audit 03 §5.4): the deterministic content gate of b2c_indexing.index_build.
+# Its check list lives in the report; the policy pins the report and chunker versions, so a
+# changed gate cannot reuse an old policy version.
+def _index_policy() -> GatePolicy:
+    from b2c_indexing.index_build import CHUNKER_VERSION, REPORT_VERSION
+    from b2c_indexing.content_gate import GATE_VERSION
+
+    return GatePolicy(gate_id="index.content-gate", kind="deterministic", definition={
+        "report_version": REPORT_VERSION, "content_gate": GATE_VERSION, "chunker": CHUNKER_VERSION,
+        "rule": "IndexQualityReport.accepted (every check passed)"})
+
+
+INDEX_CONTENT_POLICY = _index_policy()
 
 
 def evaluate_translation_assembly(counts: Mapping[str, int], *, total_units: int) -> tuple[bool, dict[str, int]]:
@@ -206,5 +222,25 @@ class PromotionService:
         return self.settle(course_id, artifact)
 
 
-__all__ = ["GatePolicy", "OUTLINE_CROSS_CHECK_POLICY", "OUTLINE_REQUIRED_GATES", "OUTLINE_STRUCTURE_POLICY", "NotAccepted", "PromotionService", "TRANSLATION_ASSEMBLY_POLICY", "TransitionRefused",
-           "evaluate_translation_assembly"]
+    def gate_index_build(self, course_id: str, artifact: ArtifactRef, *, report: IndexQualityReport,
+                         inputs: Iterable[ArtifactRef] = (), config: Mapping[str, Any] | None = None
+                         ) -> StageOutputRecord:
+        """Candidate -> index content gate -> accepted | rejected, for one book's index snapshot."""
+        policy = INDEX_CONTENT_POLICY
+        record = self.record_candidate(course_id, artifact, required_gates=[policy.gate_id], inputs=inputs,
+                                       config=config)
+        if record.status != "candidate":
+            return record
+        metrics: dict[str, Any] = {k: v for k, v in report.metrics.items() if v is not None}
+        metrics["failed_checks"] = report.failed
+        self.attach_gate(course_id, GateResult(
+            stage=artifact.stage, artifact=artifact, gate_id=policy.gate_id, gate_version=policy.version,
+            kind=policy.kind, passed=report.accepted, metrics=metrics,
+            evidence_ref=artifact.uri + "index-report.json", decider="system",
+            decided_by=f"policy:{policy.gate_id}", decided_at=self.clock()))
+        return self.settle(course_id, artifact)
+
+
+__all__ = ["GatePolicy", "INDEX_CONTENT_POLICY", "OUTLINE_CROSS_CHECK_POLICY", "OUTLINE_REQUIRED_GATES",
+           "OUTLINE_STRUCTURE_POLICY", "NotAccepted", "PromotionService", "TRANSLATION_ASSEMBLY_POLICY",
+           "TransitionRefused", "evaluate_translation_assembly"]

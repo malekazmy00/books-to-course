@@ -165,6 +165,7 @@ dependencies = [
     { name = "b2c-core" },
     { name = "b2c-llm-gateway" },
     { name = "psycopg", extra = ["binary"] },
+    { name = "wordfreq" },
 ]
 
 [package.metadata]
@@ -173,6 +174,7 @@ requires-dist = [
     { name = "b2c-core", editable = "packages/core" },
     { name = "b2c-llm-gateway", editable = "packages/llm_gateway" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<4" },
+    { name = "wordfreq", specifier = "==3.1.1" },
 ]
 
 [[package]]

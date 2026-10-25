@@ -14,7 +14,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION = "1.2.1"
+SCHEMA_VERSION = "1.3.0"
 
 
 class Contract(BaseModel):
@@ -61,6 +61,118 @@ class ArtifactRef(Contract):
     @classmethod
     def check_created_utc(cls, v: datetime) -> datetime:
         return _utc(v)
+
+
+# ---------------------------------------------------------------- stage acceptance (R1)
+# Audit 08 C1: an output becomes an input of the next stage only through an explicit, recorded
+# promotion, never by merely existing. Legacy outputs made before any gate are quarantined.
+GateKind = Literal["deterministic", "semantic", "human"]
+StageOutputStatus = Literal["candidate", "accepted", "rejected", "quarantined"]
+# Allowed status changes. Legacy output is re-gated (back to candidate), never promoted directly;
+# an accepted output can only be revoked; a rejected one is final (a fix is a new artifact).
+STAGE_OUTPUT_TRANSITIONS: dict[str, frozenset[str]] = {
+    "candidate": frozenset({"accepted", "rejected"}),
+    "accepted": frozenset({"rejected"}),
+    "rejected": frozenset(),
+    "quarantined": frozenset({"candidate"}),
+}
+_GATE_ID = r"^[a-z0-9][a-z0-9._-]{0,119}$"
+# commit sha of the running image; "-dirty" = built from a modified tree; "unknown" = unstamped
+CODE_REVISION_PATTERN = r"^([0-9a-f]{40}(-dirty)?|unknown)$"
+
+
+class GateResult(Contract):
+    """One gate decision about one stored artifact (P2)."""
+    stage: str
+    artifact: ArtifactRef
+    gate_id: str = Field(pattern=_GATE_ID)
+    gate_version: str = Field(min_length=1, max_length=120)  # policy version / digest of the checks
+    kind: GateKind
+    passed: bool
+    metrics: dict[str, Any] = {}
+    evidence_ref: str | None = None  # s3:// URI (or registry id) of the evidence
+    decider: Literal["system", "human"]
+    decided_by: str = Field(min_length=1, max_length=120)  # policy/system id, or reviewer id
+    decided_at: datetime
+
+    @field_validator("decided_at")
+    @classmethod
+    def check_decided_utc(cls, v: datetime) -> datetime:
+        return _utc(v)
+
+    @model_validator(mode="after")
+    def _gate_invariants(self) -> "GateResult":
+        if self.stage != self.artifact.stage:
+            raise ValueError("gate stage must match the artifact stage")
+        if (self.kind == "human") != (self.decider == "human"):
+            raise ValueError("a human gate needs a human decision; machine gates are decided by the system")
+        return self
+
+
+class ProducerIdentity(Contract):
+    """A model/prompt (or tool) identity that contributed to a stage output."""
+    role: str = Field(min_length=1, max_length=60)  # engine | qe | judge | proposer | tool ...
+    provider: str | None = None
+    model_id: str = Field(min_length=1)
+    revision: str | None = None
+    prompt_version: str | None = None
+
+
+class StageOutputRecord(Contract):
+    """Registry view of one stage output: lineage, producing code, gates and lifecycle status."""
+    course_id: str
+    artifact: ArtifactRef
+    inputs: list[ArtifactRef] = []  # parent artifacts (wasDerivedFrom)
+    code_revision: str = Field(pattern=CODE_REVISION_PATTERN)
+    config: dict[str, Any] = {}
+    identities: list[ProducerIdentity] = []
+    required_gates: list[str] = []
+    gate_results: list[GateResult] = []
+    status: StageOutputStatus
+    status_reason: str | None = None
+    status_changed_at: datetime
+    status_changed_by: str = Field(min_length=1, max_length=120)
+
+    @property
+    def stage(self) -> str:
+        return self.artifact.stage
+
+    @property
+    def stage_key(self) -> str:
+        return self.artifact.key
+
+    @field_validator("status_changed_at")
+    @classmethod
+    def check_changed_utc(cls, v: datetime) -> datetime:
+        return _utc(v)
+
+    def latest_gate_results(self) -> dict[str, GateResult]:
+        """The most recent result of each gate (a re-run gate supersedes earlier results)."""
+        latest: dict[str, GateResult] = {}
+        for result in self.gate_results:
+            seen = latest.get(result.gate_id)
+            if seen is None or result.decided_at >= seen.decided_at:
+                latest[result.gate_id] = result
+        return latest
+
+    @model_validator(mode="after")
+    def _status_invariants(self) -> "StageOutputRecord":
+        for result in self.gate_results:
+            if (result.artifact.uri, result.artifact.key, result.artifact.sha256) != (
+                    self.artifact.uri, self.artifact.key, self.artifact.sha256):
+                raise ValueError("gate results must belong to the record's artifact")
+        if self.status in ("rejected", "quarantined") and not (self.status_reason or "").strip():
+            raise ValueError(f"a {self.status} output needs a status_reason")
+        if self.status == "accepted":
+            if not self.required_gates:
+                raise ValueError("acceptance needs at least one required gate")
+            latest = self.latest_gate_results()
+            missing = [g for g in self.required_gates if g not in latest or not latest[g].passed]
+            if missing:
+                raise ValueError(f"acceptance needs every required gate passed: {missing}")
+            if self.code_revision == "unknown" or self.code_revision.endswith("-dirty"):
+                raise ValueError("acceptance needs output produced by a clean, known code revision (P8)")
+        return self
 
 
 # ---------------------------------------------------------------- L1 ingestion

@@ -26,6 +26,8 @@ from starlette.concurrency import run_in_threadpool
 from b2c_api.deps import is_not_found, log, require_accepted_artifact, require_course_id
 from b2c_api.learner import mapping
 from b2c_api.learner.schemas import (
+    API_VERSION,
+    MIN_CLIENT_VERSION,
     ConceptList,
     CourseDetail,
     CourseList,
@@ -121,7 +123,9 @@ def learner_router(ctx: Any) -> APIRouter:
 
     @router.get("/meta", response_model=LearnerMeta)
     async def learner_meta(request: Request) -> Response:
-        return _json_response(request, LearnerMeta(mapping_version=mapping.MAPPING_VERSION, sources={
+        return _json_response(request, LearnerMeta(
+            api_version=API_VERSION, min_client_version=MIN_CLIENT_VERSION,
+            mapping_version=mapping.MAPPING_VERSION, sources={
             "episodes": mapping.OUTLINE_STAGE, "episode_script": mapping.SCRIPT_STAGE,
             "episode_audio": mapping.AUDIO_STAGE, "concepts": mapping.CONCEPT_STAGE}))
 

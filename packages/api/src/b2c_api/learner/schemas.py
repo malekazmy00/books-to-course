@@ -25,8 +25,8 @@ class _Model(BaseModel):
 
 
 class LearnerMeta(_Model):
-    api_version: str = API_VERSION
-    min_client_version: int = MIN_CLIENT_VERSION
+    api_version: str
+    min_client_version: int
     mapping_version: str
     sources: dict[str, str] = Field(description="stage names each learner resource is read from")
 

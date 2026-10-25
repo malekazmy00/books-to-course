@@ -890,13 +890,11 @@
         "properties": {
           "api_version": {
             "type": "string",
-            "title": "Api Version",
-            "default": "3.0.0"
+            "title": "Api Version"
           },
           "min_client_version": {
             "type": "integer",
-            "title": "Min Client Version",
-            "default": 1
+            "title": "Min Client Version"
           },
           "mapping_version": {
             "type": "string",
@@ -914,6 +912,8 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
+          "api_version",
+          "min_client_version",
           "mapping_version",
           "sources"
         ],

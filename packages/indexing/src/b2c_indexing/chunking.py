@@ -1,4 +1,7 @@
-"""Deterministic, source-aware chunking for ParsedBook and an accepted outline."""
+"""Legacy (v1) chunker, kept to measure the before state; production indexing uses index_build.
+
+It ignores block types, makes heading-only chunks and overlaps whole blocks (audit 03 C2/M1).
+"""
 from __future__ import annotations
 
 import hashlib

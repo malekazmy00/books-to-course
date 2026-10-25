@@ -13,6 +13,11 @@ COPY pyproject.toml uv.lock .python-version ./
 COPY packages ./packages
 RUN uv sync --frozen --no-dev --package b2c-api
 
+# P8 / audit 08 C3: the commit this image was built from (`make build|up` pass the HEAD sha).
+# Kept after the dependency layers so a new revision does not invalidate their cache.
+ARG B2C_GIT_REVISION=unknown
+LABEL org.opencontainers.image.revision=$B2C_GIT_REVISION
+ENV B2C_GIT_REVISION=$B2C_GIT_REVISION
 RUN useradd --uid 10001 --no-create-home b2c
 USER b2c
 EXPOSE 8000

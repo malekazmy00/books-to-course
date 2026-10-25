@@ -121,7 +121,7 @@ services:
   # ---------------------------------------------------------------- API (book upload + workflow status)
   api:
     <<: *light
-    build: {context: .., dockerfile: docker/api/Dockerfile}
+    build: {context: .., dockerfile: docker/api/Dockerfile, args: {B2C_GIT_REVISION: "${B2C_GIT_REVISION:-unknown}"}}
     image: b2c-api:dev
     depends_on:
       temporal: {condition: service_healthy}
@@ -244,7 +244,7 @@ services:
   llm-mock:
     <<: *light
     profiles: [mock]
-    build: {context: .., dockerfile: docker/worker/Dockerfile}
+    build: {context: .., dockerfile: docker/worker/Dockerfile, args: {B2C_GIT_REVISION: "${B2C_GIT_REVISION:-unknown}"}}
     image: b2c-worker:dev
     command: ["python", "-m", "b2c_llm_gateway.mock_server", "--port", "8080"]
     mem_limit: 128m
@@ -253,7 +253,7 @@ services:
   # ---------------------------------------------------------------- workers
   worker:
     <<: *light
-    build: {context: .., dockerfile: docker/worker/Dockerfile}
+    build: {context: .., dockerfile: docker/worker/Dockerfile, args: {B2C_GIT_REVISION: "${B2C_GIT_REVISION:-unknown}"}}
     image: b2c-worker:dev
     command: ["b2c-worker"]
     depends_on:
@@ -312,7 +312,7 @@ services:
   # for work on the existing HEAVY worker that may be processing OCR/QA/translation.
   audio-worker:
     <<: *light
-    build: {context: .., dockerfile: docker/worker/Dockerfile.audio}
+    build: {context: .., dockerfile: docker/worker/Dockerfile.audio, args: {B2C_GIT_REVISION: "${B2C_GIT_REVISION:-unknown}"}}
     image: b2c-audio-worker:dev
     command: ["b2c-worker"]
     depends_on:

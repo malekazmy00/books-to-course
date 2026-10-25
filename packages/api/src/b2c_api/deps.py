@@ -50,6 +50,13 @@ class ApiContext:
             self.app.state.artifact_store = ArtifactStore.from_settings(self.settings)
         return self.app.state.artifact_store
 
+    def get_stage_registry(self) -> Any:
+        """The stage-output registry (R1), created from settings on first use."""
+        if getattr(self.app.state, "stage_registry", None) is None:
+            from b2c_core.stage_registry import StageOutputRegistry
+            self.app.state.stage_registry = StageOutputRegistry(self.settings.pg_dsn)
+        return self.app.state.stage_registry
+
     async def get_temporal_client(self) -> Any:
         # Concurrent first requests must share one connection, not race to
         # open several and leak all but the last.
@@ -153,6 +160,26 @@ async def stream_artifact_file(store: Any, ref: Any, name: str, *, media_type: s
         response_headers["Content-Length"] = str(obj["ContentLength"])
     return StreamingResponse(chunks(), media_type=media_type, headers=response_headers,
                              background=BackgroundTask(body.close))
+
+
+async def require_accepted_artifact(registry: Any, course_id: str, ref: Any, *,
+                                    detail: str = "content not available") -> Any:
+    """Accepted-only guard for learner/serving routes (R1, plan P2).
+
+    Returns the registry record when exactly this artifact (stage, key, uri and sha256) is
+    ``accepted``. Candidates, rejected and quarantined (legacy) outputs and unregistered
+    artifacts are all a 404, so a learner cannot tell them apart; a registry failure is a 503,
+    never an open door.
+    """
+    try:
+        record = await run_in_threadpool(registry.get, course_id, ref.stage, ref.key)
+    except Exception as exc:
+        log.exception("stage-output registry is unavailable")
+        raise HTTPException(status_code=503, detail="content status is unavailable") from exc
+    if (record is None or record.status != "accepted"
+            or (record.artifact.uri, record.artifact.sha256) != (ref.uri, ref.sha256)):
+        raise HTTPException(status_code=404, detail=detail)
+    return record
 
 
 async def describe_or_404(client: Any, workflow_id: str,

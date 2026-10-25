@@ -12,7 +12,8 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import uvicorn
-from b2c_core import Settings
+from b2c_core import Settings, get_logger
+from b2c_core.revision import log_startup_revision
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from temporalio.client import Client
@@ -30,6 +31,7 @@ from b2c_api.routers.indexing import indexing_router
 from b2c_api.routers.ingestion import _validate_course_supplementary_identity, ingestion_router
 from b2c_api.routers.qa import qa_router
 from b2c_api.routers.serving import serving_router
+from b2c_api.routers.stage_outputs import stage_outputs_router
 from b2c_api.routers.translations import translations_router
 from b2c_api.routers.workflow_controls import workflow_controls_router
 from b2c_api.saved_audio import saved_audio_router
@@ -55,10 +57,12 @@ def create_app(
     srs_store: Any | None = None,
     learner_authenticator: Callable[[Request], Any] | None = None,
     model_lifecycle: ModelLifecycle | None = None,
+    stage_registry: Any | None = None,
 ) -> FastAPI:
     settings = settings or Settings()
     @asynccontextmanager
     async def lifespan(application: FastAPI):
+        log_startup_revision(get_logger("b2c.api"), "api")
         application.state.model_lifecycle.ensure_warm_loop()
         try:
             yield
@@ -100,6 +104,7 @@ def create_app(
     app.state.serving_catalog = serving_catalog
     app.state.srs_store = srs_store
     app.state.learner_authenticator = learner_authenticator
+    app.state.stage_registry = stage_registry
     ctx = ApiContext(app, settings, temporal_connect)
 
     async def model_worker_queue_ready(provider) -> bool:
@@ -145,6 +150,7 @@ def create_app(
     qa_router(ctx, app)
     workflow_controls_router(ctx, app)
     serving_router(ctx, app)
+    app.include_router(stage_outputs_router(ctx))
     return app
 
 

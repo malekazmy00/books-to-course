@@ -21,6 +21,27 @@ COMPOSE := $(COMPOSE_BASE) $(foreach p,$(PROFILES),--profile $(p))
 PYTEST  := uv run pytest
 PHASE   ?= 0
 
+# P8 / audit 08 C3: every image is stamped with the commit it is built from (Dockerfile ARG ->
+# OCI label org.opencontainers.image.revision + env B2C_GIT_REVISION, logged at startup and
+# recorded in each stage-output registry row). `build` and `up` refuse a dirty tree (tracked
+# changes or untracked files, which COPY would bake in) unless FORCE_DIRTY=1, which stamps
+# "<sha>-dirty": such output can be registered but never accepted.
+FORCE_DIRTY ?= 0
+ifneq ($(filter build up,$(MAKECMDGOALS)),)
+GIT_REVISION ?= $(shell git rev-parse HEAD 2>/dev/null)
+GIT_DIRTY ?= $(shell git status --porcelain 2>/dev/null)
+ifeq ($(strip $(GIT_REVISION)),)
+$(error cannot stamp images: no git revision (git rev-parse HEAD failed))
+endif
+ifeq ($(strip $(GIT_DIRTY)),)
+B2C_GIT_REVISION := $(strip $(GIT_REVISION))
+else ifeq ($(FORCE_DIRTY),1)
+B2C_GIT_REVISION := $(strip $(GIT_REVISION))-dirty
+else
+$(error refusing to build from a dirty tree (P8): commit first, or pass FORCE_DIRTY=1 to stamp $(strip $(GIT_REVISION))-dirty)
+endif
+endif
+
 # pytest exits 5 when a directory has no tests yet (golden / e2e before their phases)
 define allow_empty
 	$(1) || { rc=$$?; [ $$rc -eq 5 ] && echo "(no tests yet)" || exit $$rc; }
@@ -36,7 +57,7 @@ env:                 ## create .env with random secrets (never overwrites)
 	@bash scripts/gen-env.sh
 
 build:
-	$(COMPOSE) build
+	B2C_GIT_REVISION=$(B2C_GIT_REVISION) $(COMPOSE) build
 
 data-init:           ## once, after the data VHDX is mounted (D-020)
 	@bash scripts/data-disk.sh init
@@ -46,7 +67,7 @@ budget:              ## rule 8: fail if the selected profiles exceed the RAM/CPU
 
 up: env budget       ## build + start (refuses if the dedicated data disk is not mounted)
 	@bash scripts/data-disk.sh check
-	$(COMPOSE) up -d --build
+	B2C_GIT_REVISION=$(B2C_GIT_REVISION) $(COMPOSE) up -d --build
 
 start: budget        ## boot path (scripts/windows/start-b2c-stack.ps1): no rebuild
 	@bash scripts/data-disk.sh check

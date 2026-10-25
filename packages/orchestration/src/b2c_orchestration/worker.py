@@ -9,9 +9,12 @@ from b2c_core import (
     ArtifactStore,
     ProvRecorder,
     Settings,
+    StageOutputRegistry,
+    code_revision,
     configure_logging,
     get_logger,
 )
+from b2c_core.revision import log_startup_revision
 from b2c_indexing import PostgresChunkStore, QueryRetrievalService
 from b2c_indexing.embedding_client import OpenAIEmbeddingClient
 from b2c_llm_gateway import (
@@ -33,6 +36,7 @@ from .translate_book import AssembleBookTranslationWorkflow, TranslateBookActivi
 from .translation_profiles import ProfileRuntime, UnknownProfile, load_translation_profiles
 from .termbase_store import TermbaseStore
 from .translation_store import TranslationResultStore
+from .promotion import PromotionService
 from .telemetry import setup_tracing
 
 log = get_logger("b2c.worker")
@@ -75,7 +79,8 @@ def translate_book_worker(client, s, *, store, cache, executor) -> Worker:
         runtime = _UnavailableProfiles(type(exc).__name__)
     acts = TranslateBookActivities(artifact_store=store, result_store=TranslationResultStore(s.pg_dsn),
                                    runtime=runtime, memory=TranslationMemory(s.pg_dsn),
-                                   termbase_store=TermbaseStore(s.pg_dsn))
+                                   termbase_store=TermbaseStore(s.pg_dsn),
+                                   promotion=PromotionService(StageOutputRegistry(s.pg_dsn), code_revision=code_revision()))
     return Worker(client, task_queue=TRANSLATE_BOOK,
                   workflows=[TranslateBookWorkflow, AssembleBookTranslationWorkflow],
                   activities=[acts.prepare, acts.build_termbase, acts.check_termbase, acts.translate_batch,
@@ -93,6 +98,7 @@ async def run_worker() -> None:
     s = Settings()
     configure_logging(s.log_level)
     provider = setup_tracing(f"{s.service_name}-worker", s.otel_endpoint)
+    log_startup_revision(log, "worker")
 
     prov = ProvRecorder(s.pg_dsn)
     prov.migrate()
@@ -209,6 +215,7 @@ async def run_audio_worker() -> None:
     s = Settings()
     configure_logging(s.log_level)
     provider = setup_tracing(f"{s.service_name}-audio-worker", s.otel_endpoint)
+    log_startup_revision(log, "audio-worker")
     prov = ProvRecorder(s.pg_dsn)
     prov.migrate()
     store = ArtifactStore.from_settings(s, recorder=prov)

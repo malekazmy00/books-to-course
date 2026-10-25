@@ -1,6 +1,6 @@
 # 02 — العقود بين الطبقات (Layer Contracts)
 
-المصدر الوحيد للحقيقة هو `packages/contracts/src/b2c_contracts/models.py` (SCHEMA_VERSION 1.2.1).
+المصدر الوحيد للحقيقة هو `packages/contracts/src/b2c_contracts/models.py` (SCHEMA_VERSION 1.3.0).
 الوثيقة دي بتشرح **إزاي** كل طبقة بتسلّم للطبقة اللي بعدها. والتعريفات نفسها موجودة في الكود.
 
 > الكود ده اتشغّل واتختبر: `tests/contract/test_contracts_invariants.py` ونتيجته 8 passed. الاختبارات دي بتتأكد من القيود الأساسية (negative controls).
@@ -129,3 +129,26 @@ class GraphRetriever(Protocol):
 
 ## 6. Provenance للموافقة على المخطط
 `OutlineApprovalProvenance` يميز صراحةً بين `human` و`system`. المسار البشري يتطلب `reviewer_id` حقيقيًا. المراجع النظامي يحمل `system_id` وإصدار السياسة وبصمة دليل، ولا يقبل أي `reviewer_id`. سياسة `b2c-outline-structural-review` تتحقق من مصدر غير مستنتج آليًا، وعناوين دروس موجودة بالنص، وتغطية متصلة كاملة للكتل، واتساق الصفحات والمتطلبات السابقة. نجاحها يثبت سلامة البنية فقط؛ لا يعني اعتمادًا تربويًا أو مراجعة بشرية.
+
+## 7. قبول مخرجات المراحل: `GateResult` ودورة الحالة (SCHEMA 1.3.0، R1)
+وجود artifact لا يعني قبوله (تدقيق 08، C1). كل مخرج مرحلة يُسجَّل في سجل المخرجات (`stage_outputs` في PostgreSQL) بحالة صريحة، ولا يقرأ المستهلك اللاحق إلا ما حالته `accepted`.
+
+- `GateResult`: قرار بوابة واحدة على artifact واحد. حقوله: `stage` (يطابق `artifact.stage`)، و`gate_id` و`gate_version` (إصدار السياسة أو بصمة فحوصها)، و`kind` ‏(`deterministic|semantic|human`)، و`passed`، و`metrics`، و`evidence_ref`، و`decider` ‏(`system|human`)، و`decided_by`، و`decided_at` ‏(UTC).
+  - البوابة البشرية لا يقررها إلا إنسان، والبوابات الآلية لا يقررها إنسان.
+- `ProducerIdentity`: هوية نموذج أو prompt أو أداة ساهمت في المخرج (`role`، `model_id`، `revision`، `prompt_version`).
+- `StageOutputRecord`: الـ artifact، والمدخلات (`inputs`: مراجع الـ artifacts الأم)، و`code_revision` (sha الـ commit الذي بُنيت منه الصورة العاملة، أو `<sha>-dirty`، أو `unknown`)، و`config`، و`identities`، و`required_gates`، و`gate_results`، و`status`.
+- **دورة الحالة** (`STAGE_OUTPUT_TRANSITIONS`):
+
+| من | إلى |
+|---|---|
+| `candidate` | `accepted` أو `rejected` |
+| `accepted` | `rejected` (سحب القبول فقط) |
+| `rejected` | لا شيء؛ الإصلاح يُنتج artifact جديدًا |
+| `quarantined` (مخرجات قديمة قبل البوابات) | `candidate` (إعادة الفحص)، ولا ترقية مباشرة |
+
+- **ثوابت يفرضها العقد:**
+  - `accepted` يتطلب `required_gates` غير فارغة، وأن تكون آخر نتيجة لكل بوابة مطلوبة `passed=true`.
+  - `accepted` يتطلب `code_revision` نظيفًا ومعروفًا (P8): لا `unknown` ولا `-dirty`.
+  - `rejected` و`quarantined` يتطلبان `status_reason`.
+  - كل `GateResult` في السجل يخص الـ artifact نفسه (uri وkey وsha256).
+- السجل append-only لتغييرات الحالة ونتائج البوابات (`stage_output_events` و`stage_output_gates`). التفاصيل في `docs/audits/2026-10-25-R1-platform.md`.

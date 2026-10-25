@@ -34,7 +34,8 @@ from temporalio.common import RetryPolicy
 from temporalio.exceptions import ApplicationError
 
 with workflow.unsafe.imports_passed_through():
-    from b2c_contracts import ArtifactRef, ParsedBook, QAIssue, TranslationUnit, UnitTranslation, stage_key
+    from b2c_contracts import (ArtifactRef, ParsedBook, ProducerIdentity, QAIssue, TranslationUnit, UnitTranslation,
+                               stage_key)
     from b2c_llm_gateway import InvalidLLMOutput, LLMOutputTruncated, LLMRequestRejected
     from b2c_translation.book_pipeline import Draft, PipelineConfig, UnitResult, UnitTranslator, assemble_blocks
     from b2c_translation.glossary import ContextualGlossary
@@ -45,6 +46,7 @@ with workflow.unsafe.imports_passed_through():
     from b2c_translation.units import build_units_with_provenance
 
     from .heartbeat import LONG_ACTIVITY_HEARTBEAT_TIMEOUT, activity_heartbeats
+    from .promotion import PromotionService
     from .retry import DEFAULT_RETRY
     from .termbase_review import approved_digest, approved_snapshot, gate_counts
     from .termbase_store import TermbaseScope, TermbaseStore
@@ -190,6 +192,9 @@ class AssemblyResult(BaseModel):
     complete_blocks: int
     results_digest: str
     cache_hit: bool
+    # Registry status of the assembly (R1): accepted only when every unit has a publishable
+    # decision. None when the worker has no registry (results of older histories also lack it).
+    status: str | None = None
 
 
 # ------------------------------------------------------------------ identities
@@ -282,7 +287,8 @@ class TranslateBookActivities:
                  memory: Any | None = None, clock: Callable[[], datetime] = _now,
                  units_cache: UnitsCache | None = None, termbase_store: TermbaseStore | None = None,
                  concept_sources: Callable[[str], list[Any]] | None = None,
-                 termbase_builder: Callable[..., BookTermbase] = build_termbase_from_units) -> None:
+                 termbase_builder: Callable[..., BookTermbase] = build_termbase_from_units,
+                 promotion: PromotionService | None = None) -> None:
         self.artifact_store = artifact_store
         self.result_store = result_store
         self.runtime = runtime
@@ -292,6 +298,7 @@ class TranslateBookActivities:
         self.termbase_store = termbase_store
         self.concept_sources = concept_sources  # book_id -> extra established sources (Wikidata/AGROVOC)
         self.termbase_builder = termbase_builder
+        self.promotion = promotion
         self._approved: OrderedDict[str, BookTermbase] = OrderedDict()
         self._approved_lock = threading.Lock()
 
@@ -532,9 +539,16 @@ class TranslateBookActivities:
                 inp.course_id, ASSEMBLY_STAGE, key,
                 lambda: {"translation.json": json.dumps(document, ensure_ascii=False, indent=1).encode("utf-8")})
             complete = sum(1 for b in blocks.values() if b.complete and b.merged_into is None)
+            status = None
+            if self.promotion is not None:
+                identities = [ProducerIdentity(role="engine", **json.loads(e)) for e in engines]
+                status = self.promotion.gate_translation_assembly(
+                    inp.course_id, out_ref, units_ref=ref, counts=counts, total_units=len(units),
+                    identities=identities, config={"run_id": inp.run_id, "assembly_version": ASSEMBLY_VERSION,
+                                                   "results_digest": digest}).status
             result = AssemblyResult(artifact=out_ref.model_dump(mode="json"), counts=counts,
                                     total_blocks=len(blocks), complete_blocks=complete, results_digest=digest,
-                                    cache_hit=cache_hit)
+                                    cache_hit=cache_hit, status=status)
             snapshot = max((r.updated_at for r in stored), default=datetime(1970, 1, 1, tzinfo=timezone.utc))
             self.result_store.set_assembly(inp.run_id, result.model_dump(mode="json"), snapshot_at=snapshot)
         return result

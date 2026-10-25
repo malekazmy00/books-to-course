@@ -18,7 +18,7 @@ from pathlib import Path
 
 from b2c_contracts import ParsedBookV2
 from b2c_outline.v2 import build_outline_v2
-from b2c_outline.v2.gate import compare_to_reference, outline_quality
+from b2c_outline.v2.gate import compare_to_reference, cross_check, outline_quality
 from b2c_outline.v2.reference import resolve_reference, title_key
 from b2c_outline.v2.titles import malformed_title
 
@@ -148,6 +148,7 @@ def main() -> None:
                       "source_file_sha256": ref_doc.get("source_file_sha256")},
         "after": {"page_level": page_metrics(modules, blocks, reference, V2_FURNITURE),
                   "block_level_vs_golden": golden, "gate": json.loads(report.model_dump_json()),
+                  "cross_check": vars(cross_check(book, outline, report)),
                   "deterministic": again.model_dump_json().encode() == out_bytes,
                   "outline_sha256": hashlib.sha256(out_bytes).hexdigest(),
                   "excluded_ranges": [{"reason": r.reason, "zone": r.zone, "pages": list(r.pages), "title": r.title}
@@ -164,7 +165,8 @@ def main() -> None:
     (args.out.with_suffix(".outline.json")).write_bytes(out_bytes)
     print(json.dumps({k: result[k] for k in ("name",)} | {
         "before": result.get("before", {}).get("page_level"), "after": result["after"]["page_level"],
-        "golden": golden, "gate_failed": report.failed, "accepted": report.accepted}, indent=1, ensure_ascii=False))
+        "golden": golden, "gate_failed": report.failed, "accepted": report.accepted,
+        "cross_check": result["after"]["cross_check"]}, indent=1, ensure_ascii=False))
 
 
 if __name__ == "__main__":

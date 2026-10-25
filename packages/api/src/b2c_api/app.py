@@ -21,6 +21,7 @@ from temporalio.contrib.pydantic import pydantic_data_converter
 
 from b2c_api.course_library import course_library_router
 from b2c_api.deps import ApiContext
+from b2c_api.learner import learner_router
 from b2c_api.model_lifecycle import ModelLifecycle, configured_providers, lifecycle_router
 from b2c_api.result_exports import result_exports_router
 from b2c_api.routers.audio import audio_router
@@ -151,6 +152,7 @@ def create_app(
     workflow_controls_router(ctx, app)
     serving_router(ctx, app)
     app.include_router(stage_outputs_router(ctx))
+    app.include_router(learner_router(ctx))
     return app
 
 

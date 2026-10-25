@@ -1,0 +1,1276 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Book2Course Learner API",
+    "description": "Read-only learner API (tailnet-only, bearer token, D-030). Serves accepted artifacts only; no GET response contains an answer.",
+    "version": "3.0.0"
+  },
+  "paths": {
+    "/v3/learner/meta": {
+      "get": {
+        "tags": [
+          "learner"
+        ],
+        "summary": "Learner Meta",
+        "operationId": "learner_meta_v3_learner_meta_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LearnerMeta"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v3/learner/courses": {
+      "get": {
+        "tags": [
+          "learner"
+        ],
+        "summary": "Learner Courses",
+        "operationId": "learner_courses_v3_learner_courses_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v3/learner/courses/{course_id}": {
+      "get": {
+        "tags": [
+          "learner"
+        ],
+        "summary": "Learner Course",
+        "operationId": "learner_course_v3_learner_courses__course_id__get",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Course Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CourseDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v3/learner/courses/{course_id}/episodes/{number}": {
+      "get": {
+        "tags": [
+          "learner"
+        ],
+        "summary": "Learner Episode",
+        "operationId": "learner_episode_v3_learner_courses__course_id__episodes__number__get",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Course Id"
+            }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EpisodeDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v3/learner/courses/{course_id}/episodes/{number}/questions/{question_id}/reveal": {
+      "post": {
+        "tags": [
+          "learner"
+        ],
+        "summary": "Learner Reveal",
+        "operationId": "learner_reveal_v3_learner_courses__course_id__episodes__number__questions__question_id__reveal_post",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Course Id"
+            }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Number"
+            }
+          },
+          {
+            "name": "question_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Question Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RevealRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RevealResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v3/learner/courses/{course_id}/episodes/{number}/audio": {
+      "get": {
+        "tags": [
+          "learner"
+        ],
+        "summary": "Learner Episode Audio",
+        "operationId": "learner_episode_audio_v3_learner_courses__course_id__episodes__number__audio_get",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Course Id"
+            }
+          },
+          {
+            "name": "number",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              },
+              "audio/mpeg": {}
+            }
+          },
+          "206": {
+            "content": {
+              "audio/mpeg": {}
+            },
+            "description": "Partial Content"
+          },
+          "404": {
+            "description": "no accepted audio for this episode yet"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v3/learner/courses/{course_id}/concepts": {
+      "get": {
+        "tags": [
+          "learner"
+        ],
+        "summary": "Learner Concepts",
+        "operationId": "learner_concepts_v3_learner_courses__course_id__concepts_get",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Course Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConceptList"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AuthorQuote": {
+        "properties": {
+          "quote": {
+            "type": "string",
+            "title": "Quote"
+          },
+          "pages": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Pages",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "quote"
+        ],
+        "title": "AuthorQuote"
+      },
+      "ConceptCard": {
+        "properties": {
+          "concept_id": {
+            "type": "string",
+            "title": "Concept Id"
+          },
+          "term": {
+            "type": "string",
+            "title": "Term",
+            "description": "the original (book-language) term"
+          },
+          "term_ar": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Term Ar"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "gloss": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gloss",
+            "description": "course voice"
+          },
+          "author_quotes": {
+            "items": {
+              "$ref": "#/components/schemas/AuthorQuote"
+            },
+            "type": "array",
+            "title": "Author Quotes",
+            "description": "author voice, verbatim",
+            "default": []
+          },
+          "external_notes": {
+            "items": {
+              "$ref": "#/components/schemas/ExternalNote"
+            },
+            "type": "array",
+            "title": "External Notes",
+            "description": "external voice, with sources",
+            "default": []
+          },
+          "first_lesson_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Lesson Id"
+          },
+          "first_episode": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "First Episode"
+          },
+          "relations": {
+            "items": {
+              "$ref": "#/components/schemas/ConceptRelationOut"
+            },
+            "type": "array",
+            "title": "Relations",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "concept_id",
+          "term",
+          "kind"
+        ],
+        "title": "ConceptCard"
+      },
+      "ConceptList": {
+        "properties": {
+          "course_id": {
+            "type": "string",
+            "title": "Course Id"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "pending"
+            ],
+            "title": "Status"
+          },
+          "concepts": {
+            "items": {
+              "$ref": "#/components/schemas/ConceptCard"
+            },
+            "type": "array",
+            "title": "Concepts"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "course_id",
+          "language",
+          "status",
+          "concepts"
+        ],
+        "title": "ConceptList"
+      },
+      "ConceptRelationOut": {
+        "properties": {
+          "concept_id": {
+            "type": "string",
+            "title": "Concept Id"
+          },
+          "term": {
+            "type": "string",
+            "title": "Term"
+          },
+          "relation": {
+            "type": "string",
+            "title": "Relation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "concept_id",
+          "term",
+          "relation"
+        ],
+        "title": "ConceptRelationOut"
+      },
+      "CourseDetail": {
+        "properties": {
+          "course_id": {
+            "type": "string",
+            "title": "Course Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language"
+          },
+          "episodes": {
+            "items": {
+              "$ref": "#/components/schemas/EpisodeSummary"
+            },
+            "type": "array",
+            "title": "Episodes"
+          },
+          "concepts_available": {
+            "type": "boolean",
+            "title": "Concepts Available"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "course_id",
+          "title",
+          "language",
+          "episodes",
+          "concepts_available",
+          "updated_at"
+        ],
+        "title": "CourseDetail"
+      },
+      "CourseList": {
+        "properties": {
+          "courses": {
+            "items": {
+              "$ref": "#/components/schemas/CourseSummary"
+            },
+            "type": "array",
+            "title": "Courses"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "courses"
+        ],
+        "title": "CourseList"
+      },
+      "CourseSummary": {
+        "properties": {
+          "course_id": {
+            "type": "string",
+            "title": "Course Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language"
+          },
+          "episode_count": {
+            "type": "integer",
+            "title": "Episode Count"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "course_id",
+          "title",
+          "language",
+          "episode_count",
+          "updated_at"
+        ],
+        "title": "CourseSummary"
+      },
+      "EpisodeAudio": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Path",
+            "description": "API path of the MP3 (bearer token, Range supported)"
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration S"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "available"
+        ],
+        "title": "EpisodeAudio"
+      },
+      "EpisodeDetail": {
+        "properties": {
+          "course_id": {
+            "type": "string",
+            "title": "Course Id"
+          },
+          "number": {
+            "type": "integer",
+            "title": "Number"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "course_intro",
+              "lesson"
+            ],
+            "title": "Kind"
+          },
+          "lesson_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lesson Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "script_pending"
+            ],
+            "title": "Status"
+          },
+          "language": {
+            "type": "string",
+            "title": "Language"
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration S"
+          },
+          "audio": {
+            "$ref": "#/components/schemas/EpisodeAudio"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/Section"
+            },
+            "type": "array",
+            "title": "Sections"
+          },
+          "key_terms": {
+            "items": {
+              "$ref": "#/components/schemas/KeyTerm"
+            },
+            "type": "array",
+            "title": "Key Terms"
+          },
+          "questions": {
+            "items": {
+              "$ref": "#/components/schemas/LearnerQuestion"
+            },
+            "type": "array",
+            "title": "Questions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "course_id",
+          "number",
+          "label",
+          "title",
+          "kind",
+          "status",
+          "language",
+          "audio",
+          "sections",
+          "key_terms",
+          "questions"
+        ],
+        "title": "EpisodeDetail"
+      },
+      "EpisodeSummary": {
+        "properties": {
+          "number": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Number",
+            "description": "0 = course introduction (D-037/D-038), then 1..n"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label",
+            "description": "zero-padded number, as in the MP3 file names (D-038)"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "course_intro",
+              "lesson"
+            ],
+            "title": "Kind"
+          },
+          "lesson_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lesson Id"
+          },
+          "script_available": {
+            "type": "boolean",
+            "title": "Script Available"
+          },
+          "audio_available": {
+            "type": "boolean",
+            "title": "Audio Available"
+          },
+          "duration_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration S"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "number",
+          "label",
+          "title",
+          "kind",
+          "script_available",
+          "audio_available"
+        ],
+        "title": "EpisodeSummary"
+      },
+      "ExternalNote": {
+        "properties": {
+          "statement": {
+            "type": "string",
+            "title": "Statement"
+          },
+          "urls": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Urls"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "statement",
+          "urls"
+        ],
+        "title": "ExternalNote"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "KeyTerm": {
+        "properties": {
+          "term": {
+            "type": "string",
+            "title": "Term"
+          },
+          "original": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Original"
+          },
+          "definition": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Definition"
+          },
+          "concept_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Concept Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "term"
+        ],
+        "title": "KeyTerm"
+      },
+      "LearnerMeta": {
+        "properties": {
+          "api_version": {
+            "type": "string",
+            "title": "Api Version"
+          },
+          "min_client_version": {
+            "type": "integer",
+            "title": "Min Client Version"
+          },
+          "mapping_version": {
+            "type": "string",
+            "title": "Mapping Version"
+          },
+          "sources": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Sources",
+            "description": "stage names each learner resource is read from"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "api_version",
+          "min_client_version",
+          "mapping_version",
+          "sources"
+        ],
+        "title": "LearnerMeta"
+      },
+      "LearnerQuestion": {
+        "properties": {
+          "question_id": {
+            "type": "string",
+            "title": "Question Id"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options"
+          },
+          "question_segment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Question Segment Id"
+          },
+          "answer_segment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer Segment Id",
+            "description": "where the answer is spoken (text hidden)"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "question_id",
+          "prompt"
+        ],
+        "title": "LearnerQuestion"
+      },
+      "RevealRequest": {
+        "properties": {
+          "selected_option": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selected Option"
+          },
+          "response_text": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 2000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "RevealRequest"
+      },
+      "RevealResponse": {
+        "properties": {
+          "question_id": {
+            "type": "string",
+            "title": "Question Id"
+          },
+          "answer": {
+            "type": "string",
+            "title": "Answer"
+          },
+          "correct": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correct",
+            "description": "null when the answer cannot be checked automatically"
+          },
+          "answer_segment_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer Segment Id"
+          },
+          "answer_section_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answer Section Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "question_id",
+          "answer",
+          "correct"
+        ],
+        "title": "RevealResponse"
+      },
+      "Section": {
+        "properties": {
+          "section_id": {
+            "type": "string",
+            "title": "Section Id"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "intro",
+              "book_text",
+              "summary",
+              "key_terms",
+              "questions",
+              "other"
+            ],
+            "title": "Kind"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "start_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start S"
+          },
+          "end_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End S"
+          },
+          "segments": {
+            "items": {
+              "$ref": "#/components/schemas/Segment"
+            },
+            "type": "array",
+            "title": "Segments"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "section_id",
+          "kind",
+          "title",
+          "segments"
+        ],
+        "title": "Section"
+      },
+      "Segment": {
+        "properties": {
+          "segment_id": {
+            "type": "string",
+            "title": "Segment Id"
+          },
+          "voice": {
+            "type": "string",
+            "enum": [
+              "author",
+              "course",
+              "external"
+            ],
+            "title": "Voice"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "text",
+              "heading",
+              "figure_description",
+              "note",
+              "question",
+              "answer",
+              "pause"
+            ],
+            "title": "Role"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Text",
+            "description": "null when hidden (an answer before reveal)"
+          },
+          "hidden": {
+            "type": "boolean",
+            "title": "Hidden",
+            "default": false
+          },
+          "start_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start S"
+          },
+          "end_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End S"
+          },
+          "source_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Label",
+            "description": "for the external voice: who says it"
+          },
+          "pages": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Pages",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "segment_id",
+          "voice",
+          "role",
+          "text"
+        ],
+        "title": "Segment"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "bearerToken": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerToken": []
+    }
+  ]
+}

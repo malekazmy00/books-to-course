@@ -35,6 +35,7 @@ eval/reports/book2-body-structural-deferred-audit-*.json
 android/**/.cxx/
 android/**/build/
 android/**/.gradle/
+android/**/.kotlin/
 android/**/local.properties
 
 # emulator screenshots / UI dumps (summaries live in eval/reports/*.md)

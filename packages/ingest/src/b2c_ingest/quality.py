@@ -20,7 +20,7 @@ from typing import Any
 from b2c_contracts import IngestQualityReport, ParsedBook, ParsedBookV2, QualityCheck
 from b2c_core.source_text import TERMINAL, Vocab, heading_key, normalize_chars
 
-from .normalize import _edge_furniture_keys, _letters_key, _strip_trailing_marker, letter_spacing_residue
+from .normalize import CUT_MIN_WORDS, _edge_furniture_keys, _letters_key, _strip_trailing_marker, letter_spacing_residue
 
 REPORT_VERSION = "1"
 _WORD = re.compile(r"[a-z]{3,}")
@@ -137,7 +137,7 @@ def _metrics(views: list[_View], text_layer: dict[str, Any], *, notes_known: boo
     body_pages = sorted({p for v in body if v.zone == "body" for p in v.pages})
     max_page = max(body_pages, default=0)
     cut = sum(1 for p, v in last_on_page.items() if p < max_page and p not in continued
-              and not TERMINAL.search(_strip_trailing_marker(v.text)))
+              and len(v.text.split()) >= CUT_MIN_WORDS and not TERMINAL.search(_strip_trailing_marker(v.text)))
 
     vocab = Vocab([v.text for v in views if v.type in _BODY_TEXT])
     residue = sum(1 for v in views if v.type in ("heading", "paragraph", "list_item")

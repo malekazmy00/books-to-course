@@ -93,11 +93,11 @@ def test_paragraph_cut_at_page_break_becomes_one_block_with_both_pages():
 
 def test_unjoinable_page_end_is_flagged_not_hidden():
     doc = (Doc(1, 2).add("section_header", 1, "Introduction", top=20, bottom=30).add("text", 1, FILLER)
-           .add("text", 1, "A sentence that ends without", top=480)
+           .add("text", 1, "A sentence that runs on for a while and then ends without", top=480)
            .add("section_header", 2, "New Section", top=60, bottom=80)
            .add("text", 2, "Fresh start.", top=90))
     book = normalize_docling(META, [doc.json()], text_layer(["x", "y"]))
-    cut = next(b for b in book.blocks if b.text == "A sentence that ends without")
+    cut = next(b for b in book.blocks if b.text == "A sentence that runs on for a while and then ends without")
     assert "cut_at_page_break" in cut.quality_flags
 
 

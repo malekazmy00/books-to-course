@@ -19,7 +19,7 @@ import time
 from collections import Counter, defaultdict
 from pathlib import Path
 
-from b2c_contracts import ParsedBook, ParsedBookV2
+from b2c_contracts import ParsedBook, ParsedBookV2, parsed_book_v1_from_v2
 from b2c_core.source_text import TERMINAL, Vocab
 from b2c_ingest.layout import pdf_text_layer
 from b2c_ingest.normalize import BookMeta, letter_spacing_residue, normalize_docling, normalize_text_layer
@@ -123,6 +123,18 @@ def gold_analysis(gold_path: Path, gold_book: str, v1: ParsedBook, v2: ParsedBoo
             "by_type": {k: dict(v) for k, v in sorted(out.items())}}
 
 
+def unit_stats(book: ParsedBook) -> dict:
+    """Translation units (D-028 builder) from a v1 book: what the translation stage would get."""
+    from b2c_translation.units import build_translation_units
+
+    units = build_translation_units(book)
+    lengths = sorted(len(u.source_text) for u in units if u.kind != "noise")
+    return {"units": len(units), "kinds": dict(Counter(u.kind for u in units)),
+            "median_chars": lengths[len(lengths) // 2] if lengths else 0,
+            "joined_page_break": sum("joined_page_break" in u.normalization for u in units),
+            "with_footnote_markers": sum(bool(u.footnote_markers) for u in units)}
+
+
 def sha(model) -> str:
     return hashlib.sha256(model.model_dump_json().encode()).hexdigest()
 
@@ -160,6 +172,8 @@ def main() -> None:
         "v2_zones": dict(Counter(b.zone for b in v2.blocks)),
         "v2_flags": dict(Counter(f for b in v2.blocks for f in b.quality_flags)),
         "v1_types": dict(Counter(b.type for b in v1.blocks)),
+        "units_from_v1": unit_stats(v1),
+        "units_from_v2_projection": unit_stats(parsed_book_v1_from_v2(v2)),
     }
     if args.gold and args.gold_book:
         result["gold"] = gold_analysis(args.gold, args.gold_book, v1, v2)

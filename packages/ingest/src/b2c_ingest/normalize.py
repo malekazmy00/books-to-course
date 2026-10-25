@@ -48,6 +48,7 @@ from b2c_core.source_text import (
 NORMALIZER_NAME = "b2c-normalize"
 NORMALIZER_VERSION = "1"
 LONG_BLOCK_CHARS = 2000
+CUT_MIN_WORDS = 8  # shorter page-final lines (epigraph attributions, labels) are not cut prose
 
 _FRONT_KEYS = ("cover", "titlepage", "halftitle", "copyright", "contents", "tableofcontents",
                "dedication", "acknowledg", "preface", "foreword", "listof", "figures", "tables",
@@ -59,6 +60,7 @@ _UNEXPECTED_SCRIPT = re.compile("[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-
 _LIGATURE = re.compile("[\ufb00-\ufb06]")
 _TRAILING_MARKER = re.compile(r"(?<=[.!?…:;’”\"')\]])\s?\d{1,3}$")
 _FOOTNOTE_LABEL = re.compile(r"^(\d{1,3}|[*†‡§])\s+(?=\S)")
+_URLISH = re.compile(r"://|www\.|\.pdf\b|%20|\S+/\S+/\S+")
 _QUOTES = "“‘\"'(["
 _FLOAT_KINDS = frozenset({"figure", "caption", "table", "equation", "footnote"})
 _FURNITURE = frozenset({"running_header", "running_footer", "page_number"})
@@ -380,11 +382,17 @@ def spacing_fragments(text: str, vocab: Vocab, lexicon=zipf) -> list[str]:
     a 2-3 letter token the book body rarely uses, or a longer token that is neither in the book
     nor in the English lexicon. Capitalised and all-caps tokens (names, acronyms) never count."""
     out = []
-    for token in re.findall(r"[A-Za-z]+", re.sub(r"\([a-z]{1,2}\)", "", text)):
+    tokens = [t.strip(".,;:!?()[]{}\"“”‘’'*•–—-") for t in re.sub(r"\([a-z]{1,2}\)", "", text).split()]
+    for k, token in enumerate(tokens):
+        if not token.isalpha() or not token.isascii():
+            continue  # '3.3B', 'Practitioner’s', URLs, numbers
         if token[0].isupper() and len(token) > 1:
             continue
         low = token.lower()
         if len(low) == 1:
+            neighbours = [tokens[j] for j in (k - 1, k + 1) if 0 <= j < len(tokens)]
+            if token.isupper() and not any(len(n) == 1 and n.isalpha() for n in neighbours):
+                continue  # 'Plan B', 'Option C': a lone capital is a label, not tracking
             if low not in ("a", "i"):
                 out.append(token)
         elif len(low) <= 3:
@@ -492,6 +500,8 @@ def _base_kind(f: _Frag) -> str:
         if PAGE_NUMBER.match(f.text.strip()):
             return "page_number"
         return "running_header" if f.label == "page_header" else "running_footer"
+    if f.label in ("section_header", "title") and _URLISH.search(f.text):
+        return "paragraph"  # a wrapped URL of a note, not a heading
     return _DOCLING_KIND.get(f.label, "paragraph")
 
 
@@ -506,7 +516,9 @@ def _mark_repeated_edges(frags: list[_Frag]) -> None:
     for p in pages:
         items = by_page[p]
         for i, f in enumerate(items):
-            if (i == 0 or i == len(items) - 1) and f.kind in ("paragraph", "heading") and _letters_key(f.text) in keys:
+            # headings never: 'NOTES' opens every chapter's notes at a page top
+            if (i == 0 or i == len(items) - 1) and f.kind == "paragraph" and _letters_key(f.text) in keys \
+                    and section_word(f.text) is None:
                 f.kind = "running_header" if i == 0 else "running_footer"
                 f.tags.append("furniture_by_repetition")
 
@@ -997,9 +1009,11 @@ def _build(meta: BookMeta, frags: list[_Frag], text_layer: dict[str, Any], parse
         if it.kind in ("paragraph", "list_item"):
             last_page = it.frags[-1].last_page
             if head.zone == "body" and last_flow_on_page.get(last_page) == seq - 1 and last_page < max_flow_page \
-                    and last_page not in continued and it.text and not TERMINAL.search(_strip_trailing_marker(it.text)):
+                    and last_page not in continued and len(it.text.split()) >= CUT_MIN_WORDS \
+                    and not TERMINAL.search(_strip_trailing_marker(it.text)):
                 flags.append("cut_at_page_break")
-        if letter_spacing_residue(it.text, it.kind == "heading", vocab):
+        if it.kind in ("heading", "paragraph", "list_item") and \
+                letter_spacing_residue(it.text, it.kind == "heading", vocab):
             flags.append("letter_spacing_residue")
         if _LIGATURE.search(it.text):
             flags.append("ligature_residue")

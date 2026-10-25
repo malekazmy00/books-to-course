@@ -281,6 +281,7 @@ name = "b2c-orchestration"
 version = "0.1.0"
 source = { editable = "packages/orchestration" }
 dependencies = [
+    { name = "b2c-concepts" },
     { name = "b2c-contracts" },
     { name = "b2c-core" },
     { name = "b2c-indexing" },
@@ -289,6 +290,7 @@ dependencies = [
     { name = "b2c-llm-gateway" },
     { name = "b2c-outline" },
     { name = "b2c-pedagogy" },
+    { name = "b2c-research" },
     { name = "b2c-speech" },
     { name = "b2c-synthesis" },
     { name = "b2c-translation" },
@@ -300,6 +302,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "b2c-concepts", editable = "packages/concepts" },
     { name = "b2c-contracts", editable = "packages/contracts" },
     { name = "b2c-core", editable = "packages/core" },
     { name = "b2c-indexing", editable = "packages/indexing" },
@@ -308,6 +311,7 @@ requires-dist = [
     { name = "b2c-llm-gateway", editable = "packages/llm_gateway" },
     { name = "b2c-outline", editable = "packages/outline" },
     { name = "b2c-pedagogy", editable = "packages/pedagogy" },
+    { name = "b2c-research", editable = "packages/research" },
     { name = "b2c-speech", editable = "packages/speech" },
     { name = "b2c-synthesis", editable = "packages/synthesis" },
     { name = "b2c-translation", editable = "packages/translation" },

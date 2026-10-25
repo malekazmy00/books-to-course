@@ -31,10 +31,11 @@ class WikipediaProvider:
     kinds = ("wikipedia.page",)
 
     def __init__(self, fetcher: Any, builder: SourceBuilder, *, context_keywords: tuple[str, ...] = (),
-                 max_candidates: int = 3) -> None:
+                 search_hint: str | None = None, max_candidates: int = 3) -> None:
         self.fetcher = fetcher
         self.builder = builder
         self.context_keywords = tuple(k.casefold() for k in context_keywords)
+        self.search_hint = search_hint
         self.max_candidates = max_candidates
 
     def _accept(self, q: PlannedQuery, meta: BookMeta, title: str, text: str) -> bool:
@@ -51,16 +52,23 @@ class WikipediaProvider:
         return bool(term) and term in body and (not keywords or any(k in body for k in keywords))
 
     def run(self, q: PlannedQuery, meta: BookMeta) -> list[SourceText]:
-        search = q.query if q.section != "concept_in_field" or not self.context_keywords else \
-            f"{q.query} {self.context_keywords[0]}"
-        found = self.fetcher.get(WIKIPEDIA_API, params={"action": "query", "list": "search", "srsearch": search,
-                                                        "srlimit": 5, "format": "json"}).json()
-        titles = [h.get("title") for h in (found.get("query") or {}).get("search") or [] if h.get("title")]
-        if not titles and search != q.query:
-            found = self.fetcher.get(WIKIPEDIA_API, params={"action": "query", "list": "search", "srsearch": q.query,
+        searches = [q.query]
+        if q.section == "concept_in_field" and self.search_hint:
+            searches.insert(0, f"{q.query} {self.search_hint}")
+        tried: set[str] = set()
+        for search in searches:
+            found = self.fetcher.get(WIKIPEDIA_API, params={"action": "query", "list": "search", "srsearch": search,
                                                             "srlimit": 5, "format": "json"}).json()
-            titles = [h.get("title") for h in (found.get("query") or {}).get("search") or [] if h.get("title")]
-        for title in titles[: self.max_candidates]:
+            titles = [h.get("title") for h in (found.get("query") or {}).get("search") or []
+                      if h.get("title") and h.get("title") not in tried][: self.max_candidates]
+            tried.update(titles)
+            hit = self._first_accepted(q, meta, titles)
+            if hit is not None:
+                return [hit]
+        return []
+
+    def _first_accepted(self, q: PlannedQuery, meta: BookMeta, titles: list[str]) -> SourceText | None:
+        for title in titles:
             res = self.fetcher.get(WIKIPEDIA_API, params={
                 "action": "query", "prop": "extracts|info", "explaintext": 1, "exsectionformat": "plain",
                 "inprop": "url", "redirects": 1, "titles": title, "format": "json"})
@@ -73,8 +81,9 @@ class WikipediaProvider:
                 s = self.builder.build(url=url, provider="wikipedia", title=page.get("title"), tier=1,
                                        fetched_at=res.fetched_at, raw_text=f"{page.get('title')}\n{text}",
                                        section_hint=q.section, concept=q.concept)
-                return [s] if s else []
-        return []
+                if s:
+                    return s
+        return None
 
 
 def _time(value: dict[str, Any]) -> str:

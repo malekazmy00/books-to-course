@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import Any
 
 META_PROMPT_VERSION = "kr-meta-v1"
+_SUFFIXES = frozenset({"jr", "sr", "ii", "iii", "iv", "phd"})
 _STOP = frozenset("the a an of for and to in on with from by theory techniques edition third second introduction".split())
 
 
@@ -36,7 +37,17 @@ class BookMeta:
 
     @property
     def surnames(self) -> tuple[str, ...]:
-        return tuple(a.replace(",", " ").split()[-1] for a in self.authors if a.split())
+        out = []
+        for a in self.authors:
+            parts = [p for p in a.replace(",", " ").split() if p.casefold().strip(".") not in _SUFFIXES]
+            if parts:
+                out.append(parts[-1])
+        return tuple(out)
+
+    @property
+    def search_hint(self) -> str | None:
+        """A word that disambiguates concept searches (first subject's last word, e.g. "Gramsci")."""
+        return self.subjects[0].split()[-1] if self.subjects and self.subjects[0].split() else None
 
     @property
     def context_keywords(self) -> tuple[str, ...]:

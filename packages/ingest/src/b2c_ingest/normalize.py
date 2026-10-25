@@ -61,6 +61,7 @@ _LIGATURE = re.compile("[\ufb00-\ufb06]")
 _TRAILING_MARKER = re.compile(r"(?<=[.!?…:;’”\"')\]])\s?\d{1,3}$")
 _FOOTNOTE_LABEL = re.compile(r"^(\d{1,3}|[*†‡§])\s+(?=\S)")
 _URLISH = re.compile(r"://|www\.|\.pdf\b|%20|\S+/\S+/\S+")
+_SPACED_CLOSING_QUOTE = re.compile(r'(?<=[.!?,;:]) "(?=\s|$)')
 _QUOTES = "“‘\"'(["
 _FLOAT_KINDS = frozenset({"figure", "caption", "table", "equation", "footnote"})
 _FURNITURE = frozenset({"running_header", "running_footer", "page_number"})
@@ -277,19 +278,27 @@ def _letters_key(line: str) -> str:
     return re.sub(r"[\W\d_]+", "", line.lower())
 
 
-def _edge_furniture_keys(pages_lines: list[list[str]], edge: int = 2) -> set[str]:
-    """Letter keys of lines that repeat at page edges: >= 3 pages and >= 80% of uses at an edge."""
-    at_edge: dict[str, set[int]] = {}
+def _edge_furniture_keys(pages_lines: list[list[str]], edge: int = 2,
+                         page_numbers: list[int] | None = None) -> set[str]:
+    """Letter keys of lines that repeat at page edges like running heads do: on >= 3 pages,
+    >= 80% of uses at an edge, and on nearby pages (>= 2 pairs at most 2 pages apart).
+    The last rule keeps recurring section titles that happen to open pages ('When to Use
+    It' in a book whose every technique starts a new page) in the text."""
+    numbers = page_numbers or list(range(len(pages_lines)))
+    at_edge: dict[str, list[int]] = {}
     anywhere: dict[str, int] = {}
-    for p, lines in enumerate(pages_lines):
+    for p, lines in zip(numbers, pages_lines):
         for i, line in enumerate(lines):
             key = _letters_key(line)
             if len(key) < 3 or len(line) > 120:
                 continue
             anywhere[key] = anywhere.get(key, 0) + 1
             if i < edge or i >= len(lines) - edge:
-                at_edge.setdefault(key, set()).add(p)
-    return {k for k, pages in at_edge.items() if len(pages) >= 3 and len(pages) >= 0.8 * anywhere[k]}
+                pages = at_edge.setdefault(key, [])
+                if not pages or pages[-1] != p:
+                    pages.append(p)
+    return {k for k, pages in at_edge.items() if len(pages) >= 3 and len(pages) >= 0.8 * anywhere[k]
+            and sum(1 for a, b in zip(pages, pages[1:]) if b - a <= 2) >= 2}
 
 
 def _typical_line_length(pages: list[str]) -> float:
@@ -476,6 +485,7 @@ def _normalize_text(frags: list[_Frag], lexicon=zipf) -> Vocab:
         if f.label not in ("table", "code"):
             text = re.sub(r"\s*\n\s*", " ", text)
         fixed = "\n".join(fix_punct_spacing(line) for line in text.split("\n"))
+        fixed = _SPACED_CLOSING_QUOTE.sub('"', fixed)  # Docling: 'and "science. "' -> 'and "science."'
         if fixed != text:
             f.tags.append("ocr_punct_spacing")
         f.text = fixed
@@ -516,7 +526,7 @@ def _mark_repeated_edges(frags: list[_Frag]) -> None:
         if f.kind not in _FURNITURE:
             by_page.setdefault(f.page, []).append(f)
     pages = sorted(by_page)
-    keys = _edge_furniture_keys([[f.text for f in by_page[p]] for p in pages], edge=1)
+    keys = _edge_furniture_keys([[f.text for f in by_page[p]] for p in pages], edge=1, page_numbers=pages)
     for p in pages:
         items = by_page[p]
         for i, f in enumerate(items):
@@ -726,13 +736,33 @@ def _apparatus_kinds(frags: list[_Frag]) -> None:
         k = max(j, k + 1)
 
 
+def _split_note_sequence(pieces: list[str]) -> list[str]:
+    """Continue a run of notes inside one item when the next label is not preceded by
+    punctuation ('...methodsselectionchart.pdf 6. Russell W. Frenske, ...'): a piece labelled n
+    is cut before ' n+1. ' followed by a capital or a quote, repeatedly."""
+    out: list[str] = []
+    for piece in pieces:
+        while True:
+            m = NOTE_LABEL.match(piece)
+            if not m:
+                break
+            nxt = re.search(rf"(?<=\S) ({int(m.group(1)) + 1})\. (?=[A-Z“\"‘'])", piece[m.end():])
+            if not nxt:
+                break
+            cut = m.end() + nxt.start() + 1
+            out.append(piece[:cut].strip())
+            piece = piece[cut:].strip()
+        out.append(piece)
+    return out
+
+
 def _split_notes(frags: list[_Frag]) -> list[_Frag]:
     out: list[_Frag] = []
     for f in frags:
         if f.kind not in ("endnote", "footnote"):
             out.append(f)
             continue
-        pieces = split_inline_notes(f.text)
+        pieces = _split_note_sequence(split_inline_notes(f.text))
         for n, piece in enumerate(pieces):
             g = f if len(pieces) == 1 else _Frag(
                 refs=list(f.refs), label=f.label, raw=f.raw if n == 0 else "", source=f"{f.source}#note{n}",

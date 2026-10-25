@@ -68,6 +68,13 @@ def _words(text: str) -> Counter:
     return Counter(_WORD.findall(text.lower()))
 
 
+def _shingles(text: str, n: int = 6) -> Counter:
+    """Diagnostic, not a gate: 6-letter shingles of the letters-only stream, so a text layer
+    that glues words ('ofthe', 'StrongpositiveandStrongnegative') is not counted as loss."""
+    letters = re.sub(r"[^a-z]", "", text.lower())
+    return Counter(letters[i:i + n] for i in range(max(0, len(letters) - n + 1)))
+
+
 def _reference_pages(text_layer: dict[str, Any]) -> dict[int, str]:
     """Text layer per page, ligatures normalized and line-break hyphens joined."""
     out = {}
@@ -122,6 +129,14 @@ def _metrics(views: list[_View], text_layer: dict[str, Any], *, notes_known: boo
         if rp and sum((rp & cp).values()) / sum(rp.values()) < 0.98:
             below += 1
 
+    ref_sh = Counter()
+    for t in ref_pages.values():
+        ref_sh.update(_shingles(t))
+    cand_sh = Counter()
+    for v in views:
+        cand_sh.update(_shingles(v.text))
+    sh_overlap = sum((ref_sh & cand_sh).values())
+
     body = [v for v in views if v.type in _BODY_TEXT and v.zone != "furniture"]
     lengths = [len(v.text) for v in body if v.zone == "body"]
 
@@ -148,7 +163,7 @@ def _metrics(views: list[_View], text_layer: dict[str, Any], *, notes_known: boo
 
     # running heads from the text layer's own edge repetition, independent of the parser
     lines = [[ln.strip() for ln in t.split("\n") if ln.strip()] for _, t in sorted(ref_pages.items())]
-    keys = _edge_furniture_keys(lines)
+    keys = _edge_furniture_keys(lines, page_numbers=sorted(ref_pages))
     heads = sorted({re.sub(r"\s+", " ", re.sub(r"\d+", "", ln)).strip().lower()
                     for page in lines for ln in page[:2] + page[-2:] if _letters_key(ln) in keys}, key=len)
     heads = [h for h in heads if len(h) >= 8]
@@ -190,6 +205,8 @@ def _metrics(views: list[_View], text_layer: dict[str, Any], *, notes_known: boo
         "word_recall": round(overlap / max(1, sum(ref.values())), 5),
         "word_precision": round(overlap / max(1, sum(cand.values())), 5),
         "pages_recall_below_0_98": below,
+        "letter_shingle_recall": round(sh_overlap / max(1, sum(ref_sh.values())), 5),
+        "letter_shingle_precision": round(sh_overlap / max(1, sum(cand_sh.values())), 5),
         "median_body_block_chars": statistics.median(lengths) if lengths else 0,
         "body_blocks_over_2000_chars": sum(1 for n in lengths if n > 2000),
         "cut_at_page_break_pages": cut,

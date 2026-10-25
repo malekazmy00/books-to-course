@@ -207,6 +207,14 @@ def test_run_of_notes_in_one_item_is_split():
         ("endnote", "140", "Ibid., 119-124."), ("endnote", "141", "Ibid., 125."), ("endnote", "142", "SPN, 12.")]
 
 
+def test_note_run_continues_after_a_label_without_preceding_punctuation():
+    doc = (Doc(1, 1).add("section_header", 1, "Notes", top=40, bottom=60)
+           .add("code", 1, "5. Forecasting website, www.example.org/chart.pdf 6. Russell Frenske, "
+                           "A Taxonomy. 7. Kai Larson, Studies.", top=80))
+    book = normalize_docling(META, [doc.json()], text_layer(["a"], outline=[bookmark("Notes", 0, 1)]))
+    assert [b.note_label for b in book.blocks if b.type == "endnote"] == ["5", "6", "7"]
+
+
 def test_bibliography_and_index_are_typed_back_matter():
     doc = (Doc(1, 2)
            .add("section_header", 1, "Introduction", top=40, bottom=60).add("text", 1, FILLER, top=80)

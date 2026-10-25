@@ -62,6 +62,7 @@
 | T-OUT-02 | كتاب من غير TOC ينتج `llm_inferred` + `requires_review` | صح |
 | T-OUT-03 | الـ spans متتالية، مش متداخلة، وبتغطي ≥ 98% من المتن | صح |
 | T-OUT-04 (R4) | CourseOutline v2 والباني الحتمي: `tests/contract/test_course_outline_v2.py` (تقسيم الكتل = مدرج + مستبعد، المعرّفات، العناوين، إسقاط v1)، و`tests/unit/outline/test_outline_v2_builder.py` و`test_outline_v2_titles.py` (bookmarks أولًا، وP4 وP6، ومقدمة الفصل، والمناطق، والحجم، وثبات المعرّفات، والمصادر البديلة) | كلها تمر في `make check` |
+| T-OUT-05 (R4) | البوابة الحتمية للمخطط v2: `tests/unit/outline/test_outline_v2_gate.py` (تغطية 100%، 0 عناوين مشوهة، 0 كلمات حواشٍ/مراجع/فهرس وكتل back matter داخل الدروس، استثناءات الحجم موثقة، ومقارنة بالمرجع: boundary/title F1 ≥ 0.95 بتسامح ±1 كتلة، وlevel/zone ≥ 0.95)؛ والكتب الحقيقية: `eval/suites/outline_v2/measure.py` مقابل `eval/golden/outline/{sat,gramsci}.json` (مرجع من الـ bookmarks، والمناطق مراجعة) | التقرير `eval/reports/outline-v2-2026-10-25.md`؛ `accepted=false` لأي كتاب يفشل فحصًا |
 
 ### L3 Indexing
 | ID | الاختبار | معيار النجاح |

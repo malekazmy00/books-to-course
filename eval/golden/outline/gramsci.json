@@ -1,0 +1,93 @@
+{
+ "format": "outline-reference/1",
+ "name": "gramsci",
+ "source_file_sha256": "70c88ae9b2ba9ed6f61e813ca80e8685773ce18245477ed38e14d46eb7632292",
+ "source": "PDF document outline (bookmarks) read with pypdf; zones proposed by title",
+ "zones_reviewed_by": "claude-agent 2026-10-25 (zones checked against the bookmark list; owner review pending)",
+ "entries": [
+  {
+   "title": "Copyright",
+   "level": 1,
+   "page": 5,
+   "zone": "front_matter"
+  },
+  {
+   "title": "Contents",
+   "level": 1,
+   "page": 8,
+   "zone": "front_matter"
+  },
+  {
+   "title": "Acknowledgments",
+   "level": 1,
+   "page": 10,
+   "zone": "front_matter"
+  },
+  {
+   "title": "Introduction",
+   "level": 1,
+   "page": 12,
+   "zone": "body"
+  },
+  {
+   "title": "1. The Originality of the Living Gramscian Tradition",
+   "level": 1,
+   "page": 26,
+   "zone": "body"
+  },
+  {
+   "title": "2. The Faces and Phases of Popular Mobilization",
+   "level": 1,
+   "page": 59,
+   "zone": "body"
+  },
+  {
+   "title": "3. The Torturous Contradictions of Domination",
+   "level": 1,
+   "page": 82,
+   "zone": "body"
+  },
+  {
+   "title": "4. The Wellsprings of Autonomy",
+   "level": 1,
+   "page": 140,
+   "zone": "body"
+  },
+  {
+   "title": "5. The Expansive Search for Consent",
+   "level": 1,
+   "page": 200,
+   "zone": "body"
+  },
+  {
+   "title": "6. The Roiling Ferment of Revolution",
+   "level": 1,
+   "page": 265,
+   "zone": "body"
+  },
+  {
+   "title": "Conclusion",
+   "level": 1,
+   "page": 308,
+   "zone": "body"
+  },
+  {
+   "title": "Notes",
+   "level": 1,
+   "page": 332,
+   "zone": "back_matter"
+  },
+  {
+   "title": "Bibliography",
+   "level": 1,
+   "page": 380,
+   "zone": "back_matter"
+  },
+  {
+   "title": "Index",
+   "level": 1,
+   "page": 404,
+   "zone": "back_matter"
+  }
+ ]
+}

@@ -1,6 +1,6 @@
 # 02 — العقود بين الطبقات (Layer Contracts)
 
-المصدر الوحيد للحقيقة هو `packages/contracts/src/b2c_contracts/models.py` (SCHEMA_VERSION 1.14.0). سجل الإصدارات: 1.3.0 أضاف قبول المخرجات (R1، §7)، و1.4.0 أضاف ParsedBook v2 (R3، §8) بعد دمج العملين، و1.5.0 أضاف CourseOutline v2 (R4، §9)، و1.5.1 غيّر دلالة قبوله: بوابات نظامية لا قرار بشري (قرار المالك 2026-10-25، لا يوجد مراجع بشري في المنتج).، و1.6.0 دمج ذلك مع عقود الفهرسة v2 (R5، §10): provenance الـ chunk وتقرير بوابة الفهرسة وحكم الربط المساند.، و1.7.0 أضاف نص الكلام v2 (R7، §11): `SpeechSegment` و`SpeechExclusion` و`SpeechTextDocument` (كان 1.5.0 في فرعه).. وفي فرع المخطط بالتوازي (D-036): أوصاف الأشكال داخل الدروس `LessonV2.extra_spans`/`block_roles`، والمقدمة دروسًا `front_matter`/`audio_adaptations`، وكل درس حلقة `episode`/`episode_title` (§9؛ كانت 1.7.0–1.9.0 في فرعه)؛ و1.10.0 دمج ذلك مع نص الكلام v2، و1.11.0 (D-037) أضاف `CourseOutlineV2.course_intro_episode`: الحلقة 1 مقدمة الكورس المولَّدة، فتبدأ حلقات الكتاب من 2، و1.12.0 (D-038) جعل مقدمة الكورس الحلقة 00، فتعود حلقات الكتاب 1..n، و1.13.0 أضاف بحث المعرفة وطبقة المفاهيم (D-032..D-035، §12): `KnowledgeDossier` و`ConceptLayer` (كان 1.7.0 في فرعه)، و1.14.0 أضاف خطة الحدود الإيقاعية إلى `SpeechSegment` ‏(§11): `boundary_after` و`break_after` و`unvoiced_glosses`.
+المصدر الوحيد للحقيقة هو `packages/contracts/src/b2c_contracts/models.py` (SCHEMA_VERSION 1.15.0). سجل الإصدارات: 1.3.0 أضاف قبول المخرجات (R1، §7)، و1.4.0 أضاف ParsedBook v2 (R3، §8) بعد دمج العملين، و1.5.0 أضاف CourseOutline v2 (R4، §9)، و1.5.1 غيّر دلالة قبوله: بوابات نظامية لا قرار بشري (قرار المالك 2026-10-25، لا يوجد مراجع بشري في المنتج).، و1.6.0 دمج ذلك مع عقود الفهرسة v2 (R5، §10): provenance الـ chunk وتقرير بوابة الفهرسة وحكم الربط المساند.، و1.7.0 أضاف نص الكلام v2 (R7، §11): `SpeechSegment` و`SpeechExclusion` و`SpeechTextDocument` (كان 1.5.0 في فرعه).. وفي فرع المخطط بالتوازي (D-036): أوصاف الأشكال داخل الدروس `LessonV2.extra_spans`/`block_roles`، والمقدمة دروسًا `front_matter`/`audio_adaptations`، وكل درس حلقة `episode`/`episode_title` (§9؛ كانت 1.7.0–1.9.0 في فرعه)؛ و1.10.0 دمج ذلك مع نص الكلام v2، و1.11.0 (D-037) أضاف `CourseOutlineV2.course_intro_episode`: الحلقة 1 مقدمة الكورس المولَّدة، فتبدأ حلقات الكتاب من 2، و1.12.0 (D-038) جعل مقدمة الكورس الحلقة 00، فتعود حلقات الكتاب 1..n، و1.13.0 أضاف بحث المعرفة وطبقة المفاهيم (D-032..D-035، §12): `KnowledgeDossier` و`ConceptLayer` (كان 1.7.0 في فرعه)، و1.14.0 أضاف خطة الحدود الإيقاعية إلى `SpeechSegment` ‏(§11): `boundary_after` و`break_after` و`unvoiced_glosses`، و1.15.0 (D-039؛ 1.14.0 استُعمل في فرع hardening لخطة الحدود الإيقاعية في `SpeechSegment`) أضاف `TermbaseEntry.tier` ‏(`locked`/`hint`، §13).
 الوثيقة دي بتشرح **إزاي** كل طبقة بتسلّم للطبقة اللي بعدها. والتعريفات نفسها موجودة في الكود.
 
 > الكود ده اتشغّل واتختبر: `tests/contract/test_contracts_invariants.py` ونتيجته 8 passed. الاختبارات دي بتتأكد من القيود الأساسية (negative controls).
@@ -53,7 +53,7 @@ s3://artifacts/{course_id}/{stage}/{key}/<files>
 | L4 ← L5 | LightRAG doc_ids + `ConceptEdge[]` | `doc_status=processed` لكل كتاب؛ كل edge ليه evidence | retry / G1 |
 | L5 ← L6 | `LessonDraft` | كل جملة ليها citation ≥ 1 والـ citation موجود فعلًا، وfaithfulness ≥ العتبة | إعادة توليد ← مراجعة |
 | L6 ← L7 | `LessonSummary`، `GlossaryTerm[]`، `Question[]` | الأسئلة عدّت الـ solver والـ linter | إعادة توليد ← G2 |
-| Termbase ← L7 | `TermbaseEntry[]` | كل entry ليها `approved_by` | Gate G3 |
+| Termbase ← L7 | `TermbaseEntry[]` | كل entry ليها `approved_by`؛ و`tier` ‏(`locked` افتراضيًا، أو `hint`؛ §13) | Gate G3 |
 | L7 ← L8 | `UnitTranslation[]` (لكل `TranslationUnit`) | `decision == accepted`: بلا issue major/critical، ومخرج المحرك مقبول آليًا فقط بعد QE دلالي؛ وإلا `needs_review` (D-028) | G4 |
 | L7 ← L8 (1.5.0، R7) | `SpeechTextDocument` (artifact ‏`speech-text`) | يُبنى فقط من وحدات `decision == accepted` لتجميعة `translate-book` مقبولة في سجل المخرجات؛ أي وحدة `needs_review`/`rejected`/بلا نتيجة ترفض البناء كله. بوابة `speech.text-frontend` (§9) | non-retryable (`NotSpeechReady`) |
 | L8 ← Release | `AudioAsset` | `acx_pass` و`asr_cer ≤` العتبة؛ والصوت المستنسخ ليه consent ساري | إعادة توليد المقطع ← G5 |
@@ -266,3 +266,17 @@ class GraphRetriever(Protocol):
 ### 12.3 القبول (§7)
 - `knowledge-research`: بوابتان نظاميتان مطلوبتان، `knowledge.citations` (`semantic`: نسبة دعم الإسناد الخام، وصحة كل ادعاء منشور، وحد أدنى من الادعاءات المنشورة) و`knowledge.tier-coverage` (`deterministic`: بطاقة الكتاب والمؤلف مسنودتان بمصدر من الدرجة الأولى، وحصة الادعاءات المسنودة بالدرجة الثالثة وحدها). العتبات في `b2c_research.gates`.
 - `concept-layer`: بوابتان `concepts.grounding` (كل موضع لكل عبارة بصوت المؤلف موجود حرفيًا في الكتاب المحلَّل، بإعادة الفحص عند البوابة) و`concepts.coverage` (تغطية مفاهيم القاموس المعتمد، أو المرشحين المختارين إن لم يوجد قاموس معتمد). العتبات في `b2c_concepts.gates`.
+
+## 13. مستويات مدخل القاموس (SCHEMA 1.15.0؛ D-039، استخراج المصطلحات v3)
+
+| الحقل / المستوى | المعنى |
+|---|---|
+| `TermbaseEntry.tier = "locked"` | الافتراضي. مصطلح مقفول يُفحص بصرامة (`terminology` بدرجة major)، مع مطابقة عربية تتحمل التصريف: «ال» والسوابق (و ف ب ل ك) والجمع السالم والمثنى وتاء الإضافة المفتوحة وتطابق النسبة. كل payload قبل 1.15.0 بلا `tier` يُقرأ `locked`. |
+| `TermbaseEntry.tier = "hint"` | ترجمة مفضّلة تُحقن في الـ prompt (`chat.term_hints@v1`) ولا تُفحص بصرامة: غيابها إشارة `terminology_hint` بدرجة minor لا توقف القبول. لا تقبل `forbidden_variants_ar` (يرفضها العقد). |
+| `dropped` | ليس مستوى في العقد: الضوضاء مدخل مرفوض (`status = "rejected"`) ولا تصير `TermbaseEntry`. |
+
+خارج العقود (في `b2c_translation.termbase`، القطعة `b2c.book-termbase` v1 بلا تغيير في الصيغة):
+- `TermRecord.tier`: `null` = locked، و`"hint"`. الحقل يُحذف من الـ JSON حين يكون `null`، وكذلك `TermCandidate.termhood`/`termhood_reason` (اقتراح مصنّف الـ termhood: `locked`/`hint`/`dropped`). لذلك تُعاد كتابة أي قطعة قديمة بايتًا ببايت: نفس SHA-256 ونفس `approved_digest`.
+- `approved_digest` يضيف المفتاح `hints` **فقط** إذا وُجد مدخل hint؛ بصمة أي قاموس معتمد قبل v3 لا تتغير.
+- عمود `book_termbase_entries.tier` (nullable، `CHECK (tier IN ('hint'))`) يُضاف بـ `ADD COLUMN IF NOT EXISTS`؛ الصفوف القديمة `NULL` = locked.
+- عدّادات البوابة تضيف `pending_dropped` (معلّق اقترح المصنّف إسقاطه؛ لا يحجب البوابة لأن المعلّق لا يصل إلى الترجمة أصلًا) و`approved_hint`.

@@ -4,6 +4,9 @@ A translation run builds the book's termbase before any unit is translated. A hu
 lists the entries, approves them (optionally with an edited Arabic target), rejects them, or
 bulk-approves the proposals they selected; then the "done" action signals the waiting
 ``TranslateBookWorkflow``. Only approved entries are ever used by translation.
+
+Tiers (D-039): an approval is ``locked`` (default, checked strictly) or ``hint`` (a preferred
+rendering, checked only as a minor signal); noise is rejected. The listing filters by tier.
 """
 from __future__ import annotations
 
@@ -23,6 +26,7 @@ from b2c_api.deps import ApiContext, log
 REVIEWER_ID = r"^[A-Za-z0-9._@-]{1,120}$"
 MAX_SOURCE_CHARS = 200
 MAX_BULK = 500
+ApprovalTier = Literal["locked", "hint"]
 
 
 class _Body(BaseModel):
@@ -37,6 +41,7 @@ class ApproveTermRequest(_Body):
     forbidden_variants: list[str] = Field(default=[], max_length=20)
     replace: bool = False
     allow_shared_target: bool = False
+    tier: ApprovalTier = "locked"
 
 
 class RejectTermRequest(_Body):
@@ -48,6 +53,7 @@ class RejectTermRequest(_Body):
 class ProposalSelection(_Body):
     source: str = Field(min_length=1, max_length=MAX_SOURCE_CHARS)
     target: str | None = Field(default=None, max_length=MAX_TARGET_CHARS * 2)  # must be one of its proposals
+    tier: ApprovalTier = "locked"
 
 
 class BulkApproveRequest(_Body):
@@ -117,6 +123,7 @@ def book_termbase_router(ctx: ApiContext, router: Any = None) -> Any:
                             min_frequency_filter: int | None = Query(default=None, ge=1, le=100000,
                                                                      alias="min_frequency"),
                             q: str | None = Query(default=None, min_length=1, max_length=100),
+                            tier: list[Literal["locked", "hint"]] = Query(default=[]),
                             include_absent: bool = False,
                             limit: int = Query(default=100, ge=1, le=500),
                             offset: int = Query(default=0, ge=0)) -> dict[str, Any]:
@@ -128,6 +135,7 @@ def book_termbase_router(ctx: ApiContext, router: Any = None) -> Any:
                     if (not status or e.status in status) and (not kind or e.kind in kind)
                     and (min_frequency_filter is None or e.frequency >= min_frequency_filter)
                     and (include_absent or e.present)
+                    and (not tier or (e.status == "approved" and (e.tier or "locked") in tier))
                     and (not needle or needle in e.source.casefold() or needle in (e.target or "")
                          or any(needle in p.target for p in e.proposals))]
         selected.sort(key=lambda e: (-e.frequency, e.source_key))
@@ -144,7 +152,8 @@ def book_termbase_router(ctx: ApiContext, router: Any = None) -> Any:
         _, scope = await built_scope(run_id)
         [entry] = await decide(approve_terms, termbase_store(), scope,
                                [TermSelection(request.source, request.target,
-                                              tuple(request.forbidden_variants))], request.reviewer_id,
+                                              tuple(request.forbidden_variants), request.tier)],
+                               request.reviewer_id,
                                replace=request.replace, allow_shared_target=request.allow_shared_target)
         return entry.as_json()
 
@@ -159,7 +168,7 @@ def book_termbase_router(ctx: ApiContext, router: Any = None) -> Any:
     async def bulk_approve_termbase(run_id: str, request: BulkApproveRequest) -> dict[str, Any]:
         _, scope = await built_scope(run_id)
         entries = await decide(approve_terms, termbase_store(), scope,
-                               [TermSelection(s.source, s.target) for s in request.selections],
+                               [TermSelection(s.source, s.target, tier=s.tier) for s in request.selections],
                                request.reviewer_id, proposals_only=True)
         return {"approved": len(entries), "items": [e.as_json() for e in entries]}
 

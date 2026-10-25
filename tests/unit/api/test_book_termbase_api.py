@@ -145,8 +145,8 @@ async def test_list_with_filters_and_gate(env):
         listing = (await http.get(base(run_id))).json()
         assert listing["total"] == 4 and listing["book_id"] == "bk"
         assert [i["source"] for i in listing["items"]] == ["Rice", "Lena Vasquez", "Wheat", "Farmers"]
-        assert listing["gate"] == {"pending_blocking": 3, "pending_total": 4, "approved": 0, "rejected": 0,
-                                   "absent": 0, "min_frequency": 2}
+        assert listing["gate"] == {"pending_blocking": 3, "pending_total": 4, "pending_dropped": 0, "approved": 0,
+                                   "approved_hint": 0, "rejected": 0, "absent": 0, "min_frequency": 2}
         assert listing["items"][0]["proposals"][0] == {"target": "الأرز", "provenance": "gateway_proposer",
                                                        "reference": None, "source_approved_by": None,
                                                        "note": None}
@@ -300,3 +300,40 @@ async def test_approve_records_forbidden_variants(env):
             "source": "Farmers", "target": "المزارعون", "reviewer_id": "aly",
             "forbidden_variants": ["المزارعون"]})
         assert same.status_code == 422  # the approved target cannot be one of its forbidden variants
+
+
+# ------------------------------------------------------------------ tiers (D-039)
+async def test_approve_as_hint_and_filter_by_tier(env):
+    async with client(env) as http:
+        run_id = await ready(env, http)
+        hint = await http.post(f"{base(run_id)}/approve", json={"source": "Wheat", "reviewer_id": "aly",
+                                                                 "tier": "hint"})
+        assert hint.status_code == 200, hint.text
+        assert hint.json()["status"] == "approved" and hint.json()["tier"] == "hint"
+        locked = await http.post(f"{base(run_id)}/approve", json={"source": "Rice", "reviewer_id": "aly"})
+        assert locked.json()["tier"] is None
+        hints = (await http.get(base(run_id), params={"tier": "hint"})).json()
+        assert [i["source"] for i in hints["items"]] == ["Wheat"]
+        locked_only = (await http.get(base(run_id), params={"tier": "locked"})).json()
+        assert [i["source"] for i in locked_only["items"]] == ["Rice"]
+        assert hints["gate"]["approved_hint"] == 1
+
+
+@pytest.mark.parametrize("body", [
+    {"source": "Wheat", "reviewer_id": "aly", "tier": "dropped"},                         # noise is rejected
+    {"source": "Wheat", "reviewer_id": "aly", "tier": "hint", "forbidden_variants": ["قمح"]},
+])
+async def test_hint_validation(env, body):
+    async with client(env) as http:
+        run_id = await ready(env, http)
+        response = await http.post(f"{base(run_id)}/approve", json=body)
+        assert response.status_code == 422, response.text
+
+
+async def test_bulk_approve_with_tiers(env):
+    async with client(env) as http:
+        run_id = await ready(env, http)
+        ok = await http.post(f"{base(run_id)}/bulk-approve", json={"reviewer_id": "aly", "selections": [
+            {"source": "Rice"}, {"source": "Wheat", "tier": "hint"}]})
+        assert ok.status_code == 200, ok.text
+        assert {i["source"]: i["tier"] for i in ok.json()["items"]} == {"Rice": None, "Wheat": "hint"}

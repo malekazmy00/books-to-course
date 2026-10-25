@@ -48,6 +48,21 @@ Classic rule-based + statistical term extraction, no NLP model dependency:
   "Surname, Given") and surnames seen with reporting verbs type Title-Case names as people;
   "-ian/-ean/-ist/-ism" adjectives of a person's name ("Crocean") are kept as terms
   (signal ``eponym``); very common nationality adjectives ("Italian") are not terms.
+* **Noise fixes (v3, D-039; measured on the 1959 provisional decisions, eval/reports/
+  term-extraction-v3.md):**
+  - citation fragments do not *discover* candidates (``mask_citations``): the state code of a
+    publication place ("(Tysons, VA: ..."), short-title citations ("Vacca, Alternative
+    Modernities, xii, 37."), quoted article titles of a reference and the journal title that
+    follows them. Publishers and cited works that the review kept are deliberately not masked.
+    Occurrences are still counted on the unmasked text;
+  - months, weekdays, compass words, nationalities, languages and ethnonyms are never people;
+  - a line-break hyphen ("Self- Critique") is joined and a slash joins two capitalised names
+    ("High Impact/Low Probability Analysis");
+  - a capitalised or C-value candidate is dropped when one longer kept candidate covers at
+    least half of its occurrences (``NESTED_SHARE``, below the 0.75 used for single words);
+  - a lowercase C-value phrase that starts or ends with a verb ("analysts avoid", "generate
+    scenarios") or ends with a participle or a preposition ("techniques described", "driving
+    forces behind") is not a term.
 
 Occurrences are counted only in translatable units (prose, heading, list items, captions,
 table cells, footnotes); references, index, toc and noise never count.
@@ -65,7 +80,7 @@ from b2c_contracts import TranslationUnit
 
 from .model import source_key, TermCandidate
 
-EXTRACTOR_VERSION = "termbase-extract-v2"
+EXTRACTOR_VERSION = "termbase-extract-v3"
 
 GeneralFrequency = Callable[[str], float]
 
@@ -199,6 +214,81 @@ each every no some many all other both between among into against
 _NON_NOMINAL_SUFFIX = re.compile(r"(?:ing|ed|ous|ful|less|able|ible)$")
 _LEGAL_SUFFIX_ACRONYMS = frozenset({"LLC", "INC", "LTD", "PLC", "LLP"})
 
+# --- v3 noise fixes (module docstring) -----------------------------------------------------
+NESTED_SHARE = 0.5               # share of occurrences inside ONE longer kept candidate
+MAX_ALONE = 1                    # ... and occurrences outside every longer candidate
+VERB_SHARE = 0.25                # share of a word's lowercase mentions right after "to"
+# Never a person: calendar words, compass words, nationalities / languages / ethnonyms.
+NOT_PEOPLE = frozenset("""
+january february march april may june july august september october november december
+monday tuesday wednesday thursday friday saturday sunday
+north south east west northern southern eastern western northeast northwest southeast southwest
+arctic antarctic
+afghan albanian algerian american americans arab arabs arabic argentine argentinian armenian
+asian australian austrian belgian bengali bolivian bosnian brazilian british bulgarian burmese
+cambodian canadian chilean chinese colombian croatian cuban cypriot czech danish dutch
+egyptian english estonian ethiopian european europeans filipino finnish flemish french georgian
+german germans greek haitian hebrew hindi hungarian icelandic indian indonesian iranian iraqi
+irish israeli italian italians jamaican japanese jewish jordanian kenyan korean kurd kurdish kurds
+kuwaiti latin latvian lebanese libyan lithuanian malaysian mexican mongolian moroccan nepali
+nigerian norwegian pakistani palestinian palestinians persian peruvian polish portuguese romanian
+russian russians saudi scandinavian scottish serbian sicilian slovak slovenian somali soviet
+spanish sudanese swedish swiss syrian taiwanese thai tunisian turkish ukrainian urdu uruguayan
+venezuelan vietnamese welsh yemeni yiddish zimbabwean african africans latino latina latinos
+""".split())
+_PREPOSITIONS = frozenset("""
+behind across beyond toward towards around along despite alongside amid amidst inside outside
+besides unlike near onto beneath underneath throughout regarding concerning following versus
+""".split())
+_DEHYPHEN = re.compile(r"(?<=[A-Za-z])- (?=[A-Za-z])")         # "Self- Critique" (line-break hyphen)
+_NOTE_KINDS = frozenset({"footnote", "list_item", "table_cell", "caption"})
+# Page locators: roman or up to three digits (a four-digit number is more likely a year).
+_PAGES = r"(?:[xivlc]{1,6}|\d{1,3})(?:\s*[-–]\s*(?:[xivlc]{1,6}|\d{1,3}))?"
+_PAGE_TAIL = rf"{_PAGES}(?:\s*,\s*{_PAGES})*(?:\s+and\s+passim)?"
+# "(Tysons, VA: Publisher, 2019)": only the state code of a publication place is masked.
+_PUB_STATE = re.compile(r"(?<=\()(?P<city>[A-Z][\w.'’ \-]{1,40}),\s*(?P<state>[A-Z]{2})(?=\s*:)")
+# A journal title right after a quoted article title and before its volume number:
+# "'Title', Canadian Journal of Political Science/Revue ... 23, no. 1".
+_JOURNAL = re.compile(r"[’'”\"],?\s+(?P<journal>[A-Z][^,;()\d'’\"”“‘]{2,100}?)\s+\d{1,4},\s*no\.\s*\d")
+_TITLE_WORD = r"(?:[A-Z][\w'’\-]*|of|and|the|in|for|on|to|a|an|&|at|from|with)"
+_SHORT_TITLE = rf"(?:(?:The|A|An)\s+)?[A-Z][\w'’\-]*(?:\s+{_TITLE_WORD}){{0,8}}"
+_SURNAME = r"[A-Z][\w'’\-]+(?:\s+(?:and|&)\s+[A-Z][\w'’\-]+)?"
+# "Vacca, Alternative Modernities, xii, 37." anywhere; in a note, also a ";"-separated list of
+# short titles ("Boggs, Two Revolutions; Femia, Political Thought; Salamini, Political Praxis. 138.").
+_SHORT_CITE_PAGES = re.compile(rf"(?<![\w])(?P<who>{_SURNAME}),\s+(?P<title>{_SHORT_TITLE}),\s*{_PAGE_TAIL}\.?(?=\s|$)")
+_SHORT_CITE_LIST = re.compile(rf"(?:^|(?<=;\s))(?P<who>{_SURNAME}),\s+(?P<title>{_SHORT_TITLE})"
+                              r"(?=\s*;|\.\s*\d)")
+_SHORT_CITE_BEFORE_LIST = re.compile(rf"(?<![\w])(?P<who>{_SURNAME}),\s+(?P<title>{_SHORT_TITLE})(?=\s*;)")
+
+
+def _blank(text: str, start: int, end: int) -> str:
+    """Replace ``text[start:end]`` by a separator of the same length (breaks every run)."""
+    return text[:start] + " ;" + " " * max(0, end - start - 2) + text[end:]
+
+
+def _names_an_organization(title: str) -> bool:
+    return any(w in _ORG_HEADS for w in title.split())   # publishers and institutions are kept
+
+
+def mask_citations(text: str, kind: str = "prose") -> str:
+    """``text`` with citation fragments replaced by separators (see the module docstring).
+
+    Used only to *discover* candidates; frequencies and contexts use the original text. Cited
+    works, publishers and institutions are not masked: the provisional review kept many of
+    them, so masking them would lose accepted entries (measured, eval/reports/term-extraction-v3.md)."""
+    out = text
+    for m in _PUB_STATE.finditer(text):
+        out = _blank(out, m.start("state"), m.end("state"))
+    for m in _JOURNAL.finditer(text):
+        if not _names_an_organization(m.group("journal")):
+            out = _blank(out, m.start("journal"), m.end("journal"))
+    patterns = [_SHORT_CITE_PAGES] + ([_SHORT_CITE_LIST, _SHORT_CITE_BEFORE_LIST] if kind in _NOTE_KINDS else [])
+    for pattern in patterns:
+        for m in pattern.finditer(text):
+            if not _names_an_organization(m.group("title")):
+                out = _blank(out, m.start("title"), m.end("title"))
+    return out
+
 
 def _zipf(freq: float) -> float:
     """Zipf scale of a token share: log10 of frequency per billion words (wordfreq's scale)."""
@@ -243,6 +333,7 @@ class _WordStats:
     cap_mid: Counter = field(default_factory=Counter)
     nominal: Counter = field(default_factory=Counter)   # after a determiner/preposition, or before "of"
     head: Counter = field(default_factory=Counter)      # followed by punctuation / a function word
+    after_to: Counter = field(default_factory=Counter)  # lowercase mention right after "to" (v3 verb test)
     units: dict = field(default_factory=lambda: defaultdict(set))
     sections: dict = field(default_factory=lambda: defaultdict(set))
     tokens: int = 0
@@ -261,6 +352,8 @@ class _WordStats:
                 nxt = toks[n + 1] if n + 1 < len(toks) else None
                 if prev in _NOMINAL_LEFT or (nxt is not None and nxt.text == "of"):
                     self.nominal[lw] += 1
+                if prev == "to":
+                    self.after_to[lw] += 1
                 if (tok.period or possessive or nxt is None or not nxt.is_word
                         or nxt.text.casefold() in STOPWORDS):
                     self.head[lw] += 1
@@ -269,6 +362,21 @@ class _WordStats:
             self.units[lw].add(idx)
             self.sections[lw].add(section)
             prev = lw
+
+    def verb_like(self, w: str, *, gerund: bool = False) -> bool:
+        """POS-free verb test (v3): the word, or its base form ("lacks" -> "lack", and with
+        ``gerund`` "helping" -> "help"), follows "to" in at least ``VERB_SHARE`` of its lowercase
+        mentions (twice or more). A final "-ing" word is a nominal head ("critical thinking"),
+        so the gerund reading is only asked for the first word ("helping analysts")."""
+        bases = {w}
+        if w.endswith("es"):
+            bases |= {w[:-1], w[:-2]}
+        elif w.endswith("s"):
+            bases.add(w[:-1])
+        if gerund and w.endswith("ing") and len(w) > 5:
+            stem = w[:-3]
+            bases |= {stem, stem + "e"} | ({stem[:-1]} if len(stem) > 2 and stem[-1] == stem[-2] else set())
+        return any(self.after_to[b] >= 2 and self.after_to[b] >= VERB_SHARE * self.lower[b] for b in bases)
 
     def lower_share(self, w: str) -> float:
         total = self.lower[w] + self.cap_mid[w]
@@ -452,7 +560,8 @@ def extract_candidates(units: Sequence[TranslationUnit], *, min_cvalue: float = 
     lower_ngrams: Counter = Counter()
 
     for idx, unit in enumerate(trans):
-        text = unit.source_text
+        # discovery text (v3): citation fragments masked, line-break hyphens joined
+        text = _DEHYPHEN.sub("-", mask_citations(unit.source_text, unit.kind))
         is_heading = unit.kind == "heading"
         if is_heading:
             text = _HEADING_NUM.sub("", text)
@@ -468,7 +577,7 @@ def extract_candidates(units: Sequence[TranslationUnit], *, min_cvalue: float = 
             for tok in toks + [_Tok("", 0, 0, False, False, is_word=False)]:
                 w = tok.text
                 ok = (tok.is_word and w.islower() and len(w) >= 3 and w not in STOPWORDS
-                      and w not in NON_TERM_WORDS and not w.endswith("ly")
+                      and w not in NON_TERM_WORDS and w not in _PREPOSITIONS and not w.endswith("ly")
                       and "'" not in w and "’" not in w)
                 if ok:
                     run.append(w)
@@ -535,7 +644,8 @@ def extract_candidates(units: Sequence[TranslationUnit], *, min_cvalue: float = 
             extensions[gram[:-1]].append(gram)
             extensions[gram[1:]].append(gram)
     for key, value in _c_values(lower_ngrams).items():
-        if value >= min_cvalue and not _mostly_nested(key, lower_ngrams, extensions):
+        if value >= min_cvalue and not _mostly_nested(key, lower_ngrams, extensions) \
+                and not _verb_fragment(key, stats):
             a = aggs[key]
             a.surface[" ".join(key)] += 1
             a.signals.add("c_value")
@@ -658,6 +768,16 @@ def _mostly_nested(key: tuple[str, ...], freq: Counter, extensions, share: float
     return False
 
 
+def _verb_fragment(key: tuple[str, ...], stats: _WordStats) -> bool:
+    """A lowercase n-gram that is a clause fragment, not a noun phrase (v3): it starts or ends
+    with a verb ("generate scenarios", "analysts avoid"), or ends with a participle or a
+    preposition ("techniques described", "driving forces behind")."""
+    first, last = key[0], key[-1]
+    if last.endswith("ed") or last in _PREPOSITIONS:
+        return True
+    return stats.verb_like(first, gerund=True) or (not last.endswith("ing") and stats.verb_like(last))
+
+
 def _c_values(freq: Counter) -> dict[tuple[str, ...], float]:
     """C-value (Frantzi et al. 2000): log2|a| * (f(a) - mean f of longer candidates nesting a)."""
     nested_in: dict[tuple[str, ...], list[int]] = defaultdict(list)
@@ -698,6 +818,13 @@ def _grow(toks: list[_Tok], i: int) -> int:
         elif (t.text == "?" and t.start == toks[k - 1].end and k + 1 < n
               and toks[k + 1].text in _QUESTION_TITLE_HEADS):
             k += 1   # "What If? Analysis": a question-form technique title
+        elif (t.text == "/" and t.start == toks[k - 1].end and k + 2 < n and toks[k + 1].is_word
+              and toks[k + 1].start == t.end and _is_cap(toks[k + 1].text) and not toks[k - 1].period
+              and sum(x.is_word for x in toks[i:k]) >= 2 and toks[k + 2].is_word and _is_cap(toks[k + 2].text)
+              and not toks[k + 1].period):
+            # "High Impact/Low Probability Analysis": a slash joins two capitalised names of two
+            # or more words each (v3); "CQ Press/SAGE" and "Marx/Engels" stay apart
+            k += 1
         else:
             break
     return j
@@ -843,7 +970,7 @@ def _finalise(aggs, occ: _Occurrences, trans, ctx: _Ctx, min_freq, min_sections)
                 if kind == "term" and len(key) == 1 and _EPONYM_SUFFIX.search(key[0]) and _is_cap(surface):
                     deferred.append((key, surface, a, hits))
                     continue
-                if kind != "term" or not _proper_noun(key, surface, a, hits, trans):
+                if kind != "term" or _not_people(key) or not _proper_noun(key, surface, a, hits, trans):
                     continue
                 kind = "person"  # most unresolved single proper nouns in books are surnames
                 a.signals.add("kind_uncertain")
@@ -855,6 +982,7 @@ def _finalise(aggs, occ: _Occurrences, trans, ctx: _Ctx, min_freq, min_sections)
             out[dedupe] = _candidate(surface, kind, a, hits, trans, acronym)
             hits_of[dedupe] = hits
     _drop_nested(out, hits_of)
+    _drop_fragments(out, hits_of, trans)
     # adjectives of a person's name ("Crocean", "Gramscian"): terms, flagged ``eponym``
     surnames = ctx.people | {k[-1] for (k, acr), c in out.items() if c.kind == "person" and not acr}
     for key, surface, a, hits in deferred:
@@ -938,6 +1066,69 @@ def _drop_nested(out: dict, hits_of: dict, share: float = 0.75) -> None:
             del out[(key, acronym)]
 
 
+# Capitalised candidates found only by these signals may be fragments of a longer name (v3).
+_WEAK_SIGNALS = frozenset({"capitalized", "heading", "kind_uncertain"})
+# A fragment is cut from its longer name at a function word or a slash ("Program Evaluation |
+# and Review Technique", "A | Tradecraft Primer", "High Impact | /Low Probability Analysis");
+# a modifier before a head noun ("Red Hat" Analysis) or after a title ("Psychologist" Abraham
+# Maslow) is an entry of its own.
+_CUT_WORDS = frozenset({"and", "or", "of", "for", "the", "a", "an", "to", "in", "on"})
+
+
+def _cut_from(key: tuple[str, ...], other: tuple[str, ...], other_surface: str) -> bool:
+    n, m = len(key), len(other)
+    for i in range(m - n + 1):
+        if other[i:i + n] != key:
+            continue
+        if (i > 0 and other[i - 1] in _CUT_WORDS) or (i + n < m and other[i + n] in _CUT_WORDS):
+            return True
+    words = other_surface.casefold().split("/")
+    return len(words) > 1 and any(_key(part)[:n] == key or _key(part)[-n:] == key for part in words)
+
+
+def _phrase_pattern(key: tuple[str, ...]) -> re.Pattern[str]:
+    return re.compile(r"(?<![\w])" + r"[\W_]+".join(re.escape(w) for w in key) + r"(?:s|es)?(?![\w])", re.I)
+
+
+def _drop_fragments(out: dict, hits_of: dict, trans, share: float = NESTED_SHARE,
+                    max_alone: int = MAX_ALONE) -> None:
+    """Drop a candidate found only by weak signals when ONE longer kept candidate containing
+    it covers at least ``share`` of its occurrences and it stands alone (outside every longer
+    candidate) at most ``max_alone`` times ("Review Technique" inside "Program Evaluation and
+    Review Technique"). "Labour Party" survives "British Labour Party" (no single longer name
+    covers half of its mentions); people are never fragments (a surname is its own entry)."""
+    keys = [(k, acr) for (k, acr) in out if not acr]
+    containers: dict[tuple[str, ...], list[tuple[str, ...]]] = defaultdict(list)
+    for key, _ in keys:
+        n = len(key)
+        for other, _ in keys:
+            m = len(other)
+            if m > n and any(other[i:i + n] == key for i in range(m - n + 1)):
+                containers[key].append(other)
+    patterns: dict[tuple[str, ...], re.Pattern[str]] = {}
+
+    def spans(key: tuple[str, ...], unit: int) -> list[tuple[int, int]]:
+        pattern = patterns.setdefault(key, _phrase_pattern(key))
+        return [m.span() for m in pattern.finditer(trans[unit].source_text)]
+
+    for key, longer in containers.items():
+        cand = out.get((key, False))
+        if cand is None or cand.kind == "person" or not set(cand.signals) <= _WEAK_SIGNALS:
+            continue
+        own = {h: spans(key, h) for h in hits_of[(key, False)]}
+        total = sum(len(s) for s in own.values())
+        live = [o for o in longer if (o, False) in out and _cut_from(key, o, out[(o, False)].source)]
+        if not total or not live:
+            continue
+        covered: dict[tuple[str, ...], set[tuple[int, int, int]]] = {}
+        for other in live:
+            covered[other] = {(h, a, b) for h, mine in own.items() for a, b in mine
+                              if any(x <= a and b <= y for x, y in spans(other, h))}
+        alone = total - len(set().union(*covered.values()))
+        if alone <= max_alone and max(len(c) for c in covered.values()) >= share * total:
+            del out[(key, False)]
+
+
 _EPONYM_SUFFIX = re.compile(r"(?:ians?|eans?|ists?|isms?|ites?)$")
 
 
@@ -986,6 +1177,17 @@ def _reported_surname(key: tuple[str, ...], surface: str, ctx: _Ctx, aggs) -> bo
 
 
 def _kind(key, surface: str, a: _Agg, ctx: _Ctx, aggs) -> str:
+    kind = _surface_kind(key, surface, a, ctx, aggs)
+    if kind == "person" and _not_people(key):
+        return "term"   # v3: "September", "Polish", "South" are never people
+    return kind
+
+
+def _not_people(key: tuple[str, ...]) -> bool:
+    return bool(key) and all(w in NOT_PEOPLE for w in key)
+
+
+def _surface_kind(key, surface: str, a: _Agg, ctx: _Ctx, aggs) -> str:
     if a.name_pattern:
         return "person"
     if a.org_head:

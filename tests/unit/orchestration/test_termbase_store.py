@@ -120,8 +120,8 @@ def test_gate_counts_only_present_pending_entries_at_or_above_the_threshold(stor
     approve_terms(store, SCOPE, [TermSelection("Signal Mapping")], "aly")
     reject_term(store, SCOPE, "Lena Vasquez", "aly")
     counts = gate_counts(store.entries(SCOPE), 3)
-    assert counts.as_json() == {"pending_blocking": 0, "pending_total": 2, "approved": 1, "rejected": 1,
-                                "absent": 0, "min_frequency": 3}
+    assert counts.as_json() == {"pending_blocking": 0, "pending_total": 2, "pending_dropped": 0, "approved": 1,
+                                "approved_hint": 0, "rejected": 1, "absent": 0, "min_frequency": 3}
 
 
 def test_snapshot_and_digest_use_approved_entries_only(store):

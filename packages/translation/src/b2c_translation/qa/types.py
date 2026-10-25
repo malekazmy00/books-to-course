@@ -23,6 +23,8 @@ class CheckContext:
     leak_fingerprints: frozenset[str] = frozenset()            # derived from every prompt template version
     # approved termbase: renderings a reviewer ruled out for a locked term (source -> variants)
     forbidden: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    # approved hint-tier entries (D-039): preferred renderings, checked only as a minor signal
+    hints: Mapping[str, str] = field(default_factory=dict)
 
 
 Check = Callable[[CheckContext], list[QAIssue]]

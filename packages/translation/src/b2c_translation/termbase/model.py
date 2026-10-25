@@ -4,7 +4,14 @@ The termbase plays the role of a TBX termbase in a CAT tool: it is built before
 translation from the book's own candidates, every Arabic equivalent is a *proposal*
 with provenance until a human approves it (Gate G3, T-TR-01), and only approved
 entries reach ``UnitTranslator`` (``locked_terms()`` -> ``terms``, ``entity_table()`` ->
-``entities``) and the ``terminology`` / ``named_entity`` QA checks.
+``entities``, ``hint_terms()`` -> ``hints``) and the ``terminology`` / ``named_entity`` /
+``terminology_hint`` QA checks.
+
+Entry tiers (v3, D-039): an approved entry is ``locked`` (checked strictly; every approval
+before v3) or ``hint`` (a preferred rendering for the prompt, checked only as a minor signal);
+a rejected entry is ``dropped``. ``TermRecord.tier`` stores ``None`` for locked, and fields
+added in v3 are left out of the serialised artifact while unset, so an artifact written before
+v3 re-serialises byte for byte (same SHA-256, same approved digest).
 
 Artifact: canonical JSON (sorted keys, UTF-8) with ``format``/``format_version`` and a
 SHA-256 over the content without the hash itself; ``from_json`` refuses a mismatch.
@@ -20,12 +27,14 @@ from datetime import datetime, timezone
 from typing import Literal
 
 from b2c_contracts import TermbaseEntry
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, model_serializer
 
 ARTIFACT_FORMAT = "b2c.book-termbase"
 ARTIFACT_FORMAT_VERSION = 1
 
 CandidateKind = Literal["term", "acronym", "person", "organization", "place", "work"]
+Tier = Literal["locked", "hint", "dropped"]
+APPROVAL_TIERS: frozenset[str] = frozenset({"locked", "hint"})
 TERM_KINDS: frozenset[str] = frozenset({"term", "acronym"})
 ENTITY_KINDS: frozenset[str] = frozenset({"person", "organization", "place", "work"})
 
@@ -61,6 +70,14 @@ class _Model(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+def _omit_unset(data: dict, fields: tuple[str, ...]) -> dict:
+    """Leave v3 fields out of the serialised form while they are unset (artifact compatibility)."""
+    for name in fields:
+        if data.get(name) is None:
+            data.pop(name, None)
+    return data
+
+
 class TermCandidate(_Model):
     model_config = ConfigDict(extra="forbid", frozen=True)
     source: str = Field(min_length=1)
@@ -72,6 +89,13 @@ class TermCandidate(_Model):
     expansion: str | None = None          # acronyms only
     signals: tuple[str, ...] = ()         # e.g. "capitalized", "defined", "c_value", "index"
     score: float = 0.0
+    # v3: the termhood classifier's suggestion (``None`` = not classified) and its reason.
+    termhood: Tier | None = None
+    termhood_reason: str | None = None
+
+    @model_serializer(mode="wrap")
+    def _serialise(self, handler: SerializerFunctionWrapHandler) -> dict:
+        return _omit_unset(handler(self), ("termhood", "termhood_reason"))
 
 
 class Proposal(_Model):
@@ -98,6 +122,19 @@ class TermRecord(_Model):
     rejected_by: str | None = None
     rejected_at: datetime | None = None
     rejection_reason: str | None = None
+    # v3: ``None`` = locked (every approval before v3); "hint" = preferred rendering only.
+    tier: Literal["hint"] | None = None
+
+    @model_serializer(mode="wrap")
+    def _serialise(self, handler: SerializerFunctionWrapHandler) -> dict:
+        return _omit_unset(handler(self), ("tier",))
+
+    @property
+    def effective_tier(self) -> Tier | None:
+        """locked / hint for an approved entry, dropped for a rejected one, None while pending."""
+        if self.status == "approved":
+            return self.tier or "locked"
+        return "dropped" if self.status == "rejected" else None
 
 
 class ConsistencyIssue(_Model):
@@ -159,21 +196,26 @@ class BookTermbase(_Model):
     def pending(self) -> list[TermRecord]:
         return [r for r in self.entries if r.status == "pending"]
 
-    def _approved(self, kinds: frozenset[str]) -> dict[str, str]:
+    def _approved(self, kinds: frozenset[str], tier: str = "locked") -> dict[str, str]:
         return {r.source: r.target for r in self.entries
-                if r.status == "approved" and r.approved_by and r.target and r.kind in kinds}
+                if r.status == "approved" and r.approved_by and r.target and r.kind in kinds
+                and r.effective_tier == tier}
 
     def locked_terms(self) -> dict[str, str]:
-        """Approved terms and acronyms only: UnitTranslator(terms=...)."""
+        """Approved locked terms and acronyms only: UnitTranslator(terms=...)."""
         return self._approved(TERM_KINDS)
 
     def entity_table(self) -> dict[str, str]:
-        """Approved people, organisations, places and works only: UnitTranslator(entities=...)."""
+        """Approved locked people, organisations, places and works only: UnitTranslator(entities=...)."""
         return self._approved(ENTITY_KINDS)
+
+    def hint_terms(self) -> dict[str, str]:
+        """Approved hint entries of any kind: UnitTranslator(hints=...), never checked strictly."""
+        return self._approved(TERM_KINDS | ENTITY_KINDS, tier="hint")
 
     def forbidden_variants(self) -> dict[str, tuple[str, ...]]:
         return {r.source: tuple(r.forbidden_variants) for r in self.entries
-                if r.status == "approved" and r.forbidden_variants}
+                if r.status == "approved" and r.effective_tier == "locked" and r.forbidden_variants}
 
     def forbidden_hits(self, source_text: str, target_text: str) -> list[tuple[str, str]]:
         """(source term, forbidden variant) pairs: the term occurs in the source and a
@@ -181,7 +223,7 @@ class BookTermbase(_Model):
         hits = []
         target = target_key(target_text)
         for record in self.entries:
-            if record.status != "approved" or not record.forbidden_variants:
+            if record.status != "approved" or record.effective_tier != "locked" or not record.forbidden_variants:
                 continue
             if not _source_occurs(source_text, record.source):
                 continue
@@ -194,8 +236,13 @@ class BookTermbase(_Model):
     def approve(self, source: str, target: str, reviewer: str, *, replace: bool = False,
                 forbidden_variants: Sequence[str] = (), forbid_other_proposals: bool = False,
                 allow_shared_target: bool = False, do_not_translate: bool = False,
-                now: datetime | None = None) -> TermRecord:
+                tier: str = "locked", now: datetime | None = None) -> TermRecord:
+        """Approve ``source`` as a ``locked`` (default) or ``hint`` entry; noise is ``reject``ed."""
         reviewer = _check_reviewer(reviewer)
+        if tier not in APPROVAL_TIERS:
+            raise TermbaseError(f"an approval tier is 'locked' or 'hint', not {tier!r}; reject noise instead")
+        if tier == "hint" and (forbid_other_proposals or any(v.strip() for v in forbidden_variants)):
+            raise TermbaseError("a hint is not checked strictly, so it takes no forbidden variants")
         record = self.get(source)
         target = _WS.sub(" ", unicodedata.normalize("NFC", target or "")).strip()
         if not target:
@@ -207,6 +254,8 @@ class BookTermbase(_Model):
             raise TermbaseError("target contains Latin letters; use do_not_translate to keep the source form")
         if record.status == "approved" and record.target != target and not replace:
             raise TermbaseError(f"{record.source!r} already approved as {record.target!r}; pass replace=True")
+        if record.status == "approved" and record.effective_tier != tier and not replace:
+            raise TermbaseError(f"{record.source!r} already approved as {record.effective_tier}; pass replace=True")
         variants = [v.strip() for v in forbidden_variants if v.strip()]
         if forbid_other_proposals:
             variants += [p.target for p in record.proposals if target_key(p.target) != target_key(target)]
@@ -227,6 +276,7 @@ class BookTermbase(_Model):
         record.allow_shared_target = allow_shared_target
         record.approved_by = reviewer
         record.approved_at = now or _now()
+        record.tier = "hint" if tier == "hint" else None
         record.rejected_by = record.rejected_at = record.rejection_reason = None
         return record
 
@@ -237,6 +287,7 @@ class BookTermbase(_Model):
         record.target = None
         record.approved_by = None
         record.approved_at = None
+        record.tier = None
         record.rejected_by = reviewer
         record.rejected_at = now or _now()
         record.rejection_reason = reason.strip() or "rejected"
@@ -269,10 +320,12 @@ class BookTermbase(_Model):
 
     # ------------------------------------------------------------------ contracts / artifact
     def to_contract_entries(self) -> list[TermbaseEntry]:
+        """Approved terms and acronyms (locked and hint) as ``TermbaseEntry`` contracts."""
         return [TermbaseEntry(term_en=r.source, term_ar=r.target,
                               definition_en=r.candidate.definition_context or r.source,
                               forbidden_variants_ar=list(r.forbidden_variants),
-                              do_not_translate=r.do_not_translate, approved_by=r.approved_by)
+                              do_not_translate=r.do_not_translate, approved_by=r.approved_by,
+                              tier=r.effective_tier)
                 for r in self.entries
                 if r.status == "approved" and r.target and r.kind in TERM_KINDS]
 

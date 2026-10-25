@@ -36,7 +36,7 @@ from b2c_translation.engines.mt import PlainMTEngine
 from b2c_translation.prompts import language_name
 from b2c_translation.qa import QualityEstimator
 from b2c_translation.qa.estimators import CometKiwiEstimator, LLMJudge
-from b2c_translation.termbase import GatewayTermProposer, Proposal, TermCandidate
+from b2c_translation.termbase import GatewayTermProposer, Proposal, TermCandidate, TermhoodClassifier
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from b2c_contracts import EngineIdentity
@@ -48,9 +48,10 @@ HY_PLAIN_URL_ENV = "B2C_HY_PLAIN_BASE_URL"
 HY_MT2_MODEL_ID = "tencent/Hy-MT2-1.8B"
 # Model card revision the PlainMTEngine template was verified against (engines/mt.py).
 HY_MT2_REVISION = "9a341cd1b679d3efd23b46e847b01745a71ed792"
-# Not part of the fingerprint: secrets/transport, and the termbase proposer switch (it only adds
-# proposals for a human to approve; what translation uses is the approved-termbase digest).
-_SECRET_OR_TRANSPORT = {"api_key_file", "timeout_s", "propose_terms"}
+# Not part of the fingerprint: secrets/transport, and the termbase proposer and termhood
+# classifier switches (they only add proposals / suggestions for a reviewer; what translation
+# uses is the approved-termbase digest).
+_SECRET_OR_TRANSPORT = {"api_key_file", "timeout_s", "propose_terms", "classify_termhood"}
 
 
 class UnknownProfile(LookupError):
@@ -88,6 +89,10 @@ class EngineProfile(_GatewayFields, _Profile):
     max_output_tokens: int = Field(default=4096, ge=64, le=32768)
     # Ask this profile's model for termbase proposals of unresolved candidates (chat, local only).
     propose_terms: bool = False
+    # Ask this profile's model for a locked / hint / dropped suggestion per termbase candidate
+    # before any proposal (D-039; chat, local only). Off unless its measured sensitivity on the
+    # accepted candidates reaches 0.97 (eval/reports/term-extraction-v3.md).
+    classify_termhood: bool = False
 
     @model_validator(mode="after")
     def _kind_rules(self) -> "EngineProfile":
@@ -95,6 +100,9 @@ class EngineProfile(_GatewayFields, _Profile):
             raise ValueError("engine profile needs provider, base_url and model_id")
         if self.propose_terms and (self.kind != "chat" or self.allow_remote):
             raise ValueError("propose_terms needs a local chat profile: the proposer sends book text "
+                             "with instructions to the model")
+        if self.classify_termhood and (self.kind != "chat" or self.allow_remote):
+            raise ValueError("classify_termhood needs a local chat profile: the classifier sends book text "
                              "with instructions to the model")
         if self.kind == "plain_mt":
             if not self.template_id:
@@ -221,6 +229,7 @@ class ProfileRuntime:
         self._engines: dict[str, TranslationEngine] = {}
         self._estimators: dict[tuple[str, str, str], QualityEstimator] = {}
         self._proposers: dict[str, GatewayTermProposer | None] = {}
+        self._classifiers: dict[str, TermhoodClassifier | None] = {}
         self._lock = threading.Lock()
 
     def fingerprint(self, engine_profile: str, qe_profile: str | None) -> str:
@@ -251,6 +260,18 @@ class ProfileRuntime:
                                                     local_gateway_confirmed=not profile.allow_remote)
                 self._proposers[profile_id] = proposer
             return self._proposers[profile_id]
+
+    def termhood_classifier(self, profile_id: str) -> TermhoodClassifier | None:
+        """The termhood classifier of an engine profile (D-039), or None unless the profile enables it."""
+        with self._lock:
+            if profile_id not in self._classifiers:
+                profile = self.profiles.engine(profile_id)
+                classifier = None
+                if profile.classify_termhood:
+                    classifier = TermhoodClassifier(self._gateway_factory(profile), profile.identity(),
+                                                    book_text_allowed=not profile.allow_remote)
+                self._classifiers[profile_id] = classifier
+            return self._classifiers[profile_id]
 
     def estimator(self, profile_id: str | None, *, source_language: str = "en",
                   target_language: str = "ar") -> QualityEstimator | None:

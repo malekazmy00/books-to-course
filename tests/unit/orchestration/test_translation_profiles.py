@@ -152,6 +152,30 @@ def test_term_proposer_only_when_the_profile_enables_it():
         proposer.propose(candidate)
 
 
+def test_termhood_classifier_is_off_by_default_and_out_of_the_fingerprint():  # D-039
+    from b2c_translation.termbase import TermhoodClassifier
+
+    builtins = load_translation_profiles(SETTINGS, env={}).engines
+    assert all(not p.classify_termhood for p in builtins.values())
+    base = dict(id="x", kind="chat", provider="p", base_url="http://u/v1", model_id="m")
+    off = TranslationProfiles(engines={"x": EngineProfile(**base)})
+    on = TranslationProfiles(engines={"x": EngineProfile(**base, classify_termhood=True)})
+    assert off.fingerprint("x", None) == on.fingerprint("x", None)
+    assert ProfileRuntime(off, gateway_factory=FakeGateway).termhood_classifier("x") is None
+    runtime = ProfileRuntime(on, gateway_factory=FakeGateway)
+    clf = runtime.termhood_classifier("x")
+    assert isinstance(clf, TermhoodClassifier) and runtime.termhood_classifier("x") is clf
+    with pytest.raises(ValueError):   # book text with instructions: local chat profiles only
+        EngineProfile(id="x", kind="chat", provider="p", base_url="https://api.example/v1", model_id="m",
+                      allow_remote=True, api_key_file="/k", classify_termhood=True)
+
+
+def test_shipped_profiles_file_does_not_enable_the_classifier():
+    from pathlib import Path
+    shipped = json.loads((Path(__file__).resolve().parents[3] / "docker/translation-profiles.json").read_text())
+    assert not any(e.get("classify_termhood") for e in shipped["engines"])
+
+
 def test_term_proposer_needs_a_local_chat_profile_and_stays_out_of_the_fingerprint():
     with pytest.raises(ValueError):
         EngineProfile(id="x", kind="plain_mt", provider="p", base_url="http://u/v1", model_id="m",

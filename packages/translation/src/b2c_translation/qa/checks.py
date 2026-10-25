@@ -528,6 +528,51 @@ def contains_term(target: str, term: str) -> bool:
     return False
 
 
+# Inflection-tolerant matching (v3, D-039). Without a morphological analyser, each token is
+# reduced to a small set of candidate stems by removing, at the end of the word: the alif of an
+# accusative tanween, a possessive pronoun, a sound plural / dual ending (ات ون ين ان), then the
+# feminine ending (ة, written ه
+# after ``_ar_key``); an open taa left by a suffix (جماعتهم -> جماعت) is read as ة. Two tokens
+# match when their stem sets intersect. Stems shorter than three letters are never used.
+_MIN_STEM = 3
+_PRONOUN_SUFFIXES = ("هما", "كما", "هم", "هن", "كم", "كن", "نا", "ها")
+_NUMBER_SUFFIXES = ("ات", "ون", "ين", "ان")
+
+
+def _stems(token: str) -> set[str]:
+    """Candidate stems of one already clitic-stripped, ``_ar_key``-normalised token."""
+    forms = {token}
+    if token.endswith("ا") and len(token) - 1 >= _MIN_STEM:
+        forms.add(token[:-1])                       # accusative tanween alif: ميسرًا -> ميسر
+    forms |= {token[:-len(s)] for s in _PRONOUN_SUFFIXES
+              if token.endswith(s) and len(token) - len(s) >= _MIN_STEM}
+    forms |= {f[:-len(s)] for f in set(forms) for s in _NUMBER_SUFFIXES
+              if f.endswith(s) and len(f) - len(s) >= _MIN_STEM}
+    forms |= {f[:-1] + "ه" for f in set(forms) if f.endswith("ت") and len(f) > _MIN_STEM}  # open -> closed taa
+    forms |= {f[:-1] for f in set(forms) if f.endswith("ه") and len(f) - 1 >= _MIN_STEM}   # feminine ending
+    return {f for f in forms if len(f) >= _MIN_STEM} or {token}
+
+
+def contains_term_inflected(target: str, term: str) -> bool:
+    """``contains_term`` that also accepts the inflections described above: the article and the
+    proclitics, sound plurals and duals, a pronoun suffix (with the open taa it causes) and the
+    gender/number agreement of an adjective. Words stay adjacent and in order. Broken plurals
+    are not recognised (they need a lexicon)."""
+    if contains_term(target, term):
+        return True
+    term_stems = [_stems(_strip_article(_ar_key(t))) for t in _WORD_RE.findall(term)]
+    if not term_stems:
+        return True
+    tokens = []
+    for t in _WORD_RE.findall(target):
+        stems: set[str] = set()
+        for v in _variants(_ar_key(t)):
+            stems |= _stems(_strip_article(v))
+        tokens.append(stems)
+    n = len(term_stems)
+    return any(all(term_stems[k] & tokens[i + k] for k in range(n)) for i in range(len(tokens) - n + 1))
+
+
 def _source_has(source: str, term: str) -> bool:
     words = [re.escape(w) for w in term.split()]
     if not words:
@@ -537,16 +582,17 @@ def _source_has(source: str, term: str) -> bool:
 
 
 def _table_check(ctx: CheckContext, table: Mapping[str, str], check_id: str,
-                 category: QACategory) -> list[QAIssue]:
+                 category: QACategory, matcher=contains_term) -> list[QAIssue]:
     issues = []
     for src_term, tgt_term in table.items():
-        if _source_has(ctx.unit.source_text, src_term) and not contains_term(ctx.target, tgt_term):
+        if _source_has(ctx.unit.source_text, src_term) and not matcher(ctx.target, tgt_term):
             issues.append(_issue(check_id, category, "major", term=src_term, expected=tgt_term))
     return issues
 
 
 def terminology(ctx: CheckContext) -> list[QAIssue]:
-    issues = _table_check(ctx, ctx.terms, "terminology", "terminology")
+    # A locked term is required (major) but may inflect (v3); forbidden variants stay strict.
+    issues = _table_check(ctx, ctx.terms, "terminology", "terminology", contains_term_inflected)
     # A ruled-out rendering is wrong even next to the locked form (e.g. a gloss in brackets).
     for src_term, variants in ctx.forbidden.items():
         if not _source_has(ctx.unit.source_text, src_term):
@@ -555,6 +601,18 @@ def terminology(ctx: CheckContext) -> list[QAIssue]:
             if contains_term(ctx.target, variant):
                 issues.append(_issue("forbidden_variant", "terminology", "major", term=src_term,
                                      variant=variant, expected=ctx.terms.get(src_term)))
+    return issues
+
+
+def terminology_hint(ctx: CheckContext) -> list[QAIssue]:
+    """Hint-tier entries (v3, D-039): a preferred rendering that is missing is only a minor
+    signal (never blocks); a term that is also locked is left to ``terminology``."""
+    issues = []
+    for src_term, tgt_term in ctx.hints.items():
+        if src_term in ctx.terms or src_term in ctx.entities:
+            continue
+        if _source_has(ctx.unit.source_text, src_term) and not contains_term_inflected(ctx.target, tgt_term):
+            issues.append(_issue("terminology_hint", "terminology", "minor", term=src_term, preferred=tgt_term))
     return issues
 
 
@@ -671,6 +729,7 @@ DEFAULT_CHECKS: tuple[RegisteredCheck, ...] = (
     RegisteredCheck("sentence_alignment", ("omission", "addition"), sentence_alignment),
     RegisteredCheck("repetition", ("repetition",), repetition),
     RegisteredCheck("terminology", ("terminology",), terminology),
+    RegisteredCheck("terminology_hint", ("terminology",), terminology_hint),
     RegisteredCheck("named_entity", ("named_entity",), named_entity),
     RegisteredCheck("brackets", ("structure_formatting",), brackets),
     RegisteredCheck("quotes", ("quotation",), quotes),
@@ -690,7 +749,7 @@ def run_checks(ctx: CheckContext, checks: Iterable[RegisteredCheck] = DEFAULT_CH
 
 
 __all__ = ["AR_NEGATION_CUES", "DEFAULT_CHECKS", "LENGTH_RATIO_BOUNDS", "RegisteredCheck", "brackets",
-           "contains_term", "count_source_sentences", "count_target_sentences", "empty_target",
+           "contains_term", "contains_term_inflected", "count_source_sentences", "count_target_sentences", "empty_target",
            "footnote_markers", "foreign_script", "latin_not_in_source", "leakage", "length_ratio",
            "named_entity", "normalize_digits", "numbers", "polarity", "quotes", "repetition", "run_checks",
-           "sentence_alignment", "terminology", "untranslated_english"]
+           "sentence_alignment", "terminology", "terminology_hint", "untranslated_english"]

@@ -1,6 +1,6 @@
 # 02 — العقود بين الطبقات (Layer Contracts)
 
-المصدر الوحيد للحقيقة هو `packages/contracts/src/b2c_contracts/models.py` (SCHEMA_VERSION 1.4.0). سجل الإصدارات: 1.3.0 أضاف قبول المخرجات (R1، §7)، و1.4.0 أضاف ParsedBook v2 (R3، §8) بعد دمج العملين.
+المصدر الوحيد للحقيقة هو `packages/contracts/src/b2c_contracts/models.py` (SCHEMA_VERSION 1.5.0). سجل الإصدارات: 1.3.0 أضاف قبول المخرجات (R1، §7)، و1.4.0 أضاف ParsedBook v2 (R3، §8) بعد دمج العملين، و1.5.0 أضاف النص المنطوق `SpeechTextDocument` (R7، §9).
 الوثيقة دي بتشرح **إزاي** كل طبقة بتسلّم للطبقة اللي بعدها. والتعريفات نفسها موجودة في الكود.
 
 > الكود ده اتشغّل واتختبر: `tests/contract/test_contracts_invariants.py` ونتيجته 8 passed. الاختبارات دي بتتأكد من القيود الأساسية (negative controls).
@@ -54,6 +54,7 @@ s3://artifacts/{course_id}/{stage}/{key}/<files>
 | L6 ← L7 | `LessonSummary`، `GlossaryTerm[]`، `Question[]` | الأسئلة عدّت الـ solver والـ linter | إعادة توليد ← G2 |
 | Termbase ← L7 | `TermbaseEntry[]` | كل entry ليها `approved_by` | Gate G3 |
 | L7 ← L8 | `UnitTranslation[]` (لكل `TranslationUnit`) | `decision == accepted`: بلا issue major/critical، ومخرج المحرك مقبول آليًا فقط بعد QE دلالي؛ وإلا `needs_review` (D-028) | G4 |
+| L7 ← L8 (1.5.0، R7) | `SpeechTextDocument` (artifact ‏`speech-text`) | يُبنى فقط من وحدات `decision == accepted` لتجميعة `translate-book` مقبولة في سجل المخرجات؛ أي وحدة `needs_review`/`rejected`/بلا نتيجة ترفض البناء كله. بوابة `speech.text-frontend` (§9) | non-retryable (`NotSpeechReady`) |
 | L8 ← Release | `AudioAsset` | `acx_pass` و`asr_cer ≤` العتبة؛ والصوت المستنسخ ليه consent ساري | إعادة توليد المقطع ← G5 |
 | Release | `CourseRelease` | كل الكتب `cleared`؛ والنسخ مجمّدة | non-retryable |
 
@@ -178,3 +179,18 @@ class GraphRetriever(Protocol):
 **التوافق مع v1:** `parsed_book_v1_from_v2(book)` إسقاط بلا استنتاج. يحوّل الأنواع الجديدة إلى أقرب نوع v1، ويعيد علامات الحواشي ملتصقة بموضعها، ويعيد رقم الحاشية في أول نصها، ويجعل المعرّف `f"{book_id}:{first_page}:{seq}"`. نشاط الاستخراج v2 يحفظ `parsed-book.json` (v1) بجانب `parsed-book-v2.json` حتى تنتقل المراحل اللاحقة.
 
 **تقرير الجودة:** `IngestQualityReport(metrics, checks[QualityCheck], accepted)`. كل `QualityCheck` يحمل القيمة والعتبة والحكم، والعقد يرفض حكمًا لا يطابق القيمة، ويرفض `accepted=true` إن فشل أي فحص أو لم ينجح أي فحص. الفحص غير القابل للقياس (مثل ربط الحواشي في كتاب بلا حواشٍ) قيمته `null` وحكمه `null`.
+
+## 9. النص المنطوق `SpeechTextDocument` (SCHEMA 1.5.0، R7)
+المرجع: `docs/audits/2026-10-24/07-speech-audio.md` §5.2 (S1) والمشكلتان C2 وC3. هذا ما تقرؤه مرحلة الكلام، ولا تقرأ نص الترجمة مباشرة.
+
+| الحقل | المعنى |
+|---|---|
+| `book_id`، `language` | الكتاب ولغة الصوت (`ar` فقط مبنية الآن) |
+| `frontend_version` | إصدار الواجهة الأمامية (`speech-text-ar-tn-1-seg1`)؛ يدخل في مفتاح الـ artifact |
+| `lexicon_digest` | بصمة قاموس النطق المستخدم (`sha256:` على المدخلات المرتبة)، مصدره termbase الكتاب المعتمد (S4) |
+| `source` | مرجع تجميعة `translate-book` المقبولة |
+| `segments[]` | `SpeechSegment`: ‏`segment_id` و`seq` (‏0..n-1 بالترتيب)، و`unit_ids` (≥ 1: وحدات الترجمة المقبولة)، و`block_ids`، و`structure` (‏heading/paragraph/list_item/caption/question/answer)، و`source_text` (النص المقبول قبل التطبيع)، و`spoken_text` (ما يصل لمزود TTS)، و`rules_applied`، و`lexicon_hits`، و`lexicon_misses` (كلمات لاتينية نُطقت بالبديل الموثق لا بالقاموس)، و`pause_after_ms` (‏0–5000) |
+| `excluded[]` | `SpeechExclusion(unit_id, reason)`: ‏`dropped`، و`not_spoken_kind:<kind>` (حاشية، مرجع، فهرس، تعليق صورة، جدول، ضوضاء)، و`wrong_language`، و`empty_after_normalization` |
+
+الثوابت التي يفرضها العقد: segment واحد على الأقل، و`segment_id` فريد، و`seq` متصل من 0، و`spoken_text` غير فارغ، ولا تكون وحدة منطوقة ومستبعدة معًا. أما شروط المحتوى (0 أرقام خام، و0 `[n]`، و0 حروف لاتينية، و0 روابط في `spoken_text`) فتفرضها بوابة `speech.text-frontend` الحتمية لا العقد، لأنها سياسة قابلة للتغيير.
+

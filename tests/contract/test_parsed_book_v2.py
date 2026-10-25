@@ -36,7 +36,8 @@ def book(blocks, notes=(), outline=(), n=3, **kw):
 
 
 def test_schema_version_bumped_for_v2():
-    assert c.SCHEMA_VERSION == "1.4.0"  # 1.3.0 (R1 gates) + v2 merged as 1.4.0
+    # 1.3.0 (R1 gates) + v2 merged as 1.4.0; later additions only raise it (1.5.0: speech text, R7)
+    assert tuple(int(x) for x in c.SCHEMA_VERSION.split(".")) >= (1, 4, 0)
     assert book([block(1)]).format == "parsed-book/2"
 
 

@@ -99,9 +99,15 @@ def test_two_paragraphs_in_one_block_are_found_without_a_length_limit():
     page = "\n".join(_lines(PARA_A) + _lines(PARA_B) + ["Closing line of the page."])
     tl = two_parsers(text_layer([page]))
     merged = Doc(1, 1).add("text", 1, PARA_A + " " + PARA_B + " Closing line of the page.", top=60, bottom=500)
-    report = quality_report(normalize_docling(META, [merged.json()], tl), tl)
+    # the merged block as a normalizer without the text layer's line geometry leaves it (since
+    # D-045 S2 itself cuts at that paragraph end: checked below)
+    flat = two_parsers(text_layer([page.replace("\n", " ")]))
+    report = quality_report(normalize_docling(META, [merged.json()], flat), tl)
     assert report.metrics["text_layer_paragraph_ends"] == 1 and report.metrics["merged_paragraphs"] == 1
     assert "merged_paragraph_rate" in report.failed and report.page_findings["merged_paragraph_rate"] == [1]
+    s2 = normalize_docling(META, [merged.json()], tl)
+    assert [b.text[:9] for b in s2.blocks] == ["The analy", "Then the "]
+    assert quality_report(s2, tl).metrics["merged_paragraphs"] == 0
     split = (Doc(1, 1).add("text", 1, PARA_A, top=60, bottom=200).add("text", 1, PARA_B, top=210, bottom=400)
              .add("text", 1, "Closing line of the page.", top=410, bottom=430))
     report = quality_report(normalize_docling(META, [split.json()], tl), tl)
@@ -197,6 +203,26 @@ def test_gate_result_records_the_decision_and_the_policy():
     assert result.metrics["failed_checks"] == [] and result.metrics["independent_references"] == 2
     thresholds = {c["name"]: c["threshold"] for c in GATE_DEFINITION["checks"]}
     assert thresholds["pages_below_agreement"] == 0 and GATE_DEFINITION["page_agreement_min"] == PAGE_AGREEMENT_MIN
+
+
+def test_bookmark_pointing_past_its_page_matches_the_heading_printed_atop_the_next():
+    """D-045: SAT's bookmarks for 23 of 110 headings point to the end of the previous page. The
+    heading opening the next page matches only when the text layer prints it there first."""
+    from b2c_ingest.quality import OUTLINE_OPENING_LINES
+
+    doc = (Doc(1, 2).add("text", 1, P1 + " " + P2, top=40, bottom=140)
+           .add("section_header", 2, "2.1 TWO TYPES OF THINKING", top=40, bottom=60)
+           .add("text", 2, FILLER, top=80, bottom=160))
+    outline = [bookmark("2.1 Two Types of Thinking", 0, 1, top=300)]
+    opening = two_parsers(text_layer([P1 + " " + P2, "2.1 TWO TYPES OF\nTHINKING\n" + FILLER], outline=outline))
+    book = normalize_docling(META, [doc.json()], opening)
+    m = quality_report(book, opening).metrics
+    assert m["outline_match_rate"] == 1.0 and m["outline_matched_on_next_page"] == 1
+    # the same parse, but the text layer prints that title deep inside the next page: no match
+    deep = two_parsers(text_layer([P1 + " " + P2, "\n".join([FILLER] * OUTLINE_OPENING_LINES)
+                                   + "\n2.1 Two Types of Thinking"], outline=outline))
+    m = quality_report(book, deep).metrics
+    assert m["outline_match_rate"] == 0.0 and m["outline_matched_on_next_page"] == 0
 
 
 def test_v1_baseline_is_measured_the_same_way():

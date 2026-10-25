@@ -122,4 +122,23 @@ def test_s2_normalization_splits_glued_words_and_keeps_the_raw_text():
     block = next(b for b in book.blocks if b.raw_text == "The value ofeach item.")
     assert block.text == "The value of each item."
     assert "glued_words_split" in block.normalization
-    assert NORMALIZER_VERSION == "2"
+    assert NORMALIZER_VERSION == "3"
+
+
+def test_split_keeps_the_hyphen_the_book_prints_elsewhere():
+    # D-045: 'nationalpopular' (a line-end hyphen Docling dropped) was split as 'national popular';
+    # the book itself prints 'national-popular' elsewhere, so the compound gets its hyphen back,
+    # also where the book uses the spaced form too (SAT: 'decision-making' 12, 'decision making' 23)
+    book = ["the national-popular will. A national-popular bloc. The national popular collective.",
+            "Not a national popular front, says the text. A national popular force."]
+    text, splits = splitter(extra=book).split("the nationalpopular will")
+    assert text == "the national-popular will"
+    assert splits[0].separators == ("-",)
+
+
+def test_split_keeps_the_space_without_the_hyphenated_form_printed_twice():
+    once = ["A decision-making cell. The decision making process. Good decision making helps."]
+    text, _ = splitter(extra=once).split("the decisionmaking process")
+    assert text == "the decision making process"
+    never = ["The social movement grew. A social movement spoke. A social movement rose."]
+    assert splitter(extra=never).split("the socialmovement grew")[0] == "the social movement grew"

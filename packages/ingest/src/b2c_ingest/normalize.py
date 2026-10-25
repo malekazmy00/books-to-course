@@ -43,14 +43,14 @@ from b2c_contracts import (
 )
 from .glued import GlueSplitter, Separators, reference_separators
 from b2c_core.source_text import (
-    BULLET, CONTINUATION_WORDS, NAV_LABELS, NOTE_LABEL, PAGE_NUMBER, TERMINAL, MarkerSequence, Vocab,
+    BULLET, CAPTION, CONTINUATION_WORDS, NAV_LABELS, NOTE_LABEL, PAGE_NUMBER, TERMINAL, MarkerSequence, Vocab,
     citation_score, fix_punct_spacing, heading_key, index_like, is_bibliographic,
     join_hyphen, marker_candidates, normalize_chars, repair_letter_spacing, section_word,
     split_inline_notes, split_lines, toc_like,
 )
 
 NORMALIZER_NAME = "b2c-normalize"
-NORMALIZER_VERSION = "2"  # 2: glued-word split (D-043); no long_block flag
+NORMALIZER_VERSION = "3"  # 3: paragraph ends, figure captions, image OCR, note runs, hyphens (D-045)
 CUT_MIN_WORDS = 8  # shorter page-final lines (epigraph attributions, labels) are not cut prose
 
 _FRONT_KEYS = ("cover", "titlepage", "halftitle", "copyright", "contents", "tableofcontents",
@@ -101,6 +101,8 @@ class _Frag:
     note_label: str | None = None
     zone: str = "body"
     section: str | None = None  # toc / notes / bibliography / index section the item sits in
+    parts: list[tuple[str, tuple[int, tuple[float, float, float, float] | None]]] = field(default_factory=list)
+    # ^ the same-page pieces (text, ref) of a layout item kept together as one fragment
 
     @property
     def page(self) -> int:
@@ -211,21 +213,44 @@ def _docling_frags(doc: dict[str, Any]) -> list[_Frag]:
             if refs:
                 out.append(_Frag(refs=refs, label="table", raw=_table_markdown(item), source=source))
         elif kind == "pictures":
+            # the picture's captions are its children too (D-045: SAT lost 20 'Figure n.n' titles
+            # with the picture's inner text); they become caption fragments, above or below it
+            cap_refs = [c["$ref"] for c in item.get("captions") or []]
+            cap_refs += [c["$ref"] for c in item.get("children") or []
+                         if (node(c["$ref"]) or {}).get("label") == "caption" and c["$ref"] not in cap_refs]
+            captions = []
+            for cref in cap_refs:
+                cap = node(cref)
+                if cap is None or cref in seen or not str(cap.get("text", "")).strip() or not refs_of(cap):
+                    continue
+                seen.add(cref)
+                captions.append(_Frag(refs=refs_of(cap), label="caption", raw=str(cap["text"]),
+                                      source=f"p{first:04d}{cref}"))
             inner = descendant_texts(item)
             if refs:
+                top = refs[0][1][1] if refs[0][1] else None
+                above = [c for c in captions if top is not None and c.refs[0][1] is not None
+                         and c.refs[0][0] == refs[0][0] and c.refs[0][1][1] < top]
+                out.extend(above)
                 out.append(_Frag(refs=refs, label="picture", source=source,
                                  raw=" ".join(str(t.get("text", "")) for t in inner if t.get("text"))))
+                out.extend(c for c in captions if c not in above)
+            else:
+                out.extend(captions)
         elif kind == "texts":
             label = str(item.get("label", "text"))
             if layer in ("furniture", "background") and label not in ("page_header", "page_footer"):
                 label = "page_header"
             if layer == "notes" and label == "text":
                 label = "footnote"
+            parent = str((item.get("parent") or {}).get("$ref", ""))
+            if label == "footnote" and parent.startswith(("#/tables/", "#/pictures/")):
+                label = "caption"  # a table's or figure's legend, not a note of the page (SAT p. 594)
             if refs and str(item.get("text", "")).strip():
                 marker = item.get("marker") if label == "list_item" else None
                 pieces = _split_by_prov(str(item.get("text", "")), item.get("prov") or [], refs)
-                for n, (piece, piece_refs) in enumerate(pieces):
-                    out.append(_Frag(refs=piece_refs, label=label, raw=piece,
+                for n, (piece, piece_refs, parts) in enumerate(pieces):
+                    out.append(_Frag(refs=piece_refs, label=label, raw=piece, parts=parts if len(parts) > 1 else [],
                                      source=source if len(pieces) == 1 else f"{source}[{n}]",
                                      marker=str(marker) if marker and n == 0 else None))
         for child in item.get("children") or []:
@@ -238,14 +263,14 @@ def _docling_frags(doc: dict[str, Any]) -> list[_Frag]:
     return out
 
 
-def _split_by_prov(text: str, prov: list[dict[str, Any]], refs) -> list[tuple[str, list]]:
+def _split_by_prov(text: str, prov: list[dict[str, Any]], refs) -> list[tuple[str, list, list]]:
     """Docling joins some items across pages itself (and sometimes wrongly: a TOC title with the
     next page's acknowledgements). Cut the item back into one fragment per page at its prov
     charspans, so S2 decides the joins with its own rules; the cut moves to the nearest space
     (charspans can be off by the characters Docling removed when it de-hyphenated)."""
     pages = [r[0] for r in refs]
-    if len(refs) < 2 or len(set(pages)) < 2 or len(prov) != len(refs):
-        return [(text, refs)]
+    if len(refs) < 2 or len(prov) != len(refs):
+        return [(text, refs, [])]
     cuts = [0]
     for p in prov[1:]:
         start = int((p.get("charspan") or [0, 0])[0])
@@ -254,16 +279,19 @@ def _split_by_prov(text: str, prov: list[dict[str, Any]], refs) -> list[tuple[st
         space = min(near, key=lambda i: (abs(i - (start - 1)), i)) if near else text.find(" ", start)
         cuts.append(start if space < 0 or space - start > 40 else space)
     cuts.append(len(text))
-    pieces: list[tuple[str, list]] = []
+    pieces: list[tuple[str, list, list]] = []
     for (a, b), ref in zip(zip(cuts, cuts[1:]), refs):
         piece = text[a:b].strip()
         if not piece:
             continue
         if pieces and pieces[-1][1][-1][0] == ref[0]:  # same page, other column: keep together
-            pieces[-1] = (pieces[-1][0] + " " + piece, pieces[-1][1] + [ref])
+            pieces[-1] = (pieces[-1][0] + " " + piece, pieces[-1][1] + [ref], pieces[-1][2] + [(piece, ref)])
         else:
-            pieces.append((piece, [ref]))
-    return pieces or [(text, refs)]
+            pieces.append((piece, [ref], [(piece, ref)]))
+    if len(set(pages)) < 2:
+        # one page: the item stays whole as before; its pieces are kept for the image-text check
+        return [(text, refs, pieces[0][2] if len(pieces) == 1 else [])]
+    return pieces or [(text, refs, [])]
 
 
 def _dedupe_refs(refs):
@@ -352,6 +380,198 @@ def _text_layer_frags(text_layer: dict[str, Any], outline_keys: dict[int, set[st
         flush()
         out.extend(tail)
     return out
+
+
+# ----------------------------------------------------------------------------- text-layer evidence (D-045)
+_LETTER_TOKEN = re.compile(r"[a-z]+")
+_PARA_END = re.compile(r"[.!?][\"”’)]?$")
+_PARA_START = re.compile(r"[\"“‘(]?[A-Z]")
+_IMAGE_TEXT_LABELS = frozenset({"text", "paragraph", "section_header", "title", "list_item", "footnote",
+                                "checkbox_selected", "checkbox_unselected"})
+IMAGE_OVERLAP_MIN = 0.5  # share of an item's box inside raster images (as in the quality gate)
+IMAGE_TEXT_ATTESTED_MAX = 0.5  # an item whose words the text layer prints at least this often is text
+
+
+def _reference_text(page: dict[str, Any]) -> str:
+    """The page's independent extraction: pdfium when present, else pypdf."""
+    text = page.get("text_pdfium") if page.get("text_pdfium") is not None else page.get("text")
+    return (text or "").replace("\ufffe", "").replace("\x02", "").replace("\r\n", "\n")
+
+
+def paragraph_ends(page_text: str) -> list[tuple[tuple[str, ...], tuple[str, ...]]]:
+    """Paragraph ends the text layer shows by its line geometry: a line shorter than 80% of the
+    page's typical line that closes a sentence, followed by a full-length line that opens one
+    (the rule of the quality gate's merged-paragraph check, D-043). Returns (last 3-4 words of the
+    short line, first 3 words of the next) per end; pages of fewer than 5 full lines say nothing."""
+    lines = [ln.strip() for ln in page_text.splitlines() if ln.strip()]
+    full = sorted(len(ln) for ln in lines if len(ln) >= 30)
+    if len(full) < 5:
+        return []
+    typical = full[len(full) // 2] if len(full) % 2 else (full[len(full) // 2 - 1] + full[len(full) // 2]) / 2
+    out = []
+    for a, b in zip(lines, lines[1:-1]):  # the page's last line does not open a paragraph here
+        if len(a) < 0.8 * typical <= len(b) and _PARA_END.search(a) and _PARA_START.match(b):
+            head, tail = _LETTER_TOKEN.findall(a.lower())[-4:], _LETTER_TOKEN.findall(b.lower())[:3]
+            if len(head) >= 3 and len(tail) >= 3:
+                out.append((tuple(head), tuple(tail)))
+    return out
+
+
+def _split_at_paragraph_ends(frags: list[_Frag], text_layer: dict[str, Any]) -> list[_Frag]:
+    """Cut a body item that holds the end of one paragraph and the start of the next (SAT: 64
+    such ends inside Docling items). The cut needs the text layer's paragraph end on the item's
+    page, the same words on both sides of it in the item, a sentence end before it and a
+    capital after it. Both pieces keep the item's page box (the layout model gave one box)."""
+    ends = {int(p["page_no"]): paragraph_ends(_reference_text(p)) for p in text_layer["pages"]}
+    sep = r"[^A-Za-z]+"
+    out: list[_Frag] = []
+    for f in frags:
+        pages = {p for p, _ in f.refs}
+        if f.label not in ("text", "paragraph", "list_item") or len(pages) != 1 or not ends.get(f.page):
+            out.append(f)
+            continue
+        cuts = set()
+        for head, tail in ends[f.page]:
+            pattern = (r"(?<![A-Za-z])" + sep.join(map(re.escape, head)) + r"(?P<gap>[^A-Za-z]+)"
+                       + sep.join(map(re.escape, tail)) + r"(?![A-Za-z])")
+            for m in re.finditer(pattern, f.raw, re.I):
+                gap = m.group("gap")
+                spaces = [i for i, c in enumerate(gap) if c.isspace()]
+                if not spaces:
+                    continue
+                cut = m.start("gap") + spaces[-1]
+                left, right = f.raw[:cut].rstrip(), f.raw[cut:].lstrip()
+                if TERMINAL.search(_strip_trailing_marker(left)) and _PARA_START.match(right):
+                    cuts.add(cut)
+        if not cuts:
+            out.append(f)
+            continue
+        bounds = [0, *sorted(cuts), len(f.raw)]
+        pieces = [f.raw[a:b].strip() for a, b in zip(bounds, bounds[1:])]
+        for n, piece in enumerate(p for p in pieces if p):
+            out.append(_Frag(refs=list(f.refs), label=f.label if n == 0 else "text", raw=piece,
+                             source=f"{f.source}:para{n}", marker=f.marker if n == 0 else None,
+                             tags=f.tags + ["split_at_paragraph_end"]))
+    return out
+
+
+def _overlap(box: tuple[float, float, float, float], images: list[list[float]]) -> float:
+    area = max(1e-6, (box[2] - box[0]) * (box[3] - box[1]))
+    covered = 0.0
+    for left, top, right, bottom in images:
+        w, h = min(box[2], right) - max(box[0], left), min(box[3], bottom) - max(box[1], top)
+        if w > 0 and h > 0:
+            covered += w * h
+    return covered / area
+
+
+def _group_image_ocr(frags: list[_Frag], text_layer: dict[str, Any]) -> list[_Frag]:
+    """Text the layout model OCR'd from a raster figure on a page that has a text layer (SAT pp.
+    72, 433: a figure read as headings and paragraphs, 'Pathmays to Unlikety Outcome') is the
+    figure's content: consecutive such items become one figure fragment. An item counts when its
+    box lies inside the page's raster images and the text layer does not print most of its words
+    (text over an image that the text layer has stays text). Scanned pages (no text layer, or one
+    image covering the page) are left alone: there the OCR text is the page."""
+    images: dict[int, list[list[float]]] = {}
+    words: dict[int, set[str]] = {}
+    for p in text_layer["pages"]:
+        page_words = set(re.findall(r"[a-z]{3,}", _reference_text(p).lower()))
+        area = float(p.get("width") or 0) * float(p.get("height") or 0)
+        boxes = [b for b in p.get("image_boxes") or []
+                 if not area or (b[2] - b[0]) * (b[3] - b[1]) < 0.9 * area]
+        if boxes and len(page_words) >= 3:
+            images[int(p["page_no"])] = boxes
+            words[int(p["page_no"])] = page_words
+
+    def is_image_text(f: _Frag) -> bool:
+        if f.label not in _IMAGE_TEXT_LABELS or f.page not in images or any(b is None for _, b in f.refs) \
+                or len({p for p, _ in f.refs}) != 1:
+            return False
+        if any(_overlap(b, images[f.page]) < IMAGE_OVERLAP_MIN for _, b in f.refs):
+            return False
+        mine = re.findall(r"[a-z]{3,}", f.raw.lower())
+        return not mine or sum(w in words[f.page] for w in mine) < IMAGE_TEXT_ATTESTED_MAX * len(mine)
+
+    def separate(f: _Frag) -> list[_Frag]:
+        """A layout item whose same-page pieces include OCR text of a raster figure (SAT p. 556:
+        the page's first lines and the figure below them in one item): the text pieces stay one
+        fragment, the image pieces become their own (grouped below)."""
+        if not f.parts:
+            return [f]
+        flags = [is_image_text(_Frag(refs=[ref], label=f.label, raw=text, source=f.source)) for text, ref in f.parts]
+        if all(flags) or not any(flags):
+            return [f]
+        kept: list[tuple[str, Any]] = []
+        images_out: list[_Frag] = []
+        for i, ((t, r), img) in enumerate(zip(f.parts, flags)):
+            if not img:
+                kept.append((t, r))
+                continue
+            # the image piece's box may also cover a text line above the figure: sentences at its
+            # start that the text layer prints stay with the text (SAT p. 556)
+            sentences = re.split(r"(?<=[.!?])\s+", t)
+            lead = 0
+            while lead < len(sentences) - 1:
+                mine = re.findall(r"[a-z]{3,}", sentences[lead].lower())
+                if len(mine) < 3 or sum(w in words[f.page] for w in mine) < 0.8 * len(mine):
+                    break
+                lead += 1
+            if lead:
+                kept.append((" ".join(sentences[:lead]), r))
+            images_out.append(_Frag(refs=[r], label=f.label, raw=" ".join(sentences[lead:]),
+                                    source=f"{f.source}@{i}", tags=list(f.tags)))
+        text_frag = _Frag(refs=[r for _, r in kept], label=f.label, raw=" ".join(t for t, _ in kept),
+                          source=f.source, marker=f.marker, tags=list(f.tags))
+        return [text_frag, *images_out]
+
+    frags = [g for f in frags for g in separate(f)]
+    out: list[_Frag] = []
+    run: list[_Frag] = []
+
+    def flush() -> None:
+        if run:
+            out.append(_Frag(refs=_dedupe_refs([r for f in run for r in f.refs]), label="picture",
+                             raw="\n".join(f.raw for f in run), source="+".join(f.source for f in run),
+                             tags=["image_ocr_text"]))
+            run.clear()
+
+    for f in frags:
+        if is_image_text(f) and (not run or run[-1].page == f.page):
+            run.append(f)
+            continue
+        flush()
+        if is_image_text(f):
+            run.append(f)
+        else:
+            out.append(f)
+    flush()
+    return out
+
+
+def _spaced_lines(text_layer: dict[str, Any]) -> dict[int, dict[str, list[str]]]:
+    """Letter-spaced lines of the pypdf extraction whose word gaps are wider than its letter gaps
+    ('c r i t i c a l  a p p r o a c h e s'): letters without spaces (lowercase) -> the words."""
+    out: dict[int, dict[str, list[str]]] = {}
+    for p in text_layer["pages"]:
+        for line in (p.get("text") or "").splitlines():
+            line = line.strip()
+            tokens = line.split()
+            if "  " not in line or len(tokens) < 4 or sum(len(t) == 1 for t in tokens) < 0.6 * len(tokens):
+                continue
+            found = [normalize_chars(re.sub(r"\s+", "", w))[0] for w in re.split(r"\s{2,}", line)]
+            if len(found) >= 2 and all(found):
+                out.setdefault(int(p["page_no"]), {})["".join(found).lower()] = found
+    return out
+
+
+def _respace(text: str, words: list[str]) -> str:
+    """The characters of ``text`` (spaces dropped) regrouped into the lengths of ``words``."""
+    chars = re.sub(r"\s+", "", text)
+    out, i = [], 0
+    for w in words:
+        out.append(chars[i:i + len(w)])
+        i += len(w)
+    return " ".join(out)
 
 
 # ----------------------------------------------------------------------------- pipeline steps
@@ -480,7 +700,8 @@ def _tracked_word(text: str, vocab: Vocab) -> str | None:
     return word if vocab.is_word(word.lower()) or vocab.count(word) >= 1 else None
 
 
-def _normalize_text(frags: list[_Frag], lexicon=zipf, references: dict[int, Separators] | None = None) -> Vocab:
+def _normalize_text(frags: list[_Frag], lexicon=zipf, references: dict[int, Separators] | None = None,
+                    spaced: dict[int, dict[str, list[str]]] | None = None) -> Vocab:
     for f in frags:
         text, changed = normalize_chars(f.raw)
         if changed:
@@ -496,6 +717,17 @@ def _normalize_text(frags: list[_Frag], lexicon=zipf, references: dict[int, Sepa
     vocab = _LexiconVocab(body, lexicon)
     for f in frags:
         if f.label in ("table", "code", "formula", "picture"):
+            continue
+        key = re.sub(r"\s+", "", f.text).lower()
+        words = next((spaced[p][key] for p in dict.fromkeys(p for p, _ in f.refs)
+                      if spaced and key in spaced.get(p, {})), None) if len(f.text) <= 200 else None
+        if words is not None:
+            # the text layer prints this very line letter-spaced with wider gaps between words
+            # (Gramsci small caps): take the word boundaries from it, not from the vocabulary
+            respaced = _respace(f.text, words)
+            if respaced != f.text:
+                f.tags.append("ocr_letter_spacing")
+                f.text = respaced
             continue
         repaired = _tracked_word(f.text, vocab) or repair_letter_spacing(f.text, vocab)
         if f.label in _HEADING_LABELS and len(repaired) <= 200:
@@ -530,6 +762,9 @@ def _base_kind(f: _Frag) -> str:
         return "caption"  # e-book link label ('Back to Figure'): belongs to the figure apparatus
     if f.label in ("section_header", "title") and _URLISH.search(f.text):
         return "paragraph"  # a wrapped URL of a note, not a heading
+    if f.label in ("section_header", "title") and CAPTION.match(f.text):
+        f.tags.append("caption_from_heading")
+        return "caption"  # 'Figure 9.11.1 Using Indicators ...' set large: a title of a figure (D-045)
     return _DOCLING_KIND.get(f.label, "paragraph")
 
 
@@ -551,6 +786,20 @@ def _mark_repeated_edges(frags: list[_Frag]) -> None:
                 f.tags.append("furniture_by_repetition")
 
 
+def _points_past_page(entry: dict[str, Any], page: int, frags: list[_Frag], by_page: dict[int, list[int]],
+                      heights: dict[int, float]) -> bool:
+    """A bookmark whose /XYZ top lies at or below the bottom of the last text on its page (or on a
+    page without text) points past that page's content: what it marks starts the next page."""
+    top = entry.get("top")
+    if top is None or page not in heights:
+        return False
+    boxes = [frags[i].refs[0][1] for i in by_page.get(page, [])
+             if frags[i].kind not in _FURNITURE and frags[i].refs[0][1] is not None]
+    if len(boxes) < len([i for i in by_page.get(page, []) if frags[i].kind not in _FURNITURE]):
+        return False  # some item has no box: the page's text extent is unknown
+    return heights[page] - float(top) >= max((b[3] for b in boxes), default=0.0) - 2.0
+
+
 def _match_outline(frags: list[_Frag], outline: list[dict[str, Any]], heights: dict[int, float]) -> list[_Frag]:
     """Attach bookmarks to heading fragments; insert headings for unmatched ones."""
     by_page: dict[int, list[int]] = {}
@@ -564,7 +813,13 @@ def _match_outline(frags: list[_Frag], outline: list[dict[str, Any]], heights: d
         if not key:
             continue
         best: tuple[tuple, int] | None = None
-        for i in by_page.get(page, []):
+        candidates = [(i, 0) for i in by_page.get(page, [])]
+        if _points_past_page(entry, page, frags, by_page, heights):
+            # the destination lies below the page's last text: the heading opens the next page
+            # (SAT pp. 550, 667); only the first two items of that page can be it
+            nxt = [i for i in by_page.get(page + 1, []) if frags[i].kind not in _FURNITURE]
+            candidates += [(i, 1) for i in nxt[:2]]
+        for i, shift in candidates:
             f = frags[i]
             if i in used or f.kind in _FURNITURE or f.kind in ("table", "figure"):
                 continue
@@ -578,9 +833,9 @@ def _match_outline(frags: list[_Frag], outline: list[dict[str, Any]], heights: d
             if not (exact or partial) or not (f.kind == "heading" or short_text):
                 continue
             distance = 0.0
-            if entry.get("top") is not None and f.refs[0][1] is not None and page in heights:
+            if not shift and entry.get("top") is not None and f.refs[0][1] is not None and page in heights:
                 distance = abs((heights[page] - float(entry["top"])) - f.refs[0][1][1])
-            rank = (0 if exact else 1, 0 if f.kind == "heading" else 1, distance, i)
+            rank = (shift, 0 if exact else 1, 0 if f.kind == "heading" else 1, distance, i)
             if best is None or rank < best[0]:
                 best = (rank, i)
         level = int(entry["depth"]) + 1
@@ -589,6 +844,8 @@ def _match_outline(frags: list[_Frag], outline: list[dict[str, Any]], heights: d
             used.add(best[1])
             if f.kind != "heading":
                 f.tags.append("heading_from_outline_match")
+            if best[0][0]:
+                f.tags.append("outline_destination_on_previous_page")
             f.kind, f.level, f.level_source, f.outline_idx = "heading", level, "pdf_outline", k
             title = re.sub(r"\s+", " ", entry["title"]).strip()
             if heading_key(title) == heading_key(f.text) and title != f.text:
@@ -654,11 +911,20 @@ def _title_class(text: str) -> str | None:
     return "body" if key else None
 
 
+_ABBREVIATIONS = frozenset({"abbreviations", "listofabbreviations", "abbreviationsused"})
+
+
+def _apparatus_word(text: str) -> str | None:
+    """Apparatus sections the shared section words do not name: a list of abbreviations is
+    neither notes nor body text (its rows are 'SSG Antonio Gramsci, Subaltern Social Groups')."""
+    return "abbreviations" if re.sub(r"[^a-z]", "", text.lower()) in _ABBREVIATIONS else None
+
+
 def _zones_and_sections(frags: list[_Frag]) -> None:
     levels = [f.level for f in frags if f.kind == "heading" and f.level is not None]
     top = min(levels) if levels else 1
     state = "front_matter"
-    section: tuple[str, int] | None = None
+    sections: list[tuple[str, int]] = []  # open apparatus sections, innermost last
     saw_body = False
     for f in frags:
         if f.kind == "heading":
@@ -670,11 +936,15 @@ def _zones_and_sections(frags: list[_Frag]) -> None:
                 elif cls == "back" and state in ("body", "front_matter") and (saw_body or state == "body"):
                     state = "back_matter"
             word = section_word(f.text) or ("figure_descriptions" if f.text.lower().strip(" .")
-                                             in NAV_LABELS else None)
+                                             in NAV_LABELS else None) or _apparatus_word(f.text)
+            # a heading closes the sections at its level or deeper; an enclosing one stays open
+            # (D-045: Gramsci's 'abbreviations' inside 'Notes' ends at 'introduction', and the
+            # notes that follow are still in the notes section)
+            while sections and level <= sections[-1][1]:
+                sections.pop()
             if word is not None:
-                section = (word, level)
-            elif section is not None and level <= section[1]:
-                section = None
+                sections.append((word, level))
+        section = sections[-1] if sections else None
         f.zone = "furniture" if f.kind in _FURNITURE else state
         f.section = section[0] if section is not None and f.kind != "heading" else None
     if not saw_body:
@@ -793,6 +1063,42 @@ def _split_notes(frags: list[_Frag]) -> list[_Frag]:
                 g.text = g.text[m.end():].strip()
             g.note_label = label
             out.append(g)
+    return _split_back(out)
+
+
+def _split_back(frags: list[_Frag]) -> list[_Frag]:
+    """Labels a note run lost inside the previous note (D-045, SAT p. 119: '... &type=pdf 2.
+    Hackman and Woolley, Teams, 8. 3. Ibid.' then the item labelled 4): when the next note is
+    labelled k and the note before it holds ' k-1. ', ' k-2. ', ... (each before a capital or a
+    quote, counting down without a gap to the label above the previous one), cut them out."""
+    out: list[_Frag] = []
+    last_label = 0  # highest label of the current run of notes, for an unlabelled continuation
+    for f in frags:
+        if f.kind == "heading":
+            last_label = 0
+        prev = next((g for g in reversed(out) if g.kind not in _FURNITURE), None)
+        k = int(f.note_label) if f.kind in ("endnote", "footnote") and (f.note_label or "").isdigit() else None
+        if k is not None and prev is not None and prev.kind == f.kind:
+            own = int(prev.note_label) if (prev.note_label or "").isdigit() else None
+            lower = own if own is not None else last_label
+            text, found = prev.text, []
+            want = k - 1
+            while want > lower:
+                hits = list(re.finditer(rf"(?<=\S) {want}\. (?=[A-Z“\"‘'])", text))
+                if not hits:
+                    break
+                found.append((want, text[hits[-1].start() + 1:].strip()))
+                text = text[:hits[-1].start()].rstrip()
+                want -= 1
+            if found and text:
+                prev.text = text
+                for n, (label, piece) in enumerate(reversed(found)):
+                    out.append(_Frag(refs=list(prev.refs), label=prev.label, raw="", source=f"{prev.source}#back{n}",
+                                     text=piece[len(str(label)) + 1:].strip(), tags=prev.tags + ["split_inline_notes"],
+                                     kind=prev.kind, zone=prev.zone, section=prev.section, note_label=str(label)))
+        if k is not None:
+            last_label = k
+        out.append(f)
     return out
 
 
@@ -913,6 +1219,7 @@ def _extract_and_link_markers(items: list[_Item]) -> None:
         value = int(label) if label.isdigit() else None
         if last is None or (value is not None and value < last and value <= 3):  # a new chapter of notes
             runs.append({})
+            last = None  # D-045: the new run counts from its own first label, not the old run's last
         runs[-1].setdefault(label, it)
         last = max(last or 0, value) if value is not None else last
     footnotes: dict[int, dict[str, _Item]] = {}
@@ -1025,7 +1332,9 @@ def _build(meta: BookMeta, frags: list[_Frag], text_layer: dict[str, Any], parse
     frags = [f for f in frags if 1 <= f.page <= page_count]
     references = {int(p["page_no"]): reference_separators(p["text_pdfium"])
                   for p in text_layer["pages"] if p.get("text_pdfium")}
-    vocab = _normalize_text(frags, references=references)
+    frags = _group_image_ocr(frags, text_layer)
+    frags = _split_at_paragraph_ends(frags, text_layer)
+    vocab = _normalize_text(frags, references=references, spaced=_spaced_lines(text_layer))
     for f in frags:
         f.kind = _base_kind(f)
     _mark_repeated_edges(frags)

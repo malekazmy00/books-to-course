@@ -18,6 +18,13 @@ kept). A token is split only when every part is a word and one of two pieces of 
   words (Zipf >= ``PART_ZIPF``), or all common words of >= 4 letters (Zipf >= ``PART_ZIPF_ALL``);
   never a prefix + word ('underexplored', 'nonpolar') nor a word + suffix.
 
+A split whose adjacent parts the book itself prints hyphenated elsewhere (``national-popular``),
+at least ``HYPHEN_MIN`` times, gets that hyphen instead of a space (D-045). Such glues come from
+a compound broken at a line end whose hyphen the layout parser dropped ('decision-|making
+community' -> 'decisionmaking'): there was never a space there. Mixed usage in the book
+(SAT: 'decision-making' 12 times, 'decision making' 23) does not count against the hyphen. The
+hyphen comes from the book, never from guessing: without that evidence the space stays.
+
 In S2 an independent extraction of the same page (pdfium) can add a third piece of evidence,
 ``reference``: it prints the very same letters with an em or en dash between them (Docling loses
 dashes at line ends). Then the dash itself is restored, also where the rules above stay silent;
@@ -36,7 +43,7 @@ from collections import Counter
 from dataclasses import dataclass
 from typing import Callable, Iterable
 
-SPLITTER_VERSION = "1"
+SPLITTER_VERSION = "2"  # 2: hyphen kept where the book prints the compound hyphenated (D-045)
 MIN_LEN = 5
 MAX_PARTS = 3
 ATTEST_MIN = 2
@@ -46,6 +53,7 @@ KNOWN_MARGIN = 3.0
 RARE_IN_BOOK = 2
 PART_ZIPF = 3.5
 PART_ZIPF_ALL = 4.0
+HYPHEN_MIN = 2
 
 # closed-class English words: the parts that most glued tokens are made of
 FUNCTION_WORDS = frozenset("""
@@ -136,14 +144,19 @@ class GlueSplitter:
         self._zipf_cache: dict[str, float] = {}
         self.tokens: Counter[str] = Counter()
         self.bigrams: Counter[tuple[str, str]] = Counter()
+        self.hyphenated: Counter[tuple[str, str]] = Counter()  # 'national-popular' inside a line
         self.proper: set[str] = set()
         for text in texts:
             words = list(_TOKEN.finditer(text))
             for i, m in enumerate(words):
                 low = m.group().lower()
                 self.tokens[low] += 1
-                if i + 1 < len(words) and text[m.end():words[i + 1].start()] == " ":
-                    self.bigrams[(low, words[i + 1].group().lower())] += 1
+                if i + 1 < len(words):
+                    gap = text[m.end():words[i + 1].start()]
+                    if gap == " ":
+                        self.bigrams[(low, words[i + 1].group().lower())] += 1
+                    elif gap == "-":
+                        self.hyphenated[(low, words[i + 1].group().lower())] += 1
                 word = m.group()
                 if len(word) >= MIN_LEN and word[0].isupper() and word[1:].islower() \
                         and not _sentence_initial(text, m.start()):
@@ -234,6 +247,12 @@ class GlueSplitter:
                     return True
         return False
 
+    def book_separators(self, parts: tuple[str, ...]) -> tuple[str, ...]:
+        """Between each pair of parts: '-' where the book prints the pair hyphenated at least
+        ``HYPHEN_MIN`` times, else a space."""
+        low = [p.lower() for p in parts]
+        return tuple("-" if self.hyphenated[(a, b)] >= HYPHEN_MIN else " " for a, b in zip(low, low[1:]))
+
     @staticmethod
     def _cut(token: str, parts: tuple[str, ...]) -> tuple[str, ...]:
         out, i = [], 0
@@ -275,7 +294,9 @@ class GlueSplitter:
                     found = GlueSplit(found.token, found.parts, found.rule, ref[1])
                 if found is None:
                     continue
-                seps = found.separators or (" ",) * (len(found.parts) - 1)
+                seps = found.separators or self.book_separators(found.parts)
+                if not found.separators and "-" in seps:
+                    found = GlueSplit(found.token, found.parts, found.rule, seps)
                 out.append(text[last:start])
                 out.append(found.parts[0] + "".join(sep + part for sep, part in zip(seps, found.parts[1:])))
                 last = end
@@ -284,4 +305,4 @@ class GlueSplitter:
         return "".join(out), splits
 
 
-__all__ = ["GlueSplit", "GlueSplitter", "SPLITTER_VERSION", "Separators", "reference_separators", "zipf"]
+__all__ = ["HYPHEN_MIN", "GlueSplit", "GlueSplitter", "SPLITTER_VERSION", "Separators", "reference_separators", "zipf"]

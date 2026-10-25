@@ -340,3 +340,263 @@ def test_output_validates_as_contract(path):
     else:
         book = normalize_text_layer(META, text_layer([FILLER]))
     assert ParsedBookV2.model_validate_json(book.model_dump_json()) == book
+
+
+# ----------------------------------------------------------------------------- D-045 fixes
+# Each case mirrors a defect the ingest-v2.quality gate named on the real books
+# (eval/reports/ingest-v2-gate.md §3.3, §5; eval/reports/ingest-v2-fixes.md).
+def text_layer2(pdfium, pypdf=None, image_boxes=None, outline=()):
+    """pdf-text-layer/2: pypdf text, pdfium text and pdfium raster-image boxes (top-left)."""
+    tl = text_layer(pypdf if pypdf is not None else pdfium, outline=outline)
+    tl["format"] = "pdf-text-layer/2"
+    for i, page in enumerate(tl["pages"]):
+        page["text_pdfium"] = pdfium[i]
+        page["image_boxes"] = (image_boxes or {}).get(i + 1, [])
+    return tl
+
+
+P1 = ["The analyst weighs the evidence for each hypothesis with great care and",
+      "records every judgment in a matrix that the whole team can review and",
+      "challenge before the final report goes out to the decision makers today.",
+      "That is the first step of the method."]
+P2 = ["Structured techniques then help the team test the strongest hypothesis",
+      "against the evidence that is most diagnostic for the question at hand and",
+      "identify the gaps that further collection should fill in the next round.",
+      "The second step closes the loop."]
+
+
+def test_two_paragraphs_in_one_layout_item_are_split_at_the_text_layer_paragraph_end():
+    # SAT: 64 paragraph ends of the text layer fell inside one block (Docling items spanning two
+    # paragraphs). The text layer shows the end: a short line closing a sentence, then a full
+    # line opening one.
+    doc = Doc(1, 1).add("text", 1, " ".join(P1 + P2), top=60, bottom=300)
+    book = normalize_docling(META, [doc.json()], text_layer2(["\n".join(P1 + P2)]))
+    paras = [b for b in book.blocks if b.type == "paragraph"]
+    assert [p.text for p in paras] == [" ".join(P1), " ".join(P2)]
+    assert [p.raw_text for p in paras] == [" ".join(P1), " ".join(P2)]
+    assert all("split_at_paragraph_end" in p.normalization for p in paras)
+    assert all([r.page_no for r in p.refs] == [1] and p.refs[0].bbox is not None for p in paras)
+
+
+def test_a_short_line_that_does_not_end_a_sentence_is_not_a_paragraph_end():
+    p1 = P1[:-1] + ["That is the first step of the"]
+    p2 = ["method that structured techniques then use to test the strongest idea"] + P2[1:]
+    doc = Doc(1, 1).add("text", 1, " ".join(p1 + p2), top=60, bottom=300)
+    book = normalize_docling(META, [doc.json()], text_layer2(["\n".join(p1 + p2)]))
+    assert [b.text for b in book.blocks] == [" ".join(p1 + p2)]
+
+
+def _picture(doc, page, top, bottom, children=(), captions=()):
+    ref = f"#/pictures/{len(doc.d['pictures'])}"
+    doc.d["pictures"].append({
+        "self_ref": ref, "parent": {"$ref": "#/body"}, "content_layer": "body", "label": "picture",
+        "children": [{"$ref": c} for c in children], "captions": [{"$ref": c} for c in captions],
+        "prov": [{"page_no": page, "bbox": {"l": 60, "t": H - top, "r": 360, "b": H - bottom,
+                                            "coord_origin": "BOTTOMLEFT"}, "charspan": [0, 0]}]})
+    doc.d["body"]["children"].append({"$ref": ref})
+    return ref
+
+
+def _child_text(doc, parent, label, page, text, top, bottom):
+    ref = f"#/texts/{len(doc.d['texts'])}"
+    doc.d["texts"].append({
+        "self_ref": ref, "parent": {"$ref": parent}, "children": [], "content_layer": "body",
+        "label": label, "orig": text, "text": text,
+        "prov": [{"page_no": page, "bbox": {"l": 60, "t": H - top, "r": 360, "b": H - bottom,
+                                            "coord_origin": "BOTTOMLEFT"}, "charspan": [0, len(text)]}]})
+    return ref
+
+
+def test_caption_of_a_picture_is_kept_as_a_caption_block():
+    # SAT pp. 581, 620: 'Figure 10.1 Opportunities Incubator' was a caption child of the picture
+    # and was dropped with the picture's other children
+    doc = Doc(1, 1).add("text", 1, FILLER, top=20, bottom=60)
+    cap = _child_text(doc, "#/pictures/0", "caption", 1, "Figure 10.1 Opportunities Incubator", 420, 430)
+    inner = _child_text(doc, "#/pictures/0", "text", 1, "Client Perception", 120, 130)
+    _picture(doc, 1, 100, 400, children=[cap, inner], captions=[cap])
+    book = normalize_docling(META, [doc.json()], text_layer2([FILLER + "\nFigure 10.1 Opportunities Incubator"]))
+    assert [(b.type, b.text) for b in book.blocks] == [
+        ("paragraph", FILLER.strip()), ("figure", "Client Perception"),
+        ("caption", "Figure 10.1 Opportunities Incubator")]
+    assert book.blocks[2].refs[0].bbox == (60.0, 420.0, 360.0, 430.0)
+
+
+def test_a_numbered_figure_title_set_as_a_section_header_is_a_caption():
+    # SAT: 36 'Figure 9.11.1 ...' captions came out as headings (and section titles)
+    doc = (Doc(1, 1).add("section_header", 1, "9.11 The Method", top=20, bottom=30)
+           .add("text", 1, FILLER, top=40, bottom=80)
+           .add("section_header", 1, "Figure 9.11.3B The INUS Condition", top=300, bottom=310)
+           .add("section_header", 1, "Table 2 Indicators by Scenario", top=320, bottom=330)
+           .add("text", 1, FILLER, top=340, bottom=380))
+    book = normalize_docling(META, [doc.json()], text_layer2(["x"]))
+    assert [(b.type, b.text) for b in book.blocks if b.type in ("heading", "caption")] == [
+        ("heading", "9.11 The Method"), ("caption", "Figure 9.11.3B The INUS Condition"),
+        ("caption", "Table 2 Indicators by Scenario")]
+    assert all(b.section_path == ["9.11 The Method"] for b in book.blocks[1:])
+
+
+def test_bookmark_pointing_below_the_last_text_of_a_page_matches_the_heading_opening_the_next():
+    # SAT pp. 550, 667: the bookmark's /XYZ destination lies under the page's last line; the
+    # heading is printed at the top of the next page (and was inserted on the wrong page)
+    doc = (Doc(1, 2).add("text", 1, FILLER, top=40, bottom=140)
+           .add("section_header", 2, "11.4 ROLE OF STRUCTURED TECHNIQUES IN 2030", top=40, bottom=60)
+           .add("text", 2, FILLER, top=80, bottom=160))
+    outline = [bookmark("11.4 Role of Structured Techniques in 2030", 0, 1, top=H - 300)]
+    book = normalize_docling(META, [doc.json()], text_layer2(["x", "y"], outline=outline))
+    heads = [b for b in book.blocks if b.type == "heading"]
+    assert [(h.text, [r.page_no for r in h.refs], h.raw_text) for h in heads] == [
+        ("11.4 Role of Structured Techniques in 2030", [2], "11.4 ROLE OF STRUCTURED TECHNIQUES IN 2030")]
+    assert book.outline[0].block_id == heads[0].block_id
+    assert "heading_from_outline" not in heads[0].normalization
+
+
+def test_bookmark_inside_the_text_of_its_page_does_not_look_at_the_next_page():
+    doc = (Doc(1, 2).add("text", 1, FILLER, top=40, bottom=400)
+           .add("section_header", 2, "Role of Techniques", top=40, bottom=60)
+           .add("text", 2, FILLER, top=80, bottom=160))
+    outline = [bookmark("Role of Techniques", 0, 1, top=H - 300)]
+    book = normalize_docling(META, [doc.json()], text_layer2(["x", "y"], outline=outline))
+    synthetic = [b for b in book.blocks if "heading_from_outline" in b.normalization]
+    assert [(b.text, b.refs[0].page_no) for b in synthetic] == [("Role of Techniques", 1)]
+
+
+def test_ocr_text_read_from_a_raster_figure_is_one_figure_block_not_prose():
+    # SAT pp. 72, 433: Docling OCR'd a raster figure into headings and paragraphs ('Pathmays to
+    # Unlikety Outcome', 'ae e a sad eat'); the text layer prints none of those words
+    pdfium = ("Selected indicators are listed here for the analyst to watch closely.\n"
+              "Figure 8.2.5 Conflict in the Arctic\nSource: Pherson Associates, 2019.")
+    doc = (Doc(1, 1)
+           .add("section_header", 1, "Pathmays to Unlikety Outcome", top=60, bottom=70)
+           .add("text", 1, "ae e a sad eat asdl ses eet t s ae circumstances caused by sea ice melting.",
+                top=80, bottom=120)
+           .add("text", 1, "Selected indicators are listed here for the analyst to watch closely.",
+                top=130, bottom=150)
+           .add("section_header", 1, "Figure 8.2.5 Conflict in the Arctic", top=420, bottom=430)
+           .add("text", 1, "Source: Pherson Associates, 2019.", top=440, bottom=450))
+    tl = text_layer2([pdfium], image_boxes={1: [[60.0, 50.0, 360.0, 400.0]]})
+    book = normalize_docling(META, [doc.json()], tl)
+    assert [(b.type, b.text[:24]) for b in book.blocks] == [
+        ("figure", "Pathmays to Unlikety Out"),
+        ("paragraph", "Selected indicators are "),  # printed in the text layer: real text over the image
+        ("caption", "Figure 8.2.5 Conflict in"), ("paragraph", "Source: Pherson Associat")]
+    fig = book.blocks[0]
+    assert "image_ocr_text" in fig.normalization and len(fig.refs) == 1
+    assert fig.raw_text == ("Pathmays to Unlikety Outcome\n"
+                            "ae e a sad eat asdl ses eet t s ae circumstances caused by sea ice melting.")
+    assert not any(b.quality_flags for b in book.blocks)
+
+
+def test_page_text_and_figure_ocr_in_one_layout_item_are_separated():
+    # SAT p. 556: one Docling item held the page's first lines (box 1) and the OCR text of the
+    # raster figure under them (box 2, same page); the figure words were counted as page prose
+    top = "key decision makers interested in the topic. A good set of indicators helps."
+    # the second box also covers the page's next text line, above the figure: it stays text
+    line = "It can also alert you to developments in time for decision makers."
+    ocr = "Short circuit Flammable material Oxygen Fire Spark Wiring cluster Heat Fuel Ignition"
+    doc = Doc(1, 1).add("text", 1, top + " " + line + " " + ocr, top=20, bottom=40)
+    doc.d["texts"][-1]["prov"] = [
+        {"page_no": 1, "bbox": {"l": 60, "t": H - 20, "r": 360, "b": H - 40, "coord_origin": "BOTTOMLEFT"},
+         "charspan": [0, len(top)]},
+        {"page_no": 1, "bbox": {"l": 60, "t": H - 100, "r": 300, "b": H - 300, "coord_origin": "BOTTOMLEFT"},
+         "charspan": [len(top) + 1, len(top) + 2 + len(line) + len(ocr)]}]
+    tl = text_layer2([top + "\n" + line + "\nFigure 9.11.3B The INUS Condition"],
+                     image_boxes={1: [[60.0, 90.0, 320.0, 310.0]]})
+    book = normalize_docling(META, [doc.json()], tl)
+    assert [(b.type, b.text) for b in book.blocks] == [("paragraph", top + " " + line), ("figure", ocr)]
+    assert [r.bbox for r in book.blocks[0].refs] == [(60.0, 20.0, 360.0, 40.0), (60.0, 100.0, 300.0, 300.0)]
+
+
+def test_ocr_text_of_a_scanned_page_stays_text():
+    # a page without a text layer is OCR'd as a whole: its text is the page, not a figure
+    doc = Doc(1, 1).add("text", 1, FILLER, top=80, bottom=200)
+    tl = text_layer2([""], image_boxes={1: [[0.0, 0.0, 400.0, 600.0]]})
+    book = normalize_docling(META, [doc.json()], tl)
+    assert [b.type for b in book.blocks] == ["paragraph"]
+
+
+def test_endnote_runs_restart_after_a_long_run():
+    # SAT: notes 1..11 of chapter 1, then chapter 2's notes 1, 2, 3 each opened a run of their own
+    # (the restart rule compared with the old run's highest label), so no chapter-2 marker linked
+    doc = (Doc(1, 4)
+           .add("section_header", 1, "Chapter One", top=20, bottom=30)
+           .add("text", 1, " ".join(f"Claim {w}.{n}" for n, w in enumerate(
+               ["one", "two", "three", "four", "five", "six"], start=1)) + " " + FILLER, top=40)
+           .add("section_header", 2, "NOTES", top=20, bottom=30))
+    for n in range(1, 7):
+        doc.add("list_item", 2, f"Doe, Book One, {n}.", top=30 + 20 * n, bottom=40 + 20 * n, marker=f"{n}.")
+    doc.add("section_header", 3, "Chapter Two", top=20, bottom=30)
+    doc.add("text", 3, "First claim.1 Second claim.2 Third claim.3 " + FILLER, top=40)
+    doc.add("section_header", 4, "NOTES", top=20, bottom=30)
+    for n in range(1, 4):
+        doc.add("list_item", 4, f"Roe, Book Two, {n}.", top=30 + 20 * n, bottom=40 + 20 * n, marker=f"{n}.")
+    outline = [bookmark("Chapter One", 0, 1), bookmark("Chapter Two", 0, 3)]
+    book = normalize_docling(META, [doc.json()], text_layer2(["a", "b", "c", "d"], outline=outline))
+    by_note = {n.note_id: n for n in book.notes}
+    text_of = {b.block_id: b.text for b in book.blocks}
+    ch2 = next(b for b in book.blocks if b.text.startswith("First claim"))
+    assert [text_of[by_note[r.note_id].block_ids[0]] for r in ch2.note_refs] == [
+        "Roe, Book Two, 1.", "Roe, Book Two, 2.", "Roe, Book Two, 3."]
+
+
+def test_notes_run_on_inside_the_previous_note_are_split_back_from_the_next_label():
+    # SAT p. 119: '... &type=pdf 2. Hackman and Woolley, Teams, 8. 3. Ibid.' stayed inside note 1
+    # (no punctuation before '2.'), so notes 2 and 3 were lost; the next item is note 4
+    doc = (Doc(1, 1).add("section_header", 1, "Notes", top=20, bottom=30)
+           .add("list_item", 1, "Hackman, Teams, Report 5, http://example.org/download?doc=1&type=pdf "
+                                "2. Hackman and Woolley, Teams, 8. 3. Ibid.", top=40, bottom=80, marker="1.")
+           .add("list_item", 1, "Pherson, Essence of Collaboration.", top=90, bottom=100, marker="4."))
+    book = normalize_docling(META, [doc.json()], text_layer2(["a"], outline=[bookmark("Notes", 0, 1)]))
+    assert [(b.note_label, b.text) for b in book.blocks if b.type == "endnote"] == [
+        ("1", "Hackman, Teams, Report 5, http://example.org/download?doc=1&type=pdf"),
+        ("2", "Hackman and Woolley, Teams, 8."), ("3", "Ibid."), ("4", "Pherson, Essence of Collaboration.")]
+
+
+def test_note_text_of_a_table_is_a_caption_not_a_footnote():
+    # SAT p. 594: the legend under a table ('Actors: A list of ...') was a footnote without label
+    doc = Doc(1, 1).add("text", 1, FILLER, top=20, bottom=60)
+    note = _child_text(doc, "#/tables/0", "footnote", 1, "Actors: A list of the key individuals.", 300, 310)
+    doc.d["tables"].append({
+        "self_ref": "#/tables/0", "parent": {"$ref": "#/body"}, "content_layer": "body", "label": "table",
+        "children": [{"$ref": note}], "captions": [],
+        "data": {"grid": [[{"text": "ACTOR"}, {"text": "IMPACT"}], [{"text": "Me"}, {"text": ""}]]},
+        "prov": [{"page_no": 1, "bbox": {"l": 60, "t": H - 100, "r": 360, "b": H - 290,
+                                         "coord_origin": "BOTTOMLEFT"}, "charspan": [0, 0]}]})
+    doc.d["body"]["children"].append({"$ref": "#/tables/0"})
+    book = normalize_docling(META, [doc.json()], text_layer2(["a"]))
+    assert [(b.type, b.text[:12]) for b in book.blocks] == [
+        ("paragraph", FILLER[:12]), ("table", "| ACTOR | IM"), ("caption", "Actors: A li")]
+    assert not book.notes
+
+
+def test_abbreviations_list_inside_the_notes_section_is_not_an_endnote():
+    # Gramsci p. 333: the abbreviations table runs on to the first notes page; its last row
+    # ('SSG Antonio Gramsci, ...') became an endnote without a label
+    doc = (Doc(1, 2).add("section_header", 1, "Notes", top=20, bottom=30)
+           .add("section_header", 1, "abbreviations", top=40, bottom=50)
+           .add("text", 1, "SPN Antonio Gramsci, Selections from the Prison Notebooks (London, 1971).",
+                top=60, bottom=80)
+           .add("text", 2, "SSG Antonio Gramsci, Subaltern Social Groups (New York, 2021).", top=20, bottom=40)
+           .add("section_header", 2, "introduction", top=50, bottom=60)
+           .add("list_item", 2, "Gramsci to his sister-in-law, 19 February 1927.", top=70, bottom=80, marker="1.")
+           .add("list_item", 2, "Boggs, The Two Revolutions, 261.", top=90, bottom=100, marker="2."))
+    book = normalize_docling(META, [doc.json()], text_layer2(["a", "b"], outline=[bookmark("Notes", 0, 1)]))
+    assert [(b.type, b.note_label, b.text[:12]) for b in book.blocks if b.type != "heading"] == [
+        ("paragraph", None, "SPN Antonio "), ("paragraph", None, "SSG Antonio "),
+        ("endnote", "1", "Gramsci to h"), ("endnote", "2", "Boggs, The T")]
+    assert not any("note_without_label" in b.quality_flags for b in book.blocks)
+
+
+def test_letter_spaced_heading_takes_its_word_boundaries_from_the_text_layer():
+    # Gramsci pp. 31, 279, 294: pypdf prints small caps one letter apart and words two spaces
+    # apart ('c r i t i c a l  a p p r o a c h e s'); the vocabulary repair left 'critic al'
+    pypdf = ["The approaches differ.\nc r i t i c a l  a p p r o a c h e s\nw (h) i t h e r  t h e  s t a t e ?"]
+    doc = (Doc(1, 1).add("text", 1, "The approaches differ. " + FILLER, top=20, bottom=60)
+           .add("section_header", 1, "cr i t i c al approaches", top=80, bottom=90)
+           .add("text", 1, FILLER, top=100, bottom=140)
+           .add("section_header", 1, "w(h) i ther the s tat e?", top=160, bottom=170)
+           .add("text", 1, FILLER, top=180, bottom=220))
+    book = normalize_docling(META, [doc.json()], text_layer2(["x"], pypdf=pypdf))
+    heads = [b for b in book.blocks if b.type == "heading"]
+    assert [h.text for h in heads] == ["critical approaches", "w(h)ither the state?"]
+    assert all("ocr_letter_spacing" in h.normalization for h in heads)
+    assert not any("letter_spacing_residue" in b.quality_flags for b in book.blocks)

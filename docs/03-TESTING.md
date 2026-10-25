@@ -52,6 +52,8 @@
 | T-ING-05 | تشغيل مرتين بيدي نفس الـ `stage_key` وcache hit | 100% |
 | T-ING-06 | API upload: امتداد المحتوى، حد الحجم، source artifact، وبدء Temporal | 202 للطلب الصحيح؛ الرفض 413/415 للمدخلات غير الصالحة |
 | T-ING-07 | حالة ingestion عبر Temporal workflow ID | الحالة المعروضة تطابق وصف Temporal |
+| T-ING-08 (R3) | ParsedBook v2 + بوابة الجودة الحتمية: `tests/contract/test_parsed_book_v2.py`، و`tests/unit/ingest/test_normalize_v2.py`، و`tests/unit/ingest/test_quality_v2.py`، و`tests/unit/orchestration/test_ingest_v2.py` (وثائق اصطناعية) | كلها تمر في `make check` |
+| T-ING-09 (R3) | الكتب الحقيقية: `eval/suites/ingest_v2/measure.py` (v1 مقابل v2، وتسميات `source_issue`)، والفحوص الستة عشر المشتقة من البوابات التسع في `01-ingest.md` §5.4 بعتباتها | التقرير `eval/reports/ingest-v2-2026-10-25.md`؛ `accepted=false` لأي كتاب يفشل فحصًا |
 
 ### L2 Outline
 | ID | الاختبار | معيار النجاح |

@@ -46,7 +46,8 @@ def test_other_targets_do_not_need_a_clean_tree():
 
 
 def test_project_images_take_the_revision_build_arg_and_label():
-    for dockerfile in ("docker/api/Dockerfile", "docker/worker/Dockerfile", "docker/worker/Dockerfile.audio"):
+    for dockerfile in ("docker/api/Dockerfile", "docker/worker/Dockerfile", "docker/worker/Dockerfile.audio",
+                       "docker/worker/Dockerfile.recovery"):
         text = (ROOT / dockerfile).read_text()
         assert "ARG B2C_GIT_REVISION" in text, dockerfile
         assert "LABEL org.opencontainers.image.revision=$B2C_GIT_REVISION" in text, dockerfile
@@ -55,3 +56,6 @@ def test_project_images_take_the_revision_build_arg_and_label():
     for service in ("api", "worker", "audio-worker"):
         build = compose["services"][service]["build"]
         assert build["args"]["B2C_GIT_REVISION"] == "${B2C_GIT_REVISION:-unknown}", service
+    # the default `make up` file set swaps the worker to Dockerfile.recovery: it must be stamped too
+    overlay = yaml.safe_load((ROOT / "docker/compose.qa-local.yml").read_text())
+    assert overlay["services"]["worker"]["build"]["args"]["B2C_GIT_REVISION"] == "${B2C_GIT_REVISION:-unknown}"

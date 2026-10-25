@@ -1,7 +1,7 @@
 # Local QA source overlay; preserves the existing worker dependency environment.
 services:
   worker:
-    build: {context: .., dockerfile: docker/worker/Dockerfile.recovery}
+    build: {context: .., dockerfile: docker/worker/Dockerfile.recovery, args: {B2C_GIT_REVISION: "${B2C_GIT_REVISION:-unknown}"}}
     image: b2c-worker:fixes-20261012
   audio-worker:
     image: b2c-audio-worker:fixes-20261012

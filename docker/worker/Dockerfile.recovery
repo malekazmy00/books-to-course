@@ -7,5 +7,9 @@ COPY pyproject.toml uv.lock .python-version /app/
 COPY packages/ /app/packages/
 RUN UV_HTTP_TIMEOUT=600 UV_HTTP_RETRIES=10 uv sync --frozen --all-packages --extra docling
 COPY tests/ /app/tests/
+# P8 / audit 08 C3: stamp the commit (this overlay is in the default `make up` file set).
+ARG B2C_GIT_REVISION=unknown
+LABEL org.opencontainers.image.revision=$B2C_GIT_REVISION
+ENV B2C_GIT_REVISION=$B2C_GIT_REVISION
 USER 10001:10001
 CMD ["b2c-worker"]

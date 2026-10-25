@@ -96,3 +96,12 @@ def test_v1_book_degrades_to_type_and_text_heuristics():
     assert [v.evidence for v in verdicts] == ["excluded", "body", "note", "excluded", "excluded", "excluded"]
     assert [v.reason for v in verdicts] == ["furniture", None, None, "index", "toc", "index"]
     assert all(v.zone is None for v in verdicts)
+
+
+def test_chapter_mini_toc_typed_as_paragraph_is_excluded():
+    """SAT chapter openers: '2.1 Two Types of Thinking [ 17 ] 2.2 ...' survived S2 as a body paragraph."""
+    mini = "2.1 Two Types of Thinking [ 17 ] 2.2 Developing a Taxonomy [ 20 ] 2.3 Selecting the Right Technique [ 25 ]"
+    cited = PROSE + " See the discussion in [ 3 ] and the survey."
+    verdicts = gate_blocks(v2book([v2block(1, mini), v2block(2, cited)]))
+    assert (verdicts[0].evidence, verdicts[0].reason) == ("excluded", "toc")
+    assert verdicts[1].evidence == "body"

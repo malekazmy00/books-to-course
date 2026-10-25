@@ -25,7 +25,7 @@ from b2c_contracts import ParsedBookV2, parsed_book_v1_from_v2
 from b2c_contracts.models import FURNITURE_TYPES, NOTE_TYPES, ParsedBook
 from b2c_core.source_text import NOTE_LABEL, index_like, is_bibliographic, section_word, toc_like
 
-GATE_VERSION = "b2c-content-gate/1"
+GATE_VERSION = "b2c-content-gate/2"  # /2: chapter mini-TOC rule
 Evidence = Literal["body", "note", "excluded"]
 
 # text-integrity thresholds (calibrated on SAT and Gramsci; eval/reports/indexing-v2-2026-10-25.md)
@@ -163,7 +163,17 @@ def _v2_reason(block) -> tuple[Evidence, str | None]:
         return "excluded", _V2_EXCLUDED_TYPES[block.type]
     if block.zone in ("front_matter", "back_matter"):
         return "excluded", block.zone
+    if block.type != "heading" and _mini_toc(block.text):
+        return "excluded", "toc"
     return "body", None
+
+
+_BRACKET_PAGE = re.compile(r"\[\s*\d{1,3}\s*\]")
+
+
+def _mini_toc(text: str) -> bool:
+    """A chapter opener's contents list run into one block: '2.1 Title [ 17 ] 2.2 Title [ 20 ] ...'."""
+    return len(_BRACKET_PAGE.findall(text)) >= 3 and len(re.findall(r"[.!?](?:\s|$)", text)) <= 1
 
 
 def gate_blocks(book: ParsedBook | ParsedBookV2) -> list[GateBlock]:

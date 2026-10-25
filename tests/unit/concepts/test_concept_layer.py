@@ -81,6 +81,7 @@ def model_script(pv, msg):
 def novelty_script(pv, msg):
     if pv.startswith("cl-novelty"):
         data = json.loads(msg[msg.index("{"):])
+        assert data["book_authors"] == ["A. Author"]  # novelty is about THIS book's authors
         return {"novelty": "established", "claim_ids": [n["id"] for n in data["external_notes"]]}
     return model_script(pv, msg)
 
@@ -91,11 +92,14 @@ def dossier():
     ev = c.Evidence(source_id=src.source_id, url=src.url, quote="developed by Antonio Gramsci", tier=1,
                     fetched_at=NOW, quote_found=True, supports=True, judged_by="j")
     claim = c.DossierClaim(claim_id="clm_" + "a" * 12, section="concept_in_field", concept="hegemony",
-                           statement="The concept was developed by Antonio Gramsci.", kind="fact", evidence=[ev],
-                           status="verified")
+                           statement="The concept of hegemony was developed by Antonio Gramsci.", kind="fact",
+                           evidence=[ev], status="verified")
     rejected = claim.model_copy(update={"claim_id": "clm_" + "b" * 12, "status": "rejected",
                                         "status_reason": "x", "statement": "Hegemony was invented in 2019."})
-    return c.KnowledgeDossier(book_id=B, title="t", created_at=NOW, sources=[src], claims=[claim, rejected],
+    mislabelled = claim.model_copy(update={"claim_id": "clm_" + "c" * 12,  # tagged hegemony, about something else
+                                           "statement": "Structured techniques help small teams."})
+    return c.KnowledgeDossier(book_id=B, title="t", authors=["A. Author"], created_at=NOW, sources=[src],
+                              claims=[claim, rejected, mislabelled],
                               extractor=c.ProducerIdentity(role="extractor", model_id="deepseek/x"),
                               judge=c.ProducerIdentity(role="judge", model_id="google/y"),
                               extractor_family="deepseek", judge_family="google")

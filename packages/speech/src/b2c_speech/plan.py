@@ -17,17 +17,23 @@ import json
 from b2c_contracts import SpeechSegment, SpeechTextDocument, stage_key
 from pydantic import BaseModel, ConfigDict, Field
 
-PLAN_VERSION = "speech-plan-1"
+PLAN_VERSION = "speech-plan-2"  # 2: tracks bounded by duration; the segment-count bound is opt-in (D-042)
 SEGMENT_AUDIO_STAGE = "speech-segment-audio"
 SEGMENT_AUDIO_VERSION = "1"
 
 
 class PlanLimits(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
-    max_track_seconds: float = Field(default=3600.0, gt=0)
+    # 30 min (D-042): measured peak RSS of one assembly (trim + pauses + BS.1770 + WAV, segment PCMs
+    # kept for ASR) is ~1.16 GiB at 30 min, ~1.62 GiB at 45, ~2.11 GiB at 60 (eval/reports/mp3-delivery.md);
+    # the audio worker's mem_limit is 2 GiB. Raise both together, never this alone.
+    max_track_seconds: float = Field(default=1800.0, gt=0)
     min_track_seconds: float = Field(default=600.0, ge=0)  # below this a heading does not start a track
     chars_per_second: float = Field(default=8.9, gt=0)  # measured on Fasih output (audit 07 C4)
-    max_segments_per_track: int = Field(default=400, ge=1)
+    # None: no count bound. A fixed count tracked duration only while segments were ~14 s long;
+    # with phrase segmentation (median 53 chars, ~6.4 s with its pause) 400 segments cut every
+    # track at ~43 min. Duration is what bounds the work and the memory of one assembly.
+    max_segments_per_track: int | None = Field(default=None, ge=1)
     max_batch_segments: int = Field(default=8, ge=1)
     max_batch_chars: int = Field(default=2400, ge=1)
 
@@ -95,7 +101,8 @@ def plan_tracks(doc: SpeechTextDocument, limits: PlanLimits) -> SpeechPlan:
     for segment in doc.segments:  # one segment per step: always terminates
         cost = _seconds(segment, limits)
         heading_break = segment.structure == "heading" and seconds >= limits.min_track_seconds
-        full = seconds + cost > limits.max_track_seconds or len(current) >= limits.max_segments_per_track
+        full = seconds + cost > limits.max_track_seconds or (
+            limits.max_segments_per_track is not None and len(current) >= limits.max_segments_per_track)
         if current and (heading_break or full):
             groups.append(current)
             current, seconds = [], 0.0

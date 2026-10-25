@@ -15,7 +15,9 @@ from __future__ import annotations
 import math
 
 import numpy as np
-from scipy.signal import lfilter, resample_poly
+from scipy.signal import lfilter
+
+from .resample import resample_blocks
 
 ABSOLUTE_GATE_LUFS = -70.0
 RELATIVE_GATE_LU = -10.0
@@ -43,8 +45,7 @@ def _channels(samples: np.ndarray) -> np.ndarray:
     return samples[np.newaxis, :] if samples.ndim == 1 else samples
 
 
-def block_loudness(samples: np.ndarray, sample_rate: int) -> np.ndarray:
-    """Loudness of each 400 ms gating block (LUFS); empty when the signal is shorter than a block."""
+def _whole_signal_blocks(samples: np.ndarray, sample_rate: int) -> np.ndarray:
     b, a = k_weighting(sample_rate)
     weighted = lfilter(b, a, _channels(samples), axis=-1)
     block = int(round(BLOCK_S * sample_rate))
@@ -61,6 +62,40 @@ def block_loudness(samples: np.ndarray, sample_rate: int) -> np.ndarray:
         return -0.691 + 10 * np.log10(total)
 
 
+def block_loudness(samples: np.ndarray, sample_rate: int, *, chunk_s: float = 30.0) -> np.ndarray:
+    """Loudness of each 400 ms gating block (LUFS); empty when the signal is shorter than a block.
+
+    Streamed: the K-weighting filter runs chunk by chunk with its state carried over, and the
+    weighted energy is summed per 100 ms hop, so memory is bounded by ``chunk_s`` instead of
+    holding three full-length float64 copies (filtered signal, power, cumulative sum) of a
+    one-hour track. A block is four consecutive hops (75% overlap), which is exact whenever
+    the 400 ms block is a whole number of hops (16/22.05/24/32/44.1/48 kHz); otherwise the
+    whole-signal formulation is used."""
+    block = int(round(BLOCK_S * sample_rate))
+    step = int(round(block * (1 - OVERLAP)))
+    if block != 4 * step:
+        return _whole_signal_blocks(samples, sample_rate)
+    x = _channels(samples)
+    n = x.shape[-1]
+    if n < block:
+        return np.array([])
+    b, a = k_weighting(sample_rate)
+    state = np.zeros((x.shape[0], max(len(a), len(b)) - 1))
+    chunk = max(step, int(chunk_s * sample_rate) // step * step)
+    hops: list[np.ndarray] = []
+    carry = np.zeros(0)
+    for lo in range(0, n, chunk):
+        weighted, state = lfilter(b, a, x[:, lo:lo + chunk], axis=-1, zi=state)
+        power = np.concatenate([carry, (weighted ** 2).sum(axis=0)])  # channel weights G = 1.0
+        whole = len(power) // step * step
+        hops.append(power[:whole].reshape(-1, step).sum(axis=1))
+        carry = power[whole:]
+    sums = np.concatenate(hops)
+    energies = (sums[:-3] + sums[1:-2] + sums[2:-1] + sums[3:]) / block
+    with np.errstate(divide="ignore"):
+        return -0.691 + 10 * np.log10(energies)
+
+
 def integrated_loudness(samples: np.ndarray, sample_rate: int) -> float:
     """Gated integrated loudness in LUFS; -inf for silence or a signal shorter than one block."""
     blocks = block_loudness(samples, sample_rate)
@@ -75,13 +110,16 @@ def integrated_loudness(samples: np.ndarray, sample_rate: int) -> float:
     return -0.691 + 10 * math.log10(energy(gated))
 
 
-def true_peak_dbtp(samples: np.ndarray, sample_rate: int) -> float:
+def true_peak_dbtp(samples: np.ndarray, sample_rate: int, *, block_s: float = 10.0) -> float:
+    """Streamed in blocks (same result as oversampling the whole signal): x8 oversampling of a
+    one-hour 24 kHz track at once would need ~5.5 GB of float64."""
     factor = max(1, math.ceil(192000 / sample_rate))
     x = _channels(samples)
     peak = float(np.max(np.abs(x))) if x.size else 0.0
     if factor > 1 and x.shape[-1] > 1:
-        up = resample_poly(x, factor, 1, axis=-1)
-        peak = max(peak, float(np.max(np.abs(up))))
+        for up in resample_blocks(x, sample_rate, sample_rate * factor, block_s=block_s):
+            if up.size:
+                peak = max(peak, float(np.max(np.abs(up))))
     return 20 * math.log10(peak) if peak > 0 else -math.inf
 
 

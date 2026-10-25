@@ -95,7 +95,7 @@ def _db(value: float) -> float:
 
 
 def _clipped(x: np.ndarray) -> tuple[int, int]:
-    hot = np.abs(x) >= CLIP_LEVEL
+    hot = (x >= CLIP_LEVEL) | (x <= -CLIP_LEVEL)  # no full-length float copy
     count = int(hot.sum())
     if count < CLIP_RUN:
         return count, 0
@@ -111,7 +111,7 @@ def _silence(x: np.ndarray, sample_rate: int, threshold_dbfs: float) -> tuple[fl
         return 0.0, 0.0, 0.0, True
     frames = x[: n * frame].reshape(n, frame)
     with np.errstate(divide="ignore"):
-        level = 10 * np.log10(np.mean(frames ** 2, axis=1) + 1e-30)
+        level = 10 * np.log10(np.einsum("ij,ij->i", frames, frames) / frame + 1e-30)
     loud = level > threshold_dbfs
     if not loud.any():
         return n * FRAME_S, n * FRAME_S, 0.0, True
@@ -129,14 +129,15 @@ def _noise_floor(x: np.ndarray, sample_rate: int) -> float:
     n = len(x) // window
     if n == 0:
         return FLOOR_DB
-    rms = np.sqrt(np.mean(x[: n * window].reshape(n, window) ** 2, axis=1))
+    w = x[: n * window].reshape(n, window)
+    rms = np.sqrt(np.einsum("ij,ij->i", w, w) / window)
     return max(FLOOR_DB, _db(float(rms.min())))
 
 
 def measure(audio: PCM, *, silence_threshold_dbfs: float = -50.0) -> AudioStats:
     x = audio.mono()
-    peak = float(np.max(np.abs(x))) if x.size else 0.0
-    rms = float(np.sqrt(np.mean(x ** 2))) if x.size else 0.0
+    peak = max(float(x.max()), -float(x.min())) if x.size else 0.0
+    rms = float(np.sqrt(np.dot(x, x) / x.size)) if x.size else 0.0
     clipped, runs = _clipped(audio.samples.reshape(-1))
     leading, trailing, internal, silent = _silence(x, audio.sample_rate, silence_threshold_dbfs)
     return AudioStats(
@@ -172,11 +173,13 @@ def check_track(audio: PCM, profile: LoudnessProfile, stats: AudioStats | None =
     return QAResult(passed=not v, violations=tuple(v), metrics={**s.as_metrics(), "profile": profile.name})
 
 
-def normalize_loudness(audio: PCM, profile: LoudnessProfile, *, margin_db: float = 0.1) -> tuple[PCM, float]:
+def normalize_loudness(audio: PCM, profile: LoudnessProfile, *, margin_db: float = 0.1,
+                       in_place: bool = False) -> tuple[PCM, float]:
     """Single linear gain towards the profile target, never pushing the peak over its ceiling.
 
     (Two-pass in the EBU sense: measure, then apply one gain. No limiter: if the ceiling stops
-    the gain before the target, the loudness gate fails and says so.)"""
+    the gain before the target, the loudness gate fails and says so.) ``in_place`` scales the
+    caller's array instead of a copy (a one-hour 24 kHz track is ~0.7 GB of float64)."""
     x = audio.samples
     if profile.integrated_lufs is not None:
         current, target = integrated_loudness(x, audio.sample_rate), profile.integrated_lufs
@@ -191,8 +194,10 @@ def normalize_loudness(audio: PCM, profile: LoudnessProfile, *, margin_db: float
     gain = target - current
     if ceiling is not None and math.isfinite(peak) and peak + gain > ceiling - margin_db:
         gain = ceiling - margin_db - peak
-    scaled = PCM(samples=x * 10 ** (gain / 20), sample_rate=audio.sample_rate, sample_width=audio.sample_width,
-                 encoding=audio.encoding)
+    if in_place:
+        x *= 10 ** (gain / 20)
+    scaled = PCM(samples=x if in_place else x * 10 ** (gain / 20), sample_rate=audio.sample_rate,
+                 sample_width=audio.sample_width, encoding=audio.encoding)
     return scaled, gain
 
 

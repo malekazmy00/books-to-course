@@ -75,9 +75,12 @@ def read_wav(data: bytes) -> PCM:
 
 def write_wav(pcm: PCM) -> bytes:
     """16-bit PCM WAV (dithering is not needed for speech QA/assembly at this level)."""
-    x = np.clip(pcm.samples, -1.0, 32767 / 32768)
-    interleaved = x if x.ndim == 1 else x.T.reshape(-1)
-    data = np.round(interleaved * 32768.0).astype("<i2").tobytes()
+    interleaved = pcm.samples if pcm.samples.ndim == 1 else pcm.samples.T.reshape(-1)
+    pcm16 = np.empty(interleaved.size, dtype="<i2")
+    step = 1 << 20  # converted in blocks: no full-length float temporaries for a long track
+    for lo in range(0, interleaved.size, step):
+        pcm16[lo:lo + step] = np.round(np.clip(interleaved[lo:lo + step], -1.0, 32767 / 32768) * 32768.0)
+    data = pcm16.tobytes()
     channels = pcm.channels
     header = struct.pack("<4sI4s4sIHHIIHH4sI", b"RIFF", 36 + len(data), b"WAVE", b"fmt ", 16, 1, channels,
                          pcm.sample_rate, pcm.sample_rate * channels * 2, channels * 2, 16, b"data", len(data))

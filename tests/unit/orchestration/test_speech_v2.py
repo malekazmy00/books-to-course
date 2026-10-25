@@ -14,7 +14,7 @@ import pytest
 from b2c_contracts import ArtifactRef, EngineIdentity, QEResult, TranslationUnit, UnitTranslation
 from b2c_core import ArtifactStore
 from b2c_core.stage_registry import StageOutputRegistry
-from b2c_speech.audio import PCM, write_wav
+from b2c_speech.audio import PCM, read_wav, write_wav
 from b2c_translation.termbase import BookTermbase, Proposal, TermCandidate
 from moto import mock_aws
 from temporalio.exceptions import ApplicationError
@@ -314,3 +314,32 @@ def test_incomplete_track_is_not_assembled(store, results, promo):
     result = a.assemble(AssembleSpeechTrackInput(course_id="c1", speech_text_ref=prepared.speech_text_ref,
                                                  track=track, segments=statuses[:-1]))
     assert result.status == "incomplete" and result.artifact is None
+
+
+class EdgeSynth(FakeSynth):
+    """Like FakeSynth, but every segment comes back with 0.3 s / 0.6 s of edge silence (as XTTS does)."""
+
+    def synthesize(self, text, *, seed):
+        x = read_wav(super().synthesize(text, seed=seed)).samples
+        return write_wav(PCM(samples=np.concatenate([np.zeros(7200), x, np.zeros(14400)]), sample_rate=24000))
+
+
+def test_assembly_trims_edge_silence_so_the_planned_pause_is_the_real_one(store, results, promo):  # T-AUD-08
+    a, prepared = prepared_text(store, results, promo, EdgeSynth())
+    track, statuses = synth_all(a, prepared)
+    result = a.assemble(AssembleSpeechTrackInput(course_id="c1", speech_text_ref=prepared.speech_text_ref,
+                                                 track=track, segments=statuses, require_intelligibility=False))
+    assert result.status == "accepted", result
+    ref = ArtifactRef.model_validate(result.artifact)
+    timings = json.loads(store.read(ref, "segments.json"))
+    doc = a._doc(ArtifactRef.model_validate(prepared.speech_text_ref))
+    planned = {s.segment_id: s.pause_after_ms for s in doc.segments}
+    for prev, nxt in zip(timings, timings[1:]):
+        heard_ms = (nxt["start_s"] - prev["end_s"]) * 1000 + prev["kept_trailing_ms"] + nxt["kept_leading_ms"]
+        assert heard_ms == pytest.approx(planned[prev["segment_id"]], abs=2), prev
+        assert prev["removed_leading_ms"] == pytest.approx(260, abs=11)
+        assert prev["removed_trailing_ms"] == pytest.approx(560, abs=11)
+    meta = json.loads(store.read(ref, "track.json"))
+    assert meta["edge_trim"] == {"threshold_dbfs": -50.0, "keep_ms": 40.0, "fade_ms": 5.0}
+    untrimmed = sum(s.duration_s for s in statuses) + sum(planned[sid] for sid in track.segment_ids[:-1]) / 1000
+    assert result.metrics["duration_s"] < untrimmed - 0.8 * len(statuses)

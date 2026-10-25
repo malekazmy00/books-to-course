@@ -34,9 +34,13 @@ def episode_filename(number: int, title: str, *, last_episode: int, ascii_only: 
     return f"{label} - {clean}.{extension}" if clean else f"{label}.{extension}"
 
 
-def episode_tags(number: int, title: str, *, book_title: str, last_episode: int) -> dict[str, str]:
+def episode_tags(number: int, title: str, *, book_title: str, last_episode: int,
+                 artist: str | None = None) -> dict[str, str]:
     label = episode_label(number, last_episode=last_episode)
-    return {"TRCK": f"{number + 1}/{last_episode + 1}", "TIT2": f"{label} - {title}", "TALB": book_title}
+    tags = {"TRCK": f"{number + 1}/{last_episode + 1}", "TIT2": f"{label} - {title}", "TALB": book_title}
+    if artist:
+        tags["TPE1"] = artist
+    return tags
 
 
 def playback_order(filenames: Iterable[str]) -> list[str]:

@@ -5,7 +5,15 @@ description = "L8 Speech: diacritize, TTS providers, audio QA."
 requires-python = ">=3.12"
 # numpy/scipy: audio QA (BS.1770 K-weighting IIR, polyphase oversampling for true peak). Both were
 # already locked and shipped in the worker image through b2c-ingest[docling]; pinned here exactly.
-dependencies = ["b2c-contracts", "b2c-core", "b2c-llm-gateway", "numpy==2.5.3", "scipy==1.18.1"]
+dependencies = [
+    "b2c-contracts",
+    "b2c-core",
+    "b2c-llm-gateway",
+    "lameenc==1.8.4",
+    "mutagen==1.48.1",
+    "numpy==2.5.3",
+    "scipy==1.18.1",
+]
 
 [tool.uv.sources]
 b2c-contracts = { workspace = true }

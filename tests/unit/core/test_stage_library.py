@@ -95,7 +95,6 @@ def test_index_workflow_reuses_imported_rag_snapshot(library, monkeypatch):
     from temporalio.testing import ActivityEnvironment
     from b2c_contracts.models import CourseOutline, Module, Lesson, LessonSpan
     from b2c_orchestration.indexing import IndexActivities, IndexApprovedBookInput
-    from b2c_orchestration import indexing
     upload, parsed, ocr_bundle = values()
     parsed_ref = library.import_ocr("course", upload, ocr_bundle)
     outline = CourseOutline(course_id="course", spine_book_id="book", supplementary_book_ids=[], requires_review=False,
@@ -115,15 +114,16 @@ def test_index_workflow_reuses_imported_rag_snapshot(library, monkeypatch):
     chunks=ChunkStore()
     ref=library.import_rag("course",upload,bundle,parsed,parsed_sha256=parsed_ref.sha256,
                           outline_sha256=approved_ref.sha256,chunk_store=chunks)
-    def forbidden(*args,**kwargs):
-        raise AssertionError("imported RAG must bypass chunking")
-    monkeypatch.setattr(indexing,"chunk_book",forbidden)
+    # R5: an imported RAG snapshot carries no content-gate report, so the indexing activity no
+    # longer adopts it as index output (P2: nothing reaches the next stage without its gate).
+    # It builds its own gated snapshot under the v2 key; the imported one stays stored as is.
     result=ActivityEnvironment().run(IndexActivities(library.store,chunks).index_approved_book,
         IndexApprovedBookInput(course_id="course",parsed_ref=parsed_ref.model_dump(mode="json"),
             approved_outline_ref=approved_ref.model_dump(mode="json"),embedding_model="test@1"))
-    assert result["books"]["book"]["cache_hit"] is True
-    assert result["books"]["book"]["artifact_ref"]["key"] == ref.key
-    assert result["books"]["book"]["chunk_ids"] == ["imported-chunk"]
+    assert result["books"]["book"]["cache_hit"] is False
+    assert result["books"]["book"]["artifact_ref"]["key"] != ref.key
+    assert result["books"]["book"]["gate"]["accepted"] is True
+    assert result["books"]["book"]["chunk_ids"] != ["imported-chunk"]
     bundle.payload["chunks"][0]["chunk_id"]="different"
     bundle.payload_sha256=payload_digest(bundle.payload)
     before=len(chunks.calls)

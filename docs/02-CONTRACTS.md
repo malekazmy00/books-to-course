@@ -1,6 +1,6 @@
 # 02 — العقود بين الطبقات (Layer Contracts)
 
-المصدر الوحيد للحقيقة هو `packages/contracts/src/b2c_contracts/models.py` (SCHEMA_VERSION 1.6.0). سجل الإصدارات: 1.3.0 أضاف قبول المخرجات (R1، §7)، و1.4.0 أضاف ParsedBook v2 (R3، §8) بعد دمج العملين، و1.5.0 أضاف CourseOutline v2 (R4، §9)، و1.5.1 غيّر دلالة قبوله: بوابات نظامية لا قرار بشري (قرار المالك 2026-10-25، لا يوجد مراجع بشري في المنتج).، و1.6.0 دمج ذلك مع عقود الفهرسة v2 (R5، §10): provenance الـ chunk وتقرير بوابة الفهرسة وحكم الربط المساند.
+المصدر الوحيد للحقيقة هو `packages/contracts/src/b2c_contracts/models.py` (SCHEMA_VERSION 1.7.0). سجل الإصدارات: 1.3.0 أضاف قبول المخرجات (R1، §7)، و1.4.0 أضاف ParsedBook v2 (R3، §8) بعد دمج العملين، و1.5.0 أضاف CourseOutline v2 (R4، §9)، و1.5.1 غيّر دلالة قبوله: بوابات نظامية لا قرار بشري (قرار المالك 2026-10-25، لا يوجد مراجع بشري في المنتج).، و1.6.0 دمج ذلك مع عقود الفهرسة v2 (R5، §10): provenance الـ chunk وتقرير بوابة الفهرسة وحكم الربط المساند.، و1.7.0 أضاف نص الكلام v2 (R7، §11): `SpeechSegment` و`SpeechExclusion` و`SpeechTextDocument` (كان 1.5.0 في فرعه).
 الوثيقة دي بتشرح **إزاي** كل طبقة بتسلّم للطبقة اللي بعدها. والتعريفات نفسها موجودة في الكود.
 
 > الكود ده اتشغّل واتختبر: `tests/contract/test_contracts_invariants.py` ونتيجته 8 passed. الاختبارات دي بتتأكد من القيود الأساسية (negative controls).
@@ -55,6 +55,7 @@ s3://artifacts/{course_id}/{stage}/{key}/<files>
 | L6 ← L7 | `LessonSummary`، `GlossaryTerm[]`، `Question[]` | الأسئلة عدّت الـ solver والـ linter | إعادة توليد ← G2 |
 | Termbase ← L7 | `TermbaseEntry[]` | كل entry ليها `approved_by` | Gate G3 |
 | L7 ← L8 | `UnitTranslation[]` (لكل `TranslationUnit`) | `decision == accepted`: بلا issue major/critical، ومخرج المحرك مقبول آليًا فقط بعد QE دلالي؛ وإلا `needs_review` (D-028) | G4 |
+| L7 ← L8 (1.5.0، R7) | `SpeechTextDocument` (artifact ‏`speech-text`) | يُبنى فقط من وحدات `decision == accepted` لتجميعة `translate-book` مقبولة في سجل المخرجات؛ أي وحدة `needs_review`/`rejected`/بلا نتيجة ترفض البناء كله. بوابة `speech.text-frontend` (§9) | non-retryable (`NotSpeechReady`) |
 | L8 ← Release | `AudioAsset` | `acx_pass` و`asr_cer ≤` العتبة؛ والصوت المستنسخ ليه consent ساري | إعادة توليد المقطع ← G5 |
 | Release | `CourseRelease` | كل الكتب `cleared`؛ والنسخ مجمّدة | non-retryable |
 
@@ -218,3 +219,18 @@ class GraphRetriever(Protocol):
 `IndexQualityReport(book_id, role, report_version, chunker_version, source_format, outline_sha256, metrics, checks[QualityCheck], accepted)` بنفس قاعدة تقرير الاستخراج: لا قبول مع فحص فاشل. نشاط الفهرسة يحفظه بجانب `chunks.json`، ويسجل الـ snapshot مرشحًا في سجل المخرجات (§7) بالبوابة `index.content-gate`. عند الفشل لا يُكتب شيء في جدول الفهرس.
 
 `SupplementLinkJudgement(lesson_id, chunk_id, book_id, rank, method, score, threshold, verdict, calibrated, policy_version)`: حكم صلة مسجل لكل مرشح مساند. ‏`verdict = linked` إذا وفقط إذا `score ≥ threshold`. ‏«لا رابط» نتيجة مقبولة. ‏`calibrated=false` تعني أن العتبة لم تُعاير بعد مقابل أحكام بشرية.
+
+## 11. النص المنطوق `SpeechTextDocument` (SCHEMA 1.7.0، R7)
+المرجع: `docs/audits/2026-10-24/07-speech-audio.md` §5.2 (S1) والمشكلتان C2 وC3. هذا ما تقرؤه مرحلة الكلام، ولا تقرأ نص الترجمة مباشرة.
+
+| الحقل | المعنى |
+|---|---|
+| `book_id`، `language` | الكتاب ولغة الصوت (`ar` فقط مبنية الآن) |
+| `frontend_version` | إصدار الواجهة الأمامية (`speech-text-ar-tn-1-seg1`)؛ يدخل في مفتاح الـ artifact |
+| `lexicon_digest` | بصمة قاموس النطق المستخدم (`sha256:` على المدخلات المرتبة)، مصدره termbase الكتاب المعتمد (S4) |
+| `source` | مرجع تجميعة `translate-book` المقبولة |
+| `segments[]` | `SpeechSegment`: ‏`segment_id` و`seq` (‏0..n-1 بالترتيب)، و`unit_ids` (≥ 1: وحدات الترجمة المقبولة)، و`block_ids`، و`structure` (‏heading/paragraph/list_item/caption/question/answer)، و`source_text` (النص المقبول قبل التطبيع)، و`spoken_text` (ما يصل لمزود TTS)، و`rules_applied`، و`lexicon_hits`، و`lexicon_misses` (كلمات لاتينية نُطقت بالبديل الموثق لا بالقاموس)، و`pause_after_ms` (‏0–5000) |
+| `excluded[]` | `SpeechExclusion(unit_id, reason)`: ‏`dropped`، و`not_spoken_kind:<kind>` (حاشية، مرجع، فهرس، تعليق صورة، جدول، ضوضاء)، و`wrong_language`، و`empty_after_normalization` |
+
+الثوابت التي يفرضها العقد: segment واحد على الأقل، و`segment_id` فريد، و`seq` متصل من 0، و`spoken_text` غير فارغ، ولا تكون وحدة منطوقة ومستبعدة معًا. أما شروط المحتوى (0 أرقام خام، و0 `[n]`، و0 حروف لاتينية، و0 روابط في `spoken_text`) فتفرضها بوابة `speech.text-frontend` الحتمية لا العقد، لأنها سياسة قابلة للتغيير.
+

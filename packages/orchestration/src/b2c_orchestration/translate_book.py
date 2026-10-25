@@ -24,7 +24,7 @@ import hashlib
 import json
 import threading
 from collections import Counter, OrderedDict
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
 
@@ -225,6 +225,13 @@ def units_stage_key(source_sha256: str, max_unit_chars: int) -> str:
 
 
 # ------------------------------------------------------------------ helpers
+def translation_results_digest(translations: Mapping[str, UnitTranslation]) -> str:
+    """Digest of the unit results an assembly was built from (consumers re-check it, R7)."""
+    return hashlib.sha256(json.dumps(
+        [[uid, translations[uid].model_dump(mode="json")] for uid in sorted(translations)],
+        sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")).hexdigest()
+
+
 def _fail(message: str, error_type: str) -> ApplicationError:
     return ApplicationError(message, type=error_type, non_retryable=True)
 
@@ -525,9 +532,7 @@ class TranslateBookActivities:
             counts["pending"] = len(units) - len(translations)
             engines = sorted({json.dumps(t.engine.model_dump(mode="json"), sort_keys=True)
                               for t in translations.values() if t.engine is not None})
-            digest = hashlib.sha256(json.dumps(
-                [[uid, translations[uid].model_dump(mode="json")] for uid in sorted(translations)],
-                sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")).hexdigest()
+            digest = translation_results_digest(translations)
             document = {
                 "run_id": inp.run_id, "units_ref": ref.model_dump(mode="json"), "results_digest": digest,
                 "assembly_version": ASSEMBLY_VERSION, "counts": counts,
@@ -684,6 +689,6 @@ __all__ = ["ASSEMBLY_STAGE", "AssembleBookTranslationWorkflow", "AssembleTransla
            "BatchOutcome", "BuildTermbaseInput", "CheckTermbaseInput", "PrepareUnitsInput", "PreparedUnits", "TranslateBookActivities", "TranslateBookInput",
            "TERMBASE_APPROVED_STAGE", "TERMBASE_PATCH", "TERMBASE_QUERY", "TERMBASE_SIGNAL", "TERMBASE_STAGE",
            "TermbaseApproval", "TermbaseBuild", "TermbaseGate",
-           "TranslateBookWorkflow", "TranslateUnitBatchInput", "UNITS_BUILDER_VERSION", "UNITS_STAGE", "UnitsCache",
+           "TranslateBookWorkflow", "TranslateUnitBatchInput", "translation_results_digest", "UNITS_BUILDER_VERSION", "UNITS_STAGE", "UnitsCache",
            "assembly_workflow_id", "draft_record", "translate_book_workflow_id", "translation_run_id",
            "units_stage_key"]

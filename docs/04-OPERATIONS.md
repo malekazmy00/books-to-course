@@ -80,6 +80,7 @@
 | temporalio SDK | 1.33.0 (uv.lock) | 2026-10-24 | uv.lock |
 | pySBD (sentence segmentation, translation units D-028) | `pysbd==0.3.4` (uv.lock; b2c-translation) | 2026-10-24 | PyPI (MIT, no dependencies, released 2021-02-11); rule-based Golden Rules segmenter, 97.92% on the English Golden Rules set (Sadvilkar & Neumann, NLP-OSS 2020, arXiv:2010.09657) |
 | wordfreq (general-English reference frequencies for termbase keyness, D-028 part E; and since 2026-10-25 the English lexicon that S2 normalization uses to repair letter-spaced headings, R3, and that the S3 outline v2 title cleaner consults only for a join a stray letter already marks, R4) | `wordfreq==3.1.1` (uv.lock; b2c-translation, b2c-ingest, b2c-outline, b2c-indexing (content gate: glued-word check, R5); pulls `ftfy` 6.3.1, `locate` 1.1.1, `msgpack` 1.2.3, `wcwidth` 0.9.4, plus `langcodes`/`regex` already locked) | 2026-10-24 | https://pypi.org/project/wordfreq/3.1.1/ (released 2023-11-21, final release; upstream frozen). Code Apache-2.0; bundled frequency data CC BY-SA 4.0 (Google Books Ngrams terms apply), per the upstream README "License" section — attribution required if the data is redistributed. Used read-only, offline, via `word_frequency(word, "en")` |
+| numpy / scipy (audio QA, R7: BS.1770 K-weighting via `scipy.signal.lfilter`, true peak via `resample_poly`) | `numpy==2.5.3`, `scipy==1.18.1` (uv.lock; b2c-speech, exact pins) | 2026-10-25 | already locked and present in the worker image through b2c-ingest[docling] (`docker exec b2c-worker-1 python -c 'import scipy'` → 1.18.1); no new download for the image. `pyloudnorm` was not added: it covers integrated loudness only (no true peak), still needs scipy, and its release line is stale (0.1.1, 2023); the ~40 lines it would replace are tested against the BS.1770 reference sine and cross-checked against ffmpeg `ebur128` in eval/reports/speech-v2-2026-10-25.md |
 | python base (fasih, supertonic) | `python:3.11-slim@sha256:bab1b7ef4b450c81002278d035eff85ebe394ae94df904f7a3ba14f7e16e487b` | 2026-10-24 | digest of the locally built base (`docker image inspect`) |
 | python base (hy-translation) | `python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f` | 2026-10-24 | same |
 | haproxy (hy-translation-proxy) | `3.2-alpine@sha256:5d97434a423c2533cfeb42874d45cf6d69a840b60334582dfbfd5008e94c80be` | 2026-10-24 | same |
@@ -106,6 +107,14 @@
 - القبول آلي بالكامل (قرار المالك 2026-10-25: لا مراجع بشري): خدمة الترقية (R1) تسجل المخرج `candidate` ببوابتين مطلوبتين نظاميتين، `outline-v2.structure` و`outline-v2.cross-check`، ثم تقرر `accepted` أو `rejected` بسبب. يشترط القبول أيضًا `B2C_GIT_REVISION` نظيفًا للـ worker (P8)، وإلا يبقى `candidate`.
 - التسليم للفهرسة: `POST /v1/ingestions/{id}/outline/approve-system` (أو `/approve`) لمخطط v2 لا يقرر شيئًا ولا يحتاج `B2C_ALLOW_SYSTEM_OUTLINE_APPROVAL`: يكتب `approved-outline.json` (مفتاح محتوى ثابت) ويبدأ الفهرسة فقط إن كان المخرج `accepted` وكان المخطط مطابقًا تمامًا لما بُني. مخططات v1 تبقى على سلوك R0 (الاعتماد الآلي القديم معطّل افتراضيًا).
 - التفعيل: نشر worker وAPI من هذا الفرع، ثم بدء `IngestPDFV2Workflow` لكتاب جديد (§5.2).
+
+### 5.4 الكلام v2 (R7، 2026-10-25)
+المسار مسجَّل في عامل الصوت (`B2C_WORKER_MODE=audio`، طابور `audio`) لكنه **غير مفعّل**: الـ API ما زال يبدأ `GenerateMP3Workflow` وحده، والـ workflows الجارية لا تتأثر (أسماء جديدة، وتسلسل أوامر القديم لم يتغير).
+- الـ workflow: `GenerateSpeechV2Workflow`، والأنشطة `speech_v2_prepare` و`speech_v2_synthesize_segments` و`speech_v2_assemble_track`. المدخل `GenerateSpeechV2Input(course_id, assembly_ref, termbase_ref?, lexicon_overrides, loudness_profile, voice_id, seed, max_attempts, require_intelligibility, limits, track_ids?)`.
+- الشرط: تجميعة `translate-book` **مقبولة** في سجل المخرجات، ونتائج وحداتها لم تتغير بعد التجميع (بصمة `results_digest`).
+- المزود: `B2C_FASIH_TTS_URL` (افتراضي `http://fasih-tts:3006`)، مقطع واحد لكل طلب `/v1/tts`. هوية النموذج من `/info` للخدمة، والـ revision من `B2C_FASIH_MODEL_REVISION` (افتراضي `unpinned` إلى أن تُثبَّت الأوزان، انظر الجدول أعلاه).
+- ملف الصوت: `app-speech-16` افتراضيًا (‎-16 LUFS، ‎-1 dBTP)، أو `acx`. قرار المالك Q2 معلّق.
+- المخرجات: `speech-text` (النص المنطوق والخطة)، و`speech-segment-audio` (WAV + `qa.json` لكل مقطع، بمفتاح المحتوى)، و`speech-track` (`track.wav` و`segments.json` و`track.json` و`qa.json`). ترميز MP3 للتسليم لم يُبنَ بعد (لا encoder في صورة العامل).
 
 ## 6. المراقبة (Observability)
 

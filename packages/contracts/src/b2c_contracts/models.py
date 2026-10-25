@@ -15,7 +15,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION = "1.6.0"
+SCHEMA_VERSION = "1.7.0"
 
 
 class Contract(BaseModel):
@@ -1136,6 +1136,61 @@ class AudioAsset(Contract):
     acx_pass: bool
     asr_cer: float
     voice: VoiceSpec
+
+
+# Speech-ready text (SCHEMA 1.5.0, R7 / audit 07 §5.2 S1). The TTS stage reads only this: spoken
+# text made deterministically from ACCEPTED translation units, split into TTS segments, each one
+# traced to the units it was made from (audit 07 C3: per-segment status and provenance).
+SpeechStructure = Literal["heading", "paragraph", "list_item", "caption", "question", "answer"]
+
+
+class SpeechSegment(Contract):
+    segment_id: str = Field(min_length=1, max_length=160)
+    seq: int = Field(ge=0)
+    unit_ids: list[str] = Field(min_length=1)  # accepted translation units (TranslationUnit.unit_id)
+    block_ids: list[str] = []
+    structure: SpeechStructure
+    source_text: str = Field(min_length=1)  # accepted target text of this span, before normalization
+    spoken_text: str = Field(min_length=1)  # what the TTS provider receives
+    rules_applied: list[str] = []  # normalization rule ids, e.g. "year", "footnote_marker_removed"
+    lexicon_hits: list[str] = []  # Latin source forms replaced from the pronunciation lexicon
+    lexicon_misses: list[str] = []  # Latin words spoken through the documented fallback (not in lexicon)
+    pause_after_ms: int = Field(ge=0, le=5000)
+
+    @field_validator("spoken_text", "source_text")
+    @classmethod
+    def _not_blank(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("speech text must not be blank")
+        return v
+
+
+class SpeechExclusion(Contract):
+    unit_id: str = Field(min_length=1)
+    reason: str = Field(min_length=1, max_length=120)  # dropped | not_spoken_kind:<kind> | wrong_language ...
+
+
+class SpeechTextDocument(Contract):
+    book_id: str = Field(min_length=1)
+    language: Literal["ar", "en"]
+    frontend_version: str = Field(min_length=1)
+    lexicon_digest: str | None = None
+    source: ArtifactRef  # the accepted translate-book assembly the units belong to
+    segments: list[SpeechSegment] = Field(min_length=1)
+    excluded: list[SpeechExclusion] = []
+
+    @model_validator(mode="after")
+    def _segments_invariants(self) -> "SpeechTextDocument":
+        ids = [s.segment_id for s in self.segments]
+        if len(set(ids)) != len(ids):
+            raise ValueError("segment_id must be unique")
+        if [s.seq for s in self.segments] != list(range(len(self.segments))):
+            raise ValueError("segments must be ordered with seq 0..n-1")
+        spoken = {u for s in self.segments for u in s.unit_ids}
+        both = sorted(spoken & {e.unit_id for e in self.excluded})
+        if both:
+            raise ValueError(f"a unit cannot be both spoken and excluded: {both[:3]}")
+        return self
 
 
 # ---------------------------------------------------------------- release

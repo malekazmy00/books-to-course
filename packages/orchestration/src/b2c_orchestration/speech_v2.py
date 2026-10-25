@@ -20,6 +20,11 @@ New names only; ``GenerateMP3Workflow`` and its activity are untouched.
 Nothing here reads a translation that is not accepted: the assembly must be ``accepted`` in the
 stage-output registry, every unit result must still be the one the assembly was built from,
 and ``build_speech_text`` refuses any unit that is not accepted/dropped.
+
+Second, explicit acceptance path (D-041): with ``notes_ref`` the accepted ``translator-notes``
+artifact (gate ``translator-notes.coverage``: every unit accepted, dropped or annotated) takes the
+place of the strict assembly acceptance. The notes must belong to the assembly's run and units and
+be built from the unit results as they are now; annotated units are spoken as course-voice notes.
 """
 from __future__ import annotations
 
@@ -37,7 +42,8 @@ from temporalio.common import RetryPolicy
 from temporalio.exceptions import ApplicationError
 
 with workflow.unsafe.imports_passed_through():
-    from b2c_contracts import ArtifactRef, GateResult, ProducerIdentity, SpeechTextDocument, stage_key
+    from b2c_contracts import (ArtifactRef, GateResult, ProducerIdentity, SpeechTextDocument, TranslatorNotesDocument,
+                               stage_key)
     from b2c_speech.plan import PlanLimits, SpeechPlan, TrackPlan, VoiceConfig, plan_tracks, segment_audio_key
     from b2c_speech.plan import SEGMENT_AUDIO_STAGE
 
@@ -50,6 +56,7 @@ SPEECH_TRACK_VERSION = "1"
 ASSEMBLY_STAGE = "translate-book"
 UNITS_STAGE = "translation-units"
 TERMBASE_APPROVED_STAGE = "book-termbase-approved"
+NOTES_STAGE = "translator-notes"
 DEFAULT_LOUDNESS_PROFILE = "app-speech-16"  # plan recommendation; owner decision Q2 pending
 # Provisional ASR thresholds (audit 07 §5.5): median CER <= 5%, p95 <= 12%, to be calibrated
 # against a human recording of the same text (T-TTS-02) before the gate is trusted.
@@ -65,7 +72,8 @@ def _fail(message: str, error_type: str) -> ApplicationError:
 # ------------------------------------------------------------------ messages
 class GenerateSpeechV2Input(BaseModel):
     course_id: str = Field(min_length=1, max_length=80)
-    assembly_ref: dict[str, Any]  # accepted translate-book assembly
+    assembly_ref: dict[str, Any]  # accepted translate-book assembly (or the assembly of accepted notes_ref)
+    notes_ref: dict[str, Any] | None = None  # D-041: accepted translator-notes artifact (alternative acceptance)
     termbase_ref: dict[str, Any] | None = None  # book-termbase-approved snapshot (pronunciation lexicon)
     lexicon_overrides: dict[str, str] = {}  # reviewed speech lexicon: Latin source form -> Arabic spoken form
     engine_profile: str = "fasih-xtts"  # b2c_speech.text.ENGINE_PROFILES: phrase limits of the TTS engine
@@ -302,10 +310,16 @@ class SpeechV2Activities:
         if self.promotion is None:
             raise _fail("no stage-output registry is configured: acceptance cannot be checked",
                         "NotAcceptedTranslation")
+        notes_ref = None
+        if inp.notes_ref is not None:
+            notes_ref = _scoped(inp.notes_ref, bucket=self.store.bucket, course_id=inp.course_id,
+                                stage=NOTES_STAGE, label="notes_ref")
         try:
-            self.promotion.require_accepted(inp.course_id, assembly)
+            # D-041: the accepted notes (coverage gate) replace the strict assembly acceptance
+            self.promotion.require_accepted(inp.course_id, notes_ref or assembly)
         except NotAccepted as exc:
-            raise _fail(f"the translation assembly is not accepted: {exc}", "NotAcceptedTranslation") from exc
+            what = "translator notes are" if notes_ref else "translation assembly is"
+            raise _fail(f"the {what} not accepted: {exc}", "NotAcceptedTranslation") from exc
         with activity_heartbeats("speech_v2_prepare"):
             document = json.loads(self.store.read(assembly, "translation.json"))
             units_ref = _scoped(document.get("units_ref"), bucket=self.store.bucket, course_id=inp.course_id,
@@ -314,21 +328,36 @@ class SpeechV2Activities:
             known = {u.unit_id for u in units}
             stored = [r for r in self.result_store.fetch_run(document["run_id"]) if r.unit_id in known]
             translations = {r.unit_id: r.translation for r in stored}
-            if translation_results_digest(translations) != document.get("results_digest"):
+            digest = translation_results_digest(translations)
+            if digest != document.get("results_digest"):
                 raise _fail("unit results changed after this assembly was built; re-assemble and re-accept it",
                             "TranslationChanged")
+            notes = None
+            if notes_ref is not None:
+                notes_doc = TranslatorNotesDocument.model_validate_json(
+                    self.store.read(notes_ref, "translator-notes.json"))
+                if notes_doc.run_id != document["run_id"] or notes_doc.units_ref is None \
+                        or notes_doc.units_ref.sha256 != units_ref.sha256:
+                    raise _fail("the translator notes belong to another run or units artifact", "InvalidSpeechInput")
+                if notes_doc.results_digest != digest:
+                    raise _fail("unit results changed after the translator notes were built; rebuild them",
+                                "TranslationChanged")
+                notes = {n.unit_id: n for n in notes_doc.notes}
             book_id = units[0].book_id if units else ""
             lexicon, termbase_ref = self._lexicon(inp, book_id)
             config = {"frontend": FRONTEND_VERSION, "lexicon_digest": lexicon.digest,
                       "limits": inp.limits.model_dump(mode="json"), "language": inp.language,
                       "engine_profile": engine_profile(inp.engine_profile).definition()}
-            inputs = [assembly] + ([termbase_ref] if termbase_ref else [])
+            if notes_ref is not None:  # the strict path keeps its artifact keys
+                config["acceptance_path"] = "translator-notes"
+            inputs = [assembly] + ([notes_ref] if notes_ref else []) + ([termbase_ref] if termbase_ref else [])
             key = stage_key(SPEECH_TEXT_STAGE, FRONTEND_VERSION, [r.sha256 for r in inputs], config)
 
             def compute() -> dict[str, bytes]:
                 try:
                     doc = build_speech_text(units, translations, book_id=book_id, source=assembly, lexicon=lexicon,
-                                            language=inp.language, profile=inp.engine_profile)
+                                            language=inp.language, profile=inp.engine_profile, notes=notes,
+                                            notes_ref=notes_ref)
                 except NotSpeechReady as exc:
                     raise _fail(str(exc), "NotSpeechReady") from exc
                 plan = plan_tracks(doc, inp.limits)

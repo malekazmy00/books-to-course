@@ -247,3 +247,4 @@
   - يُضبط رقم المسار في ID3 (TRCK) للمشغلات التي تقرؤه.
 - **وضع ASCII:** أسماء بالأرقام فقط (`03.mp3`) للمشغلات التي لا تعرض الأسماء العربية.
 - **التنفيذ:** `b2c_speech.episode_naming`.
+- **الترميز والنسخ (D-042):** `b2c_speech.delivery.encode_episode` (MP3 أحادي CBR، وID3v2.3 بنص UTF-16)، و`scripts/copy-course-to-card.py` (نسخ مرتب مع fsync وتحقق من ترتيب مدخلات FAT).

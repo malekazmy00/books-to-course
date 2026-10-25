@@ -61,6 +61,7 @@
 | T-OUT-01 | snapshot لكتاب فيه bookmarks | مطابق |
 | T-OUT-02 | كتاب من غير TOC ينتج `llm_inferred` + `requires_review` | صح |
 | T-OUT-03 | الـ spans متتالية، مش متداخلة، وبتغطي ≥ 98% من المتن | صح |
+| T-OUT-04 (R4) | CourseOutline v2 والباني الحتمي: `tests/contract/test_course_outline_v2.py` (تقسيم الكتل = مدرج + مستبعد، المعرّفات، العناوين، إسقاط v1)، و`tests/unit/outline/test_outline_v2_builder.py` و`test_outline_v2_titles.py` (bookmarks أولًا، وP4 وP6، ومقدمة الفصل، والمناطق، والحجم، وثبات المعرّفات، والمصادر البديلة) | كلها تمر في `make check` |
 
 ### L3 Indexing
 | ID | الاختبار | معيار النجاح |

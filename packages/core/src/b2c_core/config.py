@@ -62,6 +62,9 @@ class Settings(BaseSettings):
     temporal_address: str = "temporal:7233"
     temporal_namespace: str = "default"
     indexing_task_queue: str = "light"
+    # R0 (audit 02 P3): automatic structural outline approval is not a production path. A human
+    # approves the outline; B2C_ALLOW_SYSTEM_OUTLINE_APPROVAL=true is an explicit development opt-in.
+    allow_system_outline_approval: bool = False
 
     # telemetry
     otel_endpoint: str = "http://otel-collector:4318"

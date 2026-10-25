@@ -48,6 +48,15 @@ from b2c_api.deps import ApiContext, REUSE_ONLY_AFTER_FAILURE, log
 from b2c_api.schemas import OutlineReview, SystemOutlineApprovalRequest
 
 
+SYSTEM_OUTLINE_APPROVAL_DISABLED = {
+    "message_ar": ("الاعتماد الآلي للمخطط معطّل: يجب أن يراجع إنسانٌ المخطط ويعتمده عبر "
+                   "‎/outline/approve‎ مع review_type=human وreviewer_id."),
+    "message_en": ("system outline approval is disabled: a human must review the outline and approve it "
+                   "through /outline/approve with review_type=human and a reviewer_id"),
+    "setting": "B2C_ALLOW_SYSTEM_OUTLINE_APPROVAL",
+}
+
+
 def _validate_course_supplementary_identity(parsed: ParsedBook, expected_book_id: str) -> None:
     """A source uploaded as a spine may be assigned as a course supplement later."""
     if parsed.book_id != expected_book_id:
@@ -252,10 +261,15 @@ def ingestion_router(ctx: ApiContext, router: Any = None) -> Any:
             log.exception("failed to read draft outline")
             raise HTTPException(status_code=503, detail="outline artifact is unavailable") from exc
 
+    def require_system_outline_approval_enabled() -> None:
+        if not settings.allow_system_outline_approval:
+            raise HTTPException(status_code=409, detail=SYSTEM_OUTLINE_APPROVAL_DISABLED)
+
     @router.post("/v1/ingestions/{workflow_id}/outline/approve-system", status_code=201)
     async def approve_system_outline(
         workflow_id: str, request: SystemOutlineApprovalRequest,
     ) -> dict[str, Any]:
+        require_system_outline_approval_enabled()
         draft = await ingestion_outline(workflow_id)
         options = request
         draft_outline = CourseOutline.model_validate(draft["outline"])
@@ -278,6 +292,8 @@ def ingestion_router(ctx: ApiContext, router: Any = None) -> Any:
     @router.post("/v1/ingestions/{workflow_id}/outline/approve", status_code=201)
     async def approve_outline(workflow_id: str, review: OutlineReview) -> dict[str, Any]:
         require_workflow_id("ingest", workflow_id, "ingestion not found")
+        if review.review_type == "system":
+            require_system_outline_approval_enabled()
         try:
             status_response = await ingestion_status(workflow_id)
             if status_response["status"] != "COMPLETED":

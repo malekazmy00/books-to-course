@@ -641,12 +641,14 @@ public class MainActivity extends Activity {
   }
   return result;
  }
- void ensureOutlineOnly()throws Exception{if(approved.isEmpty()){JSONObject j=new JSONObject();j.put("supplementary_workflow_ids",artifactSupplementaryWorkflowMap());j.put("target_tokens",num(chunk,500));j.put("overlap_ratio",dec(overlap,.12));j.put("index_after_approval",false);JSONObject res=req("POST","/v1/ingestions/"+ingest+"/outline/approve-system",j);approved=res.getJSONObject("approved_outline").toString();index="";persistProgress();}setStage(1,"المخطط معتمد","المخطط جاهز لتقسيم قراءة الكتاب؛ لم تُشغّل الفهرسة لهذا الناتج.",100);}
+ // R0 (audit 02 P3): the app no longer approves outlines automatically; a human reviews and approves
+ // the draft through POST /v1/ingestions/{id}/outline/approve (review_type=human, reviewer_id).
+ static final String HUMAN_OUTLINE_APPROVAL_REQUIRED="المخطط يحتاج اعتمادًا بشريًا قبل المتابعة: راجع المخطط واعتمده (outline/approve مع reviewer_id)، ثم أعد تشغيل هذه المرحلة. لم يعد التطبيق يعتمد المخطط آليًا.";
+ void ensureOutlineOnly()throws Exception{if(approved.isEmpty())throw new IOException(HUMAN_OUTLINE_APPROVAL_REQUIRED);setStage(1,"المخطط معتمد","المخطط جاهز لتقسيم قراءة الكتاب؛ لم تُشغّل الفهرسة لهذا الناتج.",100);}
  void ensureRag()throws Exception{
   if(index.isEmpty()||approved.isEmpty()){
    if(!index.isEmpty()&&approved.isEmpty())throw new IOException("وجدت فهرسة محفوظة لكن مرجع المخطط المعتمد غير موجود في سجل الكتاب؛ لم أبدأ فهرسة مكررة.");
-   JSONObject j=new JSONObject();j.put("supplementary_workflow_ids",artifactSupplementaryWorkflowMap());j.put("target_tokens",num(chunk,500));j.put("overlap_ratio",dec(overlap,.12));
-   JSONObject res=req("POST","/v1/ingestions/"+ingest+"/outline/approve-system",j);index=res.getString("index_workflow_id");approved=res.getJSONObject("approved_outline").toString();persistProgress();
+   throw new IOException(HUMAN_OUTLINE_APPROVAL_REQUIRED);
   }
   resumeTerminalStageBlocking(1);
   setStage(1,"قيد التنفيذ","اعتماد المخطط وفهرسة الكتاب.",-1);waitFor("/v1/indexings/"+index,"RAG والفهرسة");

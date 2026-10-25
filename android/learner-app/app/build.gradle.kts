@@ -47,8 +47,8 @@ android {
         applicationId = "com.book2course.learner"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
         buildConfigField("String", "DEFAULT_API_BASE_URL", "\"" + defaultApiBaseUrl.replace("\"", "") + "\"")
         // Must match LearnerApi.CLIENT_VERSION and the server's min_client_version contract.
         buildConfigField("int", "CLIENT_VERSION", "1")

@@ -52,6 +52,18 @@ $ANDROID_HOME/build-tools/35.0.0/apksigner verify --print-certs app-armeabi-v7a-
 
 The API is tailnet-only (D-030). On first start, the app asks for the server's HTTPS address and the API token, and checks them with `GET /v3/learner/meta` before saving.
 
+- If the check fails, the message names the cause (`data/api/ConnectionProblem.kt`, tests `ConnectionProblemTest` and `SetupErrorsTest` on API 24 and 35):
+
+  | Failure | Message (start) |
+  |---|---|
+  | Name does not resolve (`UnknownHostException`) | «تطبيق Tailscale غير مفعّل أو غير متصل على هذا الجهاز…» |
+  | Timeout, refused, no route | «تعذّر الوصول إلى الخادم أو انتهت مهلة الاتصال…» |
+  | TLS (`SSLHandshakeException`, `CertPathValidatorException`, `SSLPeerUnverifiedException`) | «تعذّر إنشاء اتصال آمن…» |
+  | 401 / 403 | «الرمز غير صحيح…» |
+  | `min_client_version` of `/v3/learner/meta` above the app's `CLIENT_VERSION` (or HTTP 426) | «إصدار التطبيق قديم…» |
+  | 5xx | «حدث خطأ في الخادم…» |
+
+  The button «نسخ تفاصيل الخطأ» copies the exception types and messages. The token and any bearer value are replaced by `[redacted]`.
 - The token is stored encrypted: AES-GCM, with a non-exportable AndroidKeyStore key.
 - The token is sent only to that host.
 - Debug builds also accept `http://10.0.2.2` and `http://localhost` for local API testing.

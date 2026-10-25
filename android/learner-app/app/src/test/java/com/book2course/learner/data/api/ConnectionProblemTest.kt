@@ -83,9 +83,19 @@ class ConnectionProblemTest {
 
     @Test
     fun `a TLS failure is a certificate problem`() = runTest {
-        // HTTPS against a plain-HTTP server fails during the TLS handshake.
-        val https = server.url("/").newBuilder().scheme("https").build().toString()
-        val e = failureOf(api(https))
+        // HTTPS against a server that answers in plain text fails during the TLS handshake.
+        val plain = java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1"))
+        val answer = Thread {
+            runCatching {
+                plain.accept().use { it.getOutputStream().write("HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\n\r\n".toByteArray()) }
+            }
+        }.apply { start() }
+        val e = try {
+            failureOf(api("https://127.0.0.1:${plain.localPort}/"))
+        } finally {
+            plain.close()
+            answer.join(2_000)
+        }
         assertEquals(e.toString(), ConnectionProblem.CERTIFICATE, e.connectionProblem())
         // The shapes Android reports for an untrusted chain (Android 7.0 without ISRG roots) or a wrong host.
         val untrusted = SSLHandshakeException("java.security.cert.CertPathValidatorException: Trust anchor for certification path not found.")

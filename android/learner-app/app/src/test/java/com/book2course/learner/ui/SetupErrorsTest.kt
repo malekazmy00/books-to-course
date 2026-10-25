@@ -107,9 +107,9 @@ class SetupErrorsTest {
         assertEquals(R.string.setup_error_server, vm(realCheck()).connectTo(local()).error)
 
         server.enqueue(MockResponse().setHeader("Content-Type", "application/json")
-            .setBody("""{"api_version":"3.0.0","min_client_version":99,"model_revision":"m"}"""))
+            .setBody("""{"api_version":"3.0.0","min_client_version":99,"mapping_version":"m"}"""))
         val old = vm(realCheck()).connectTo(local())
-        assertEquals(R.string.setup_client_too_old, old.error)
+        assertEquals(old.errorDetails, R.string.setup_client_too_old, old.error)
         assertNotNull(old.errorDetails)
 
         // A message containing the token never reaches the details.

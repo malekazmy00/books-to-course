@@ -324,7 +324,7 @@ class EdgeSynth(FakeSynth):
         return write_wav(PCM(samples=np.concatenate([np.zeros(7200), x, np.zeros(14400)]), sample_rate=24000))
 
 
-def test_assembly_trims_edge_silence_so_the_planned_pause_is_the_real_one(store, results, promo):  # T-AUD-05
+def test_assembly_trims_edge_silence_so_the_planned_pause_is_the_real_one(store, results, promo):  # T-AUD-08
     a, prepared = prepared_text(store, results, promo, EdgeSynth())
     track, statuses = synth_all(a, prepared)
     result = a.assemble(AssembleSpeechTrackInput(course_id="c1", speech_text_ref=prepared.speech_text_ref,

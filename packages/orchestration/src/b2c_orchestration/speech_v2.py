@@ -46,7 +46,7 @@ with workflow.unsafe.imports_passed_through():
 
 SPEECH_TEXT_STAGE = "speech-text"
 SPEECH_TRACK_STAGE = "speech-track"
-SPEECH_TRACK_VERSION = "1"
+SPEECH_TRACK_VERSION = "2"  # 2: segment edge silence trimmed, pauses exact (D-042)
 ASSEMBLY_STAGE = "translate-book"
 UNITS_STAGE = "translation-units"
 TERMBASE_APPROVED_STAGE = "book-termbase-approved"
@@ -410,6 +410,7 @@ class SpeechV2Activities:
         import numpy as np
         from b2c_speech.audio import (PCM, check_track, duration_outliers, evaluate_intelligibility,
                                       normalize_loudness, profile_by_name, read_wav, write_wav)
+        from b2c_speech.audio.trim import assemble_with_pauses, trim_settings
         ref = _scoped(inp.speech_text_ref, bucket=self.store.bucket, course_id=inp.course_id,
                       stage=SPEECH_TEXT_STAGE, label="speech_text_ref")
         doc = self._doc(ref)
@@ -421,27 +422,34 @@ class SpeechV2Activities:
                                      gates={}, failed_segments=missing)
         profile = profile_by_name(inp.loudness_profile)
         with activity_heartbeats("speech_v2_assemble_track"):
-            pieces, timings, rate = [], [], None
-            clock = 0.0
+            pieces, rate = [], None
             segment_audio: dict[str, Any] = {}
-            for i, sid in enumerate(inp.track.segment_ids):
-                status = statuses[sid]
-                audio_ref = ArtifactRef.model_validate(status.audio_ref)
+            for sid in inp.track.segment_ids:
+                audio_ref = ArtifactRef.model_validate(statuses[sid].audio_ref)
                 pcm = read_wav(self.store.read(audio_ref, "segment.wav"))
                 if rate is None:
                     rate = pcm.sample_rate
                 if pcm.sample_rate != rate:
                     raise _fail("segments of one track have different sample rates", "InvalidSpeechInput")
                 segment_audio[sid] = pcm
-                samples = pcm.mono()
-                pause = 0 if i == len(inp.track.segment_ids) - 1 else by_id[sid].pause_after_ms
-                timings.append({"segment_id": sid, "unit_ids": by_id[sid].unit_ids, "start_s": round(clock, 3),
-                                "end_s": round(clock + len(samples) / rate, 3), "status": status.status,
-                                "attempts": status.attempts, "audio_sha256": audio_ref.sha256})
-                pieces += [samples, np.zeros(int(rate * pause / 1000))]
-                clock += (len(samples) + int(rate * pause / 1000)) / rate
-            track = PCM(samples=np.concatenate(pieces), sample_rate=int(rate))
-            normalized, gain_db = normalize_loudness(track, profile)
+                pieces.append(pcm.mono())
+            # Edge silence of every segment is trimmed to a short guard, so the silence between two
+            # segments is the planned pause (boundary_after / break_after), not pause + TTS edges.
+            pauses = [by_id[sid].pause_after_ms for sid in inp.track.segment_ids]
+            samples, cuts = assemble_with_pauses(pieces, pauses, int(rate))
+            del pieces
+            timings = []
+            for sid, cut in zip(inp.track.segment_ids, cuts):
+                status = statuses[sid]
+                timings.append({"segment_id": sid, "unit_ids": by_id[sid].unit_ids, "start_s": round(cut["start_s"], 3),
+                                "end_s": round(cut["end_s"], 3), "status": status.status, "attempts": status.attempts,
+                                "audio_sha256": status.audio_ref["sha256"], "pause_after_ms": by_id[sid].pause_after_ms,
+                                **{k: round(cut[k], 1) for k in ("pause_inserted_ms", "removed_leading_ms",
+                                                                  "removed_trailing_ms", "kept_leading_ms",
+                                                                  "kept_trailing_ms")}})
+            track = PCM(samples=samples, sample_rate=int(rate))
+            clock = track.duration_s
+            normalized, gain_db = normalize_loudness(track, profile, in_place=True)  # bounded memory
             loud = check_track(normalized, profile)
             outliers = duration_outliers({s.segment_id: (s.duration_s, s.chars) for s in inp.segments
                                           if s.segment_id in by_id}, tolerance=DURATION_POLICY.definition["tolerance"],
@@ -463,6 +471,7 @@ class SpeechV2Activities:
                     "track_id": inp.track.track_id, "title": inp.track.title, "language": doc.language,
                     "frontend_version": doc.frontend_version, "lexicon_digest": doc.lexicon_digest,
                     "loudness_profile": profile.name, "gain_db": round(gain_db, 3), "sample_rate": rate,
+                    "edge_trim": trim_settings(),
                     "speech_text_sha256": ref.sha256}, ensure_ascii=False).encode("utf-8"),
                 "qa.json": json.dumps({"track": loud.metrics, "violations": list(loud.violations),
                                        "duration_outliers": outliers, "failed_segments": failed, "asr": asr},

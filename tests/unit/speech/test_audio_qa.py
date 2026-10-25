@@ -213,3 +213,43 @@ def test_checker_verdict_uses_cer_threshold():
                                    max_cer=0.12)
     assert good.passed and good.metrics["cer"] == 0.0 and good.metrics["asr_model"] == "fake-asr"
     assert not bad.passed and bad.metrics["cer"] > 0.12
+
+
+# ------------------------------------------------------------------ bounded memory (T-AUD-13, D-042)
+def _reference_block_loudness(samples, sample_rate):
+    """The whole-signal formulation (before streaming), kept here as the reference."""
+    from scipy.signal import lfilter
+    from b2c_speech.audio.loudness import k_weighting
+    b, a = k_weighting(sample_rate)
+    x = samples[np.newaxis, :] if samples.ndim == 1 else samples
+    weighted = lfilter(b, a, x, axis=-1)
+    block = int(round(0.4 * sample_rate))
+    step = int(round(block * 0.25))
+    n = weighted.shape[-1]
+    if n < block:
+        return np.array([])
+    power = weighted ** 2
+    cumulative = np.concatenate([np.zeros((power.shape[0], 1)), np.cumsum(power, axis=-1)], axis=-1)
+    starts = np.arange(0, n - block + 1, step)
+    total = ((cumulative[:, starts + block] - cumulative[:, starts]) / block).sum(axis=0)
+    with np.errstate(divide="ignore"):
+        return -0.691 + 10 * np.log10(total)
+
+
+@pytest.mark.parametrize("sr", [16000, 22050, 24000, 44100, 48000])
+@pytest.mark.parametrize("chunk_s", [0.7, 3.0, 60.0])
+def test_streamed_block_loudness_equals_the_whole_signal_formulation(sr, chunk_s):
+    from b2c_speech.audio.loudness import block_loudness
+    rng = np.random.default_rng(sr)
+    t = np.arange(int(5.3 * sr)) / sr
+    x = 0.2 * np.sin(2 * np.pi * 440 * t) * (0.5 + 0.5 * np.sin(2 * np.pi * 0.7 * t)) + 0.01 * rng.standard_normal(len(t))
+    ref = _reference_block_loudness(x, sr)
+    got = block_loudness(x, sr, chunk_s=chunk_s)
+    assert got.shape == ref.shape and np.allclose(got, ref, atol=1e-6)
+    stereo = np.stack([x, 0.5 * x])
+    assert np.allclose(block_loudness(stereo, sr, chunk_s=chunk_s), _reference_block_loudness(stereo, sr), atol=1e-6)
+
+
+def test_streamed_loudness_handles_short_signals():
+    from b2c_speech.audio.loudness import block_loudness
+    assert block_loudness(np.zeros(100), 24000, chunk_s=0.01).size == 0

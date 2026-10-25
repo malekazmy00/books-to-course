@@ -1,4 +1,4 @@
-"""End to end, without any TTS (T-AUD-09): generated segment audio (tone + edge silence) ->
+"""End to end, without any TTS (T-AUD-12): generated segment audio (tone + edge silence) ->
 edge trimming + planned pauses -> loudness-normalized episode -> tagged MP3 -> read back and
 check name, tags, format and loudness report; then copy a small course to a FAT image in order.
 """
@@ -73,6 +73,7 @@ def test_episode_is_encoded_tagged_named_and_normalized_to_minus_16_lufs():
     assert r["loudness_profile"] == "app-speech-16" and r["passed"] is True
     assert r["integrated_lufs"] == pytest.approx(-16.0, abs=1.0) and r["true_peak_dbtp"] <= -1.0
     assert r["id3"] == "2.3.0" and r["bitrate_kbps"] == 96 and r["sample_rate"] == 44100
+    assert r["bitrate_mode"] == "CBR" and r["channel_modes"] == ["mono"]
 
 
 def test_ascii_name_and_ascii_free_tags_keep_the_arabic_in_tags():

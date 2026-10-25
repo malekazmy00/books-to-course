@@ -1,4 +1,4 @@
-"""Edge-silence trimming of each segment before assembly (T-AUD-05).
+"""Edge-silence trimming of each segment before assembly (T-AUD-08).
 
 XTTS/Fasih return each segment with its own leading/trailing silence, so the real gap between
 two segments was ``trailing + planned pause + leading``. After trimming, only a short guard

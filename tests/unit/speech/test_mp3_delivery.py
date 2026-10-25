@@ -1,4 +1,4 @@
-"""Learner MP3 delivery (T-AUD-06..08): speech encoding, ID3v2.3 tags, streaming resampling.
+"""Learner MP3 delivery (T-AUD-09, T-AUD-10): speech encoding, ID3v2.3 tags, streaming resampling.
 
 Encoding: MPEG-1 Layer III, mono, 44.1 kHz, CBR (default 96 kbps). Tags: ID3v2.3 (not 2.4),
 text frames in UTF-16 with BOM (encoding byte 0x01, id3.org/id3v2.3.0 §3.3), TIT2/TALB/TRCK
@@ -17,7 +17,8 @@ from scipy.signal import resample_poly
 
 from b2c_speech.audio import PCM
 from b2c_speech.audio.loudness import true_peak_dbtp
-from b2c_speech.audio.mp3 import Id3Tags, Mp3Settings, encode_mp3, read_id3, resample_blocks, write_id3v23
+from b2c_speech.audio.mp3 import (Id3Tags, Mp3Settings, encode_mp3, mp3_frame_probe, read_id3, resample_blocks,
+                                  write_id3v23)
 
 SR = 24000
 PNG_1PX = bytes.fromhex("89504e470d0a1a0a0000000d4948445200000001000000010806000000"
@@ -73,9 +74,18 @@ def test_encoded_file_is_mpeg1_layer3_mono_cbr_at_the_requested_bitrate(kbps):
     info = MP3(io.BytesIO(data)).info
     assert info.sample_rate == 44100 and info.channels == 1 and info.layer == 3 and info.version == 1
     assert info.bitrate == kbps * 1000
-    assert info.bitrate_mode in (BitrateMode.CBR, BitrateMode.UNKNOWN)  # LAME's Info tag says CBR
+    assert info.bitrate_mode in (BitrateMode.CBR, BitrateMode.UNKNOWN)  # lameenc writes no Info/Xing frame
     assert info.length == pytest.approx(3.0, abs=0.1)
     assert len(data) == pytest.approx(kbps * 1000 / 8 * 3.0, rel=0.1)
+    probe = mp3_frame_probe(data)  # CBR proven on every frame header, not inferred from a tag
+    assert probe["bitrates_kbps"] == [kbps] and probe["sample_rates"] == [44100]
+    assert probe["channel_modes"] == ["mono"] and probe["versions"] == ["MPEG-1"] and probe["layers"] == [3]
+    assert probe["frames"] == pytest.approx(3.0 * 44100 / 1152, abs=3) and probe["trailing_bytes"] == 0
+
+
+def test_frame_probe_rejects_non_mp3():
+    with pytest.raises(ValueError):
+        mp3_frame_probe(b"RIFF" + bytes(2000))
 
 
 def test_stereo_input_is_mixed_down_to_mono():

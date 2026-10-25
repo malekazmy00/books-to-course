@@ -82,19 +82,25 @@ def phrase_document(n, *, chars=53):
     return SpeechTextDocument(book_id="bk", language="ar", frontend_version="v", source=SOURCE, segments=segments)
 
 
-def test_track_length_is_bounded_by_duration_not_by_segment_count():  # T-AUD-10
+def test_track_length_is_bounded_by_duration_not_by_segment_count():  # T-AUD-07
     plan = plan_tracks(phrase_document(3708), PlanLimits())
     assert PlanLimits().max_segments_per_track is None
+    assert PlanLimits().max_track_seconds == 1800  # fits the audio worker's 2 GiB (measured, D-042)
     full = plan.tracks[:-1]
     assert len(full) >= 2
     # every full track ends because the next segment would pass the duration bound, not at 400 segments
     assert all(PlanLimits().max_track_seconds - 15 < t.estimated_seconds <= PlanLimits().max_track_seconds
                for t in full)
-    assert max(len(t.segment_ids) for t in plan.tracks) > 400
+    # the bug this replaces: a one-hour bound with 400 segments gave ~43-minute tracks
+    hour = plan_tracks(phrase_document(3708), PlanLimits(max_track_seconds=3600))
+    assert all(t.estimated_seconds > 3585 for t in hour.tracks[:-1])
+    assert max(len(t.segment_ids) for t in hour.tracks) > 400
+    old = plan_tracks(phrase_document(3708), PlanLimits(max_track_seconds=3600, max_segments_per_track=400))
+    assert max(t.estimated_seconds for t in old.tracks) < 0.75 * 3600
 
 
 def test_an_explicit_segment_count_bound_is_still_honoured():
-    plan = plan_tracks(phrase_document(1000), PlanLimits(max_segments_per_track=400))
+    plan = plan_tracks(phrase_document(1000), PlanLimits(max_track_seconds=3600, max_segments_per_track=400))
     assert [len(t.segment_ids) for t in plan.tracks] == [400, 400, 200]
 
 

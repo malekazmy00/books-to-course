@@ -291,7 +291,9 @@
 - ruff: ‏`All checks passed!`؛
 - import-linter: ‏`Contracts: 9 kept, 0 broken.`؛
 - contract: ‏143 passed؛
-- unit: ‏2363 passed، و4 skipped، و0 failed.
+- unit: ‏2363 passed، و4 skipped، و0 failed. الأربعة المتخطاة كلها في `tests/unit/speech/test_copy_course_to_card.py`، بسبب «mtools not installed»، ولا علاقة لها بهذا العمل.
+
+**التحقق بعد الـ commit:** أعدت تشغيل `gate_eval.py` على الكود المحفوظ. النتيجة: `failed: []` للكتابين، و`deterministic: True`.
 
 ## 7. ما لم يُنفّذ أو بقي مفتوحًا
 

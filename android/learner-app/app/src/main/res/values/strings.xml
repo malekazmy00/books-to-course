@@ -18,7 +18,16 @@
     <string name="setup_url_not_https">يجب أن يبدأ العنوان بـ https.</string>
     <string name="setup_url_invalid">العنوان غير صالح.</string>
     <string name="setup_token_empty">اكتب رمز الوصول.</string>
-    <string name="setup_client_too_old">إصدار التطبيق أقدم مما يقبله الخادم. حدّث التطبيق.</string>
+    <string name="setup_client_too_old">إصدار التطبيق قديم ولم يعد الخادم يقبله. ثبّت أحدث نسخة من التطبيق ثم أعد المحاولة.</string>
+    <string name="setup_error_no_tailnet">تطبيق Tailscale غير مفعّل أو غير متصل على هذا الجهاز. افتحه وفعّله ثم أعد المحاولة.</string>
+    <string name="setup_error_unreachable">تعذّر الوصول إلى الخادم أو انتهت مهلة الاتصال. تأكد أن Tailscale متصل وأن عنوان الخادم صحيح، وأن الخادم يعمل، ثم أعد المحاولة بعد قليل.</string>
+    <string name="setup_error_certificate">تعذّر إنشاء اتصال آمن: شهادة الخادم غير موثوقة أو لا تطابق العنوان. تأكد أن العنوان هو عنوان الخادم في Tailscale (ينتهي بـ ts.net) ويبدأ بـ https، وأن تاريخ الجهاز ووقته صحيحان.</string>
+    <string name="setup_error_bad_token">الرمز غير صحيح. انسخ رمز الوصول من جديد وأدخله كاملًا دون مسافات، ثم أعد المحاولة.</string>
+    <string name="setup_error_server">حدث خطأ في الخادم. المشكلة ليست في جهازك: أعد المحاولة بعد قليل، وإن تكررت فأبلغ مسؤول الخادم.</string>
+    <string name="setup_error_incompatible">الخادم أجاب بما لا يفهمه هذا الإصدار من التطبيق. تأكد أن العنوان هو عنوان خادم الكورسات، أو حدّث التطبيق.</string>
+    <string name="setup_error_unknown">تعذّر الاتصال بالخادم لسبب غير معروف. انسخ تفاصيل الخطأ وأرسلها إلى مسؤول الخادم.</string>
+    <string name="setup_copy_details">نسخ تفاصيل الخطأ</string>
+    <string name="setup_details_copied">نُسخت تفاصيل الخطأ</string>
 
     <!-- errors -->
     <string name="error_not_configured">لم يُضبط الاتصال بالخادم بعد.</string>

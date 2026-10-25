@@ -7,6 +7,10 @@
 copied read-only from the artifact store. Both outlines are scored with the same page-level
 metrics against the reference (bookmarks + reviewed zones), because v1 and v2 do not share block
 ids; the v2 outline is also scored at block level (b2c_outline.v2.gate) and gated.
+
+D-036: front-matter lessons (preface, foreword, acknowledgments) are taught on purpose; their words
+are reported as ``front_matter_lesson_words`` and not as front/back matter leaking into lessons.
+Figure descriptions in extra spans count toward their lesson.
 """
 from __future__ import annotations
 
@@ -44,8 +48,11 @@ def _lessons_v2(outline, book: ParsedBookV2) -> tuple[list[dict], list[tuple]]:
     for m in outline.modules:
         lessons = [{"title": lesson.display_title, "a": pos[lesson.spine_span.start_block],
                     "b": pos[lesson.spine_span.end_block], "kind": lesson.kind,
-                    "anchor": pos[lesson.anchor_block]} for lesson in m.lessons]
-        modules.append({"title": m.display_title, "lessons": lessons, "anchor": pos[m.anchor_block]})
+                    "anchor": pos[lesson.anchor_block],
+                    "extra": [(pos[e.start_block], pos[e.end_block]) for e in lesson.extra_spans]}
+                   for lesson in m.lessons]
+        modules.append({"title": m.display_title, "lessons": lessons, "anchor": pos[m.anchor_block],
+                        "front": all(lesson.kind == "front_matter" for lesson in m.lessons)})
     return modules, blocks
 
 
@@ -66,12 +73,16 @@ def page_metrics(modules: list[dict], blocks: list[tuple], reference: list[dict]
     words = []
     leak_words = 0
     leak_lessons = 0
+    front_words = 0
     for lesson in lessons:
-        w = sum(blocks[i][2] for i in range(lesson["a"], lesson["b"] + 1)
-                if blocks[i][0] not in furniture and blocks[i][0] != "heading")
-        lw = sum(blocks[i][2] for i in range(lesson["a"], lesson["b"] + 1)
-                 if blocks[i][0] not in furniture and (blocks[i][1] < front_end or blocks[i][1] >= back_start))
+        idx = [i for a, b in [(lesson["a"], lesson["b"]), *lesson.get("extra", [])] for i in range(a, b + 1)]
+        w = sum(blocks[i][2] for i in idx if blocks[i][0] not in furniture and blocks[i][0] != "heading")
         words.append(w)
+        if lesson["kind"] == "front_matter":  # taught on purpose (D-036 (2))
+            front_words += w
+            continue
+        lw = sum(blocks[i][2] for i in idx
+                 if blocks[i][0] not in furniture and (blocks[i][1] < front_end or blocks[i][1] >= back_start))
         leak_words += lw
         leak_lessons += lw > 0 and lw * 2 >= w
     total_content = sum(w for t, _, w in blocks if t not in furniture and t != "heading")
@@ -81,17 +92,18 @@ def page_metrics(modules: list[dict], blocks: list[tuple], reference: list[dict]
         if m.get("anchor") is not None:
             return blocks[m["anchor"]][1]
         return min(first_page(lesson) for lesson in m["lessons"])
+    body_modules = [m for m in modules if not m.get("front")]  # the D-036 front module is not a chapter
     matched = 0
     used = set()
     for e in chapters:
-        for k, m in enumerate(modules):
+        for k, m in enumerate(body_modules):
             if k not in used and abs(module_page(m) - e["page"]) <= 1 and (
                     title_key(m["title"]) == title_key(e["title"])
                     or title_key(e["title"]).endswith(title_key(m["title"])) and len(title_key(m["title"])) >= 8):
                 used.add(k)
                 matched += 1
                 break
-    p = matched / len(modules) if modules else 0.0
+    p = matched / len(body_modules) if body_modules else 0.0
     r = matched / len(chapters) if chapters else 1.0
     sections = [e for e in body if e["level"] == top + 1]
     sec_ok = sec_wrong = 0
@@ -107,7 +119,8 @@ def page_metrics(modules: list[dict], blocks: list[tuple], reference: list[dict]
     sizes = sorted(words)
     return {
         "modules": len(modules), "lessons": len(lessons),
-        "single_lesson_modules": sum(1 for m in modules if len(m["lessons"]) == 1),
+        "single_lesson_modules": sum(1 for m in body_modules if len(m["lessons"]) == 1),
+        "body_modules": len(body_modules),
         "chapter_module_precision": round(p, 4), "chapter_module_recall": round(r, 4),
         "chapter_module_f1": round(2 * p * r / (p + r), 4) if p + r else 0.0, "reference_chapters": len(chapters),
         "reference_sections": len(sections), "sections_title_and_page_match": sec_ok,
@@ -116,6 +129,8 @@ def page_metrics(modules: list[dict], blocks: list[tuple], reference: list[dict]
         "front_back_words_in_lessons": leak_words,
         "front_back_share_of_content_words": round(leak_words / total_content, 4) if total_content else 0.0,
         "lessons_mostly_front_back_matter": leak_lessons,
+        "front_matter_lessons": sum(1 for lesson in lessons if lesson["kind"] == "front_matter"),
+        "front_matter_lesson_words": front_words,
         "lesson_words_min": sizes[0], "lesson_words_median": statistics.median(sizes),
         "lesson_words_p90": sizes[int(len(sizes) * 0.9)], "lesson_words_max": sizes[-1],
         "lessons_under_100_words": sum(1 for s in sizes if s < 100),

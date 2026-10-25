@@ -6,7 +6,9 @@ import pytest
 import b2c_contracts as c
 from b2c_outline.v2 import OutlineConfig, OutlineUnavailable, build_outline_v2
 
-from tests.unit.outline.v2_fixtures import book, furniture, gramsci_like, head, para, rows_of, sat_like
+from tests.unit.outline.v2_fixtures import (
+    book, furniture, gramsci_like, gramsci_like_with_acknowledgments, head, para, rows_of, sat_like,
+)
 
 
 def build(parsed, **kw):
@@ -24,10 +26,11 @@ def by_title(outline, title):
 # ----------------------------------------------------------------------------- SAT-like
 def test_bookmarked_chapters_and_sections_become_modules_and_lessons():
     o = build(sat_like())
-    assert [m.display_title for m in o.modules] == ["Chapter 1 • Getting Organized", "Chapter 2 • Exploration Techniques"]
+    assert [m.display_title for m in o.modules] == ["Introduction to the Book", "Chapter 1 • Getting Organized",
+                                                    "Chapter 2 • Exploration Techniques"]
     assert all(m.source == "pdf_outline" and m.level == 1 for m in o.modules)
     titles = [l.display_title for l in o.lessons]
-    assert titles == ["Chapter 1 · Introduction", "5.1 Sorting", "5.2 Ranking, Scoring, and Prioritizing",
+    assert titles == ["Preface", "Chapter 1 · Introduction", "5.1 Sorting", "5.2 Ranking, Scoring, and Prioritizing",
                       "6.1 Simple Brainstorming", "6.2 Cluster Brainstorming"]
     assert o.structure_source == "pdf_outline" and o.requires_review is True
 
@@ -42,29 +45,130 @@ def test_a_body_line_read_as_heading_is_not_a_lesson_when_bookmarks_exist():  # 
 
 def test_chapter_intro_is_its_own_lesson_not_hidden_under_the_first_section():
     o = build(sat_like())
-    intro = o.modules[0].lessons[0]
+    intro = o.modules[1].lessons[0]
     assert intro.kind == "chapter_intro" and (seq(intro.spine_span.start_block), seq(intro.spine_span.end_block)) == (6, 8)
     assert intro.source_title == "Chapter 1 • Getting Organized"
     # chapter 2 has no intro text: its heading folds into the first section, which keeps its title
-    first = o.modules[1].lessons[0]
+    first = o.modules[2].lessons[0]
     assert first.display_title == "6.1 Simple Brainstorming" and seq(first.spine_span.start_block) == 24
     assert first.anchor_block == "bk:b00026"
 
 
-def test_front_matter_and_chapter_end_apparatus_are_excluded_with_reasons():
+def test_front_matter_and_chapter_end_notes_are_excluded_with_reasons():
     o = build(sat_like())
     ranges = [(seq(r.start_block), seq(r.end_block), r.zone, r.reason) for r in o.excluded_ranges]
     assert ranges == [(0, 1, "front_matter", "title_page"), (2, 3, "front_matter", "toc"),
-                      (4, 5, "front_matter", "preface"),
-                      (19, 21, "body", "endnotes"), (22, 23, "body", "figure_descriptions")]
+                      (19, 21, "body", "endnotes")]
     ranking = by_title(o, "5.2 Ranking, Scoring, and Prioritizing")
     assert seq(ranking.spine_span.end_block) == 18  # ends right before NOTES (furniture included)
+
+
+def test_figure_descriptions_stay_in_the_lesson_in_reading_order_with_block_roles():  # D-036 (1)
+    o = build(sat_like())
+    ranking = by_title(o, "5.2 Ranking, Scoring, and Prioritizing")
+    # the chapter's descriptions follow its NOTES: they are read at the end of the chapter's last
+    # lesson (the notes stay excluded) and count toward the lesson
+    assert [(e.seqs, e.role) for e in ranking.extra_spans] == [((22, 23), "figure_descriptions")]
+    assert [(r.seqs, r.role) for r in ranking.block_roles] == [((22, 22), "figure_description_heading"),
+                                                               ((23, 23), "figure_description")]
+    assert ranking.word_count == 1200 + 1000 + 30
+    assert "bk:b00022" not in ranking.subheadings
+
+
+def test_figure_markers_captions_and_descriptions_inside_a_lesson_are_marked():
+    rows = [head("Chapter 1 • Basics", 1, level=1, bm=(1, "Chapter 1 • Basics")),
+            head("1.1 Terms", 1, level=2, bm=(2, "1.1 Terms")),
+            para(1, 700),
+            para(1, 4, kind="figure", text="Box A Box B"),
+            para(1, 7, kind="caption", text="Figure 1.1 Two Boxes and an Arrow"),
+            para(2, 300),
+            head("Descriptions of Images and Figures", 2, level=3),  # 6: no notes before it
+            para(2, 3, kind="caption", text="Back to Figure"),
+            para(2, 40, kind="caption"),
+            para(2, 3, kind="caption", text="Back to Figure"),
+            para(2, 30, kind="caption"),
+            head("1.2 Methods", 3, level=2, bm=(2, "1.2 Methods")),
+            para(3, 800)]
+    o = build(book(rows))
+    terms = by_title(o, "1.1 Terms")
+    assert terms.spine_span.seqs == (0, 10) and terms.extra_spans == []
+    assert [(r.seqs, r.role) for r in terms.block_roles] == [
+        ((4, 4), "figure_caption"), ((6, 6), "figure_description_heading"), ((7, 7), "figure_description_marker"),
+        ((8, 8), "figure_description"), ((9, 9), "figure_description_marker"), ((10, 10), "figure_description")]
+    assert terms.word_count == 700 + 4 + 7 + 300 + 3 + 40 + 3 + 30  # heading words do not count
+    assert o.excluded_ranges == []
 
 
 def test_front_matter_policy_can_include_the_preface():
     o = build(sat_like(), config=OutlineConfig(include_front=frozenset({"preface"})))
     assert o.modules[0].display_title == "Preface" and o.modules[0].lessons[0].kind == "chapter"
     assert [r.reason for r in o.excluded_ranges][:2] == ["title_page", "toc"]
+    assert "preface" not in {l.kind for l in o.lessons}
+
+
+def test_preface_foreword_and_acknowledgments_become_lessons_before_chapter_1():  # D-036 (2)
+    rows = [head("Copyright", 1, level=1, zone="front_matter", bm=(1, "Copyright")),
+            para(1, 30, zone="front_matter", text="© 2020 SAGE. All rights reserved. ISBN 978-1-5063-6893-1"),
+            head("Contents", 2, level=1, zone="front_matter", bm=(1, "Contents")),
+            para(2, kind="toc_entry", zone="front_matter", text="Chapter 1 • Basics 9"),
+            head("Foreword by John McLaughlin", 3, level=1, zone="front_matter", bm=(1, "Foreword by John McLaughlin")),
+            para(3, 400, zone="front_matter"),  # 5
+            head("Preface", 4, level=1, zone="front_matter", bm=(1, "Preface")),  # 6
+            para(4, 500, zone="front_matter"),
+            para(4, 40, zone="front_matter", kind="table", text="| Edition | Year |\n| --- | --- |\n| 1 | 2010 |"),
+            head("ACKNOWLEDGMENTS", 5, level=2, zone="front_matter"),  # 9: inside the Preface bookmark range
+            para(5, 200, zone="front_matter"),
+            furniture(5),
+            para(5, 60, zone="front_matter"),
+            head("DISCLAIMER", 6, level=2, zone="front_matter"),  # 13
+            para(6, 50, zone="front_matter"),
+            head("Chapter 1 • Basics", 7, level=1, bm=(1, "Chapter 1 • Basics")),  # 15
+            para(7, 900)]
+    o = build(book(rows))
+    front = o.modules[0]
+    assert front.order == 1 and front.display_title == "Introduction to the Book"
+    assert [(l.display_title, l.kind, l.spine_span.seqs) for l in front.lessons] == [
+        ("Foreword by John McLaughlin", "front_matter", (4, 5)), ("Preface", "front_matter", (6, 14))]
+    preface = front.lessons[1]
+    assert preface.word_count == 500 + 15 + 200 + 60 + 50  # the table has 15 words
+    assert preface.size_status == "ok"
+    assert [(a.seqs, a.reason) for a in preface.audio_adaptations] == [
+        ((8, 8), "table"), ((10, 12), "acknowledgements"), ((14, 14), "legal_notice")]
+    assert all(a.note for a in preface.audio_adaptations)
+    foreword = front.lessons[0]
+    assert foreword.size_status == "below_min" and "front matter" in foreword.size_exception
+    assert foreword.audio_adaptations == []
+    # copyright and contents stay excluded with their reasons
+    assert [(r.seqs, r.reason) for r in o.excluded_ranges] == [((0, 1), "copyright"), ((2, 3), "toc")]
+    assert o.modules[1].display_title == "Chapter 1 • Basics" and o.modules[1].order == 2
+
+
+def test_a_standalone_acknowledgments_section_is_a_lesson_marked_for_audio_adaptation():  # D-036 (2)
+    o = build(gramsci_like_with_acknowledgments())
+    ack = o.modules[0].lessons[0]
+    assert (ack.display_title, ack.kind) == ("Acknowledgments", "front_matter")
+    assert [(a.seqs, a.reason) for a in ack.audio_adaptations] == [((9, 9), "acknowledgements")]
+    assert "acknowledgments" not in {r.reason for r in o.excluded_ranges}
+
+
+def test_long_lists_in_front_matter_are_marked_and_kept():
+    rows = [head("Preface", 1, level=1, zone="front_matter", bm=(1, "Preface")),
+            para(1, 300, zone="front_matter"),
+            *[para(1, 6, zone="front_matter", kind="list_item") for _ in range(9)],  # 2..10: credits
+            para(2, 100, zone="front_matter"),
+            para(2, 20, zone="front_matter", kind="list_item"),  # a short list stays as is
+            head("Chapter 1 • Basics", 3, level=1, bm=(1, "Chapter 1 • Basics")),
+            para(3, 900)]
+    o = build(book(rows))
+    preface = o.modules[0].lessons[0]
+    assert [(a.seqs, a.reason) for a in preface.audio_adaptations] == [((2, 10), "long_list")]
+    assert preface.word_count == 300 + 54 + 100 + 20
+
+
+def test_front_lessons_policy_can_keep_the_preface_excluded():
+    o = build(sat_like(), config=OutlineConfig(front_lessons=frozenset()))
+    assert "preface" in {r.reason for r in o.excluded_ranges}
+    assert o.modules[0].display_title == "Chapter 1 • Getting Organized"
 
 
 def test_bookmark_in_the_middle_of_a_page_bounds_the_lesson_at_block_level():  # P6
@@ -79,7 +183,8 @@ def test_every_block_is_included_or_excluded():
     parsed = sat_like()
     o = build(parsed)
     covered = set()
-    for item in [*(l.spine_span for l in o.lessons), *o.excluded_ranges]:
+    for item in [*(l.spine_span for l in o.lessons), *(e for l in o.lessons for e in l.extra_spans),
+                 *o.excluded_ranges]:
         a, b = item.seqs
         covered.update(range(a, b + 1))
     assert covered == set(range(len(parsed.blocks))) and o.block_count == len(parsed.blocks)
@@ -191,5 +296,38 @@ def test_a_book_without_structure_is_refused():
 def test_v1_projection_of_a_built_outline():
     parsed = sat_like()
     v1 = c.course_outline_v1_from_v2(build(parsed), parsed)
-    assert [l.title for m in v1.modules for l in m.lessons][1] == "5.1 Sorting"
-    assert len(v1.excluded_prefix_block_ids) == 6
+    assert [l.title for m in v1.modules for l in m.lessons][2] == "5.1 Sorting"
+    assert len(v1.excluded_prefix_block_ids) == 4  # the preface is a lesson (D-036)
+    assert [l.title for m in v1.modules for l in m.lessons][0] == "Preface"
+
+
+# ----------------------------------------------------------------------------- episodes (D-036 (3))
+def test_every_lesson_is_an_episode_numbered_in_book_order_with_a_title_for_audio():
+    o = build(sat_like())
+    assert [(l.episode, l.episode_title) for l in o.lessons] == [
+        (1, "Preface"), (2, "Getting Organized"), (3, "Sorting"), (4, "Ranking, Scoring, and Prioritizing"),
+        (5, "Simple Brainstorming"), (6, "Cluster Brainstorming")]
+    g = build(gramsci_like())
+    assert [l.episode_title for l in g.lessons] == [
+        "Introduction", "Gramsci: Lodestar of Renewal", "Critical Approaches",
+        "The Originality of the Living Tradition", "Readings of Gramsci",
+        "The Originality of the Living Tradition: Conclusion"]
+    assert [l.episode for l in g.lessons] == list(range(1, 7))
+
+
+def test_episode_numbers_are_stable_across_reparse():
+    original = gramsci_like()
+    shifted = book([furniture(1, "From Subordination")] + rows_of(original),
+                   labels={p.page_no: p.printed_label for p in original.pages if p.printed_label})
+    a, b = build(original), build(shifted)
+    assert [(l.lesson_id, l.episode, l.episode_title) for l in a.lessons] == \
+        [(l.lesson_id, l.episode, l.episode_title) for l in b.lessons]
+
+
+def test_episode_titles_drop_numbering_and_trademark_signs():
+    rows = [head("CHAPTER 6 • EXPLORATION TECHNIQUES", 1, level=1, bm=(1, "Chapter 6 • Exploration Techniques")),
+            head("6.4 Circleboarding™", 1, level=2, bm=(2, "6.4 Circleboarding™")), para(1, 800),
+            head("6.5 Multiple Hypotheses Generator®", 2, level=2, bm=(2, "6.5 Multiple Hypotheses Generator®")),
+            para(2, 800)]
+    o = build(book(rows))
+    assert [l.episode_title for l in o.lessons] == ["Circleboarding", "Multiple Hypotheses Generator"]

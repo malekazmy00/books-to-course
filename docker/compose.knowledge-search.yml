@@ -1,0 +1,26 @@
+# b2c-owned web search for knowledge research (D-034, learning-companion §6/§10). OPT-IN:
+#   make up KNOWLEDGE_SEARCH=1 PROFILES="<usual> knowledge-search"
+# Never uses another project's SearXNG on this server (CLAUDE.md rule 7). No host port is
+# published: the worker reaches it on the internal network as http://b2c-searxng:8080, and it
+# needs egress (b2c_edge) to query the public engines. Not started by default.
+services:
+  b2c-searxng:
+    profiles: [knowledge-search]
+    image: searxng/searxng:2026.10.19-81371861f@sha256:5ed0323b5f5f8701264ef65e239a2bd83cb57098f2b971fa30bf79c06eeae271
+    environment:
+      SEARXNG_BASE_URL: http://b2c-searxng:8080/
+      SEARXNG_SECRET: ${B2C_SEARXNG_SECRET:?set B2C_SEARXNG_SECRET in .env before enabling knowledge-search}
+    volumes:
+      - type: bind
+        source: ./searxng/settings.yml
+        target: /etc/searxng/settings.yml
+        read_only: true
+    networks: [b2c_internal, b2c_edge]
+    restart: unless-stopped
+    mem_limit: 512m
+    cpus: 0.5
+    cpu_shares: 256
+    read_only: true
+    tmpfs: [/tmp, /var/cache/searxng]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]

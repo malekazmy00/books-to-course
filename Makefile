@@ -11,11 +11,13 @@ export PATH := $(HOME)/.local/bin:$(PATH)
 PROFILES ?= local-llm
 EXTERNAL ?= 0
 EXTERNAL_QE ?= 0   # D-029: external semantic QE (OpenRouter) for development
+KNOWLEDGE_SEARCH ?= 0   # D-034: b2c-owned SearXNG for knowledge research (also add PROFILES=... knowledge-search)
 ALL_PROFILES := local-llm gemma4 gemma4-booktrans speech hy-translation surya mock
 COMPOSE_FILES := -f docker/compose.yml -f docker/compose.observability.yml -f docker/compose.qa-local.yml \
 	-f docker/compose.speech.yml -f docker/compose.hy-translation.yml -f docker/compose.gemma4.yml \
 	$(if $(filter 1,$(EXTERNAL)),-f docker/compose.external-generation.yml) \
-	$(if $(filter 1,$(EXTERNAL_QE)),-f docker/compose.external-qe.yml)
+	$(if $(filter 1,$(EXTERNAL_QE)),-f docker/compose.external-qe.yml) \
+	$(if $(filter 1,$(KNOWLEDGE_SEARCH)),-f docker/compose.knowledge-search.yml)
 COMPOSE_BASE := docker compose -p b2c --env-file .env $(COMPOSE_FILES)
 COMPOSE := $(COMPOSE_BASE) $(foreach p,$(PROFILES),--profile $(p))
 PYTEST  := uv run pytest

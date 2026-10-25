@@ -88,6 +88,10 @@
 | Fasih-TTS v1 / CATT / Supertonic3 / Naqta / EmbeddingGemma | **not pinned** | — | VERIFY: record revision + SHA-256 of each weights dir on the data disk |
 | Gemma 4 (profile `gemma4`) | `gemma4:26b-a4b-it-qat`, weights blob `sha256:4c856523d61d77922dbc0b26753a6bf6208e5d69d80db0c04dcd776832d054c5` (14.4 GB), served as `gemma4-b2c:26b-a4b-it-qat-t18` (same weights, Modelfile `PARAMETER num_thread 18`) from `/mnt/wsl/b2cdata/models/ollama` | 2026-10-25 | ollama.com/library/gemma4; checksums verified after copy from E: |
 | fasih / supertonic build context | **not in git** (`${B2C_DATA_DIR}/build-context/*`) | — | open: move into `docker/` so images are reproducible |
+| b2c-research / b2c-concepts (بحث المعرفة وطبقة المفاهيم، D-034/D-035) | لا تبعيات خارجية جديدة: `httpx==0.28.1` و`pydantic` كما في uv.lock (مشتركة مع b2c-llm-gateway)؛ استخراج HTML بـ `html.parser` من المكتبة القياسية | 2026-10-25 | uv.lock |
+| SearXNG (الملف الاختياري `knowledge-search`، خدمة `b2c-searxng`) | `searxng/searxng:2026.10.19-81371861f@sha256:5ed0323b5f5f8701264ef65e239a2bd83cb57098f2b971fa30bf79c06eeae271` | 2026-10-25 | Docker Hub tags API (`hub.docker.com/v2/repositories/searxng/searxng/tags`)؛ لم تُسحب الصورة ولم تُشغَّل |
+| نماذج بحث المعرفة أثناء التطوير (D-029، OpenRouter) | المستخرج `deepseek/deepseek-v4-flash-0731`؛ المحكّم المستقل `google/gemini-3.1-flash-lite` (عائلة مختلفة) | 2026-10-25 | `https://openrouter.ai/api/v1/models` (التسعير والتوفر وقت التشغيل)؛ بلا revision لأن OpenRouter لا يعرضها |
+| واجهات المعرفة العامة | OpenAlex REST (`api.openalex.org`، بلا مفتاح: ميزانية يومية مشتركة $0.10 لكل IP، $0.001 لكل طلب قائمة)، وWikidata/Wikipedia Action API، وOpen Library Search API | 2026-10-25 | ترويسات `x-ratelimit-*` من OpenAlex؛ Open Syllabus **غير مستخدم**: لا API عامة، والوصول البحثي باتفاق (شروطه بتاريخ 2023-05-04) |
 
 ### 5.1 قاعدة الخيوط مقابل حد المعالج (2026-10-25)
 عدد خيوط الاستدلال (llama.cpp / Ollama / torch) يجب أن يكون **أقل من** قيمة `cpus` للخدمة. llama.cpp يختار افتراضيًا خيطًا لكل نواة فيزيائية (28). مع `cpus: 20` تعطّل الـ CFS quota الخيوط في 94% من الفترات، فانخفض توليد Gemma 4 إلى 0.14 token/s. بعد `num_thread 18` صار 12.3 token/s. وأوزان النماذج تُقرأ من القرص ext4 الخاص بالبيانات، لا من `/mnt/e` (9p بطيء).
@@ -106,6 +110,14 @@
 - القبول آلي بالكامل (قرار المالك 2026-10-25: لا مراجع بشري): خدمة الترقية (R1) تسجل المخرج `candidate` ببوابتين مطلوبتين نظاميتين، `outline-v2.structure` و`outline-v2.cross-check`، ثم تقرر `accepted` أو `rejected` بسبب. يشترط القبول أيضًا `B2C_GIT_REVISION` نظيفًا للـ worker (P8)، وإلا يبقى `candidate`.
 - التسليم للفهرسة: `POST /v1/ingestions/{id}/outline/approve-system` (أو `/approve`) لمخطط v2 لا يقرر شيئًا ولا يحتاج `B2C_ALLOW_SYSTEM_OUTLINE_APPROVAL`: يكتب `approved-outline.json` (مفتاح محتوى ثابت) ويبدأ الفهرسة فقط إن كان المخرج `accepted` وكان المخطط مطابقًا تمامًا لما بُني. مخططات v1 تبقى على سلوك R0 (الاعتماد الآلي القديم معطّل افتراضيًا).
 - التفعيل: نشر worker وAPI من هذا الفرع، ثم بدء `IngestPDFV2Workflow` لكتاب جديد (§5.2).
+
+### 5.4 بحث المعرفة وطبقة المفاهيم (D-034/D-035، 2026-10-25)
+مُوصَلان لكنهما **غير منشورين ولا يبدآن تلقائيًا**؛ لا تغيير في الـ worker الحالي.
+- الحزم: `b2c_research` (البحث الخارجي، والوحدة الوحيدة التي تستورد عميل HTTP هي `b2c_research.http`)، و`b2c_concepts` (طبقة المفاهيم). النماذج تُستدعى عبر `b2c_llm_gateway` فقط، بحقنها من orchestration.
+- الأنشطة: `research_book_knowledge` (المرحلة `knowledge-research`) و`build_book_concept_layer` (المرحلة `concept-layer`) في `b2c_orchestration.knowledge`؛ والـ workflow `BookKnowledgeWorkflow` على task queue مستقل `knowledge`، يشغّله `python -m b2c_orchestration.knowledge_worker` فقط (ليس ضمن `worker.py`).
+- الإعدادات: `B2C_KNOWLEDGE_EXTRACTOR_*` و`B2C_KNOWLEDGE_JUDGE_*` (`BASE_URL`، `MODEL_ID`، `FAMILY`، `API_KEY_FILE`، `ALLOW_REMOTE`)؛ يرفض الـ worker أن تكون عائلة المحكّم هي عائلة المستخرج. `B2C_KNOWLEDGE_FETCH_CACHE` لمجلد cache الجلب، و`B2C_OPENALEX_API_KEY_FILE` اختياري، و`B2C_SEARXNG_URL` (مثل `http://b2c-searxng:8080`) يفعّل بحث الويب العام، و`B2C_PAID_SEARCH_KEY_FILE` يفعّل الواجهة المدفوعة.
+- SearXNG خاص بـ b2c: `make up KNOWLEDGE_SEARCH=1 PROFILES="gemma4 knowledge-search"` (يتطلب `B2C_SEARXNG_SECRET` في `.env`؛ الميزانية المعلنة مع gemma4: 45.25 GiB و36.5 CPU). لا يُستخدم SearXNG التابع لمشروع آخر (القاعدة 7).
+- التشغيل اليدوي أثناء التطوير (بلا Temporal): `uv run python scripts/knowledge/run_knowledge.py --help` (التفاصيل في `eval/reports/knowledge-concepts-2026-10-25.md`).
 
 ## 6. المراقبة (Observability)
 

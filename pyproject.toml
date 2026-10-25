@@ -17,6 +17,8 @@ dependencies = [
     "b2c-translation",
     "b2c-speech",
     "b2c-api",
+    "b2c-research",
+    "b2c-concepts",
 ]
 
 [dependency-groups]
@@ -56,6 +58,8 @@ b2c-pedagogy = { workspace = true }
 b2c-translation = { workspace = true }
 b2c-speech = { workspace = true }
 b2c-api = { workspace = true }
+b2c-research = { workspace = true }
+b2c-concepts = { workspace = true }
 
 [tool.ruff]
 target-version = "py312"
@@ -99,6 +103,8 @@ root_packages = [
     "b2c_translation",
     "b2c_speech",
     "b2c_api",
+    "b2c_research",
+    "b2c_concepts",
 ]
 include_external_packages = true
 
@@ -109,7 +115,7 @@ source_modules = ["b2c_contracts"]
 forbidden_modules = [
     "b2c_core", "b2c_llm_gateway", "b2c_orchestration", "b2c_ingest", "b2c_outline",
     "b2c_indexing", "b2c_kg", "b2c_synthesis", "b2c_pedagogy", "b2c_translation",
-    "b2c_speech", "b2c_api",
+    "b2c_speech", "b2c_api", "b2c_research", "b2c_concepts",
 ]
 
 [[tool.importlinter.contracts]]
@@ -119,6 +125,7 @@ source_modules = ["b2c_core"]
 forbidden_modules = [
     "b2c_llm_gateway", "b2c_orchestration", "b2c_ingest", "b2c_outline", "b2c_indexing",
     "b2c_kg", "b2c_synthesis", "b2c_pedagogy", "b2c_translation", "b2c_speech", "b2c_api",
+    "b2c_research", "b2c_concepts",
 ]
 
 [[tool.importlinter.contracts]]
@@ -128,6 +135,7 @@ source_modules = ["b2c_llm_gateway"]
 forbidden_modules = [
     "b2c_orchestration", "b2c_ingest", "b2c_outline", "b2c_indexing", "b2c_kg",
     "b2c_synthesis", "b2c_pedagogy", "b2c_translation", "b2c_speech", "b2c_api",
+    "b2c_research", "b2c_concepts",
 ]
 
 [[tool.importlinter.contracts]]
@@ -135,7 +143,7 @@ name = "layer packages are independent of each other"
 type = "independence"
 modules = [
     "b2c_ingest", "b2c_outline", "b2c_indexing", "b2c_kg", "b2c_synthesis",
-    "b2c_pedagogy", "b2c_translation", "b2c_speech",
+    "b2c_pedagogy", "b2c_translation", "b2c_speech", "b2c_research", "b2c_concepts",
 ]
 
 [[tool.importlinter.contracts]]
@@ -143,7 +151,7 @@ name = "layer packages never import orchestration or api"
 type = "forbidden"
 source_modules = [
     "b2c_ingest", "b2c_outline", "b2c_indexing", "b2c_kg", "b2c_synthesis",
-    "b2c_pedagogy", "b2c_translation", "b2c_speech",
+    "b2c_pedagogy", "b2c_translation", "b2c_speech", "b2c_research", "b2c_concepts",
 ]
 forbidden_modules = ["b2c_orchestration", "b2c_api"]
 
@@ -152,8 +160,23 @@ name = "LLM access only through llm_gateway (no direct HTTP clients to model ser
 type = "forbidden"
 source_modules = [
     "b2c_core", "b2c_orchestration", "b2c_ingest", "b2c_outline", "b2c_indexing", "b2c_kg",
-    "b2c_synthesis", "b2c_pedagogy", "b2c_translation", "b2c_speech",
+    "b2c_synthesis", "b2c_pedagogy", "b2c_translation", "b2c_speech", "b2c_concepts",
 ]
 forbidden_modules = ["openai", "httpx", "requests", "aiohttp"]
 # Only direct imports are banned: going through b2c_llm_gateway (which uses httpx) is the allowed path.
 allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "research: one web client module, and models only through an injected gateway client"
+type = "forbidden"
+source_modules = ["b2c_research"]
+forbidden_modules = ["openai", "httpx", "requests", "aiohttp", "b2c_llm_gateway"]
+# b2c_research.http is the single public-web fetcher (APIs and pages, never model servers; D-034, rule 5).
+ignore_imports = ["b2c_research.http -> httpx"]
+allow_indirect_imports = true
+
+[[tool.importlinter.contracts]]
+name = "concepts reaches models only through an injected gateway client"
+type = "forbidden"
+source_modules = ["b2c_concepts"]
+forbidden_modules = ["b2c_llm_gateway"]

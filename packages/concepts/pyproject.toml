@@ -1,0 +1,16 @@
+[project]
+name = "b2c-concepts"
+version = "0.0.0"
+description = "Concept layer (EN, D-032/D-035): the author's definitions with exact book locations, a concept graph, per-lesson first mentions, external notes kept apart -> ConceptLayer."
+requires-python = ">=3.12"
+dependencies = ["b2c-contracts", "pydantic>=2.7,<3"]
+
+[tool.uv.sources]
+b2c-contracts = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/b2c_concepts"]

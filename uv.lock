@@ -15,6 +15,7 @@ resolution-markers = [
 [manifest]
 members = [
     "b2c-api",
+    "b2c-concepts",
     "b2c-contracts",
     "b2c-core",
     "b2c-indexing",
@@ -24,6 +25,7 @@ members = [
     "b2c-orchestration",
     "b2c-outline",
     "b2c-pedagogy",
+    "b2c-research",
     "b2c-speech",
     "b2c-synthesis",
     "b2c-translation",
@@ -122,6 +124,21 @@ requires-dist = [
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<4" },
     { name = "python-multipart", specifier = ">=0.0.20,<1" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34,<1" },
+]
+
+[[package]]
+name = "b2c-concepts"
+version = "0.0.0"
+source = { editable = "packages/concepts" }
+dependencies = [
+    { name = "b2c-contracts" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "b2c-contracts", editable = "packages/contracts" },
+    { name = "pydantic", specifier = ">=2.7,<3" },
 ]
 
 [[package]]
@@ -339,6 +356,23 @@ requires-dist = [
 ]
 
 [[package]]
+name = "b2c-research"
+version = "0.0.0"
+source = { editable = "packages/research" }
+dependencies = [
+    { name = "b2c-contracts" },
+    { name = "httpx" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "b2c-contracts", editable = "packages/contracts" },
+    { name = "httpx", specifier = ">=0.27,<1" },
+    { name = "pydantic", specifier = ">=2.7,<3" },
+]
+
+[[package]]
 name = "b2c-speech"
 version = "0.0.0"
 source = { editable = "packages/speech" }
@@ -412,6 +446,7 @@ version = "0.0.0"
 source = { virtual = "." }
 dependencies = [
     { name = "b2c-api" },
+    { name = "b2c-concepts" },
     { name = "b2c-contracts" },
     { name = "b2c-core" },
     { name = "b2c-indexing" },
@@ -421,6 +456,7 @@ dependencies = [
     { name = "b2c-orchestration" },
     { name = "b2c-outline" },
     { name = "b2c-pedagogy" },
+    { name = "b2c-research" },
     { name = "b2c-speech" },
     { name = "b2c-synthesis" },
     { name = "b2c-translation" },
@@ -439,6 +475,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "b2c-api", editable = "packages/api" },
+    { name = "b2c-concepts", editable = "packages/concepts" },
     { name = "b2c-contracts", editable = "packages/contracts" },
     { name = "b2c-core", editable = "packages/core" },
     { name = "b2c-indexing", editable = "packages/indexing" },
@@ -448,6 +485,7 @@ requires-dist = [
     { name = "b2c-orchestration", editable = "packages/orchestration" },
     { name = "b2c-outline", editable = "packages/outline" },
     { name = "b2c-pedagogy", editable = "packages/pedagogy" },
+    { name = "b2c-research", editable = "packages/research" },
     { name = "b2c-speech", editable = "packages/speech" },
     { name = "b2c-synthesis", editable = "packages/synthesis" },
     { name = "b2c-translation", editable = "packages/translation" },

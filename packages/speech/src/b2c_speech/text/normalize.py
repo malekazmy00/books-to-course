@@ -21,6 +21,7 @@ AR = "\u0621-\u064a\u0671-\u06d3"  # Arabic letters (incl. the tatweel)
 AR_LETTERS = "\u0621-\u063a\u0641-\u064a\u0671-\u06d3"  # without the tatweel
 _DIGIT_MAP = str.maketrans("٠١٢٣٤٥٦٧٨٩۰۱۲۳۴۵۶۷۸۹", "01234567890123456789")
 _SUPERSCRIPTS = "⁰¹²³⁴⁵⁶⁷⁸⁹"
+SPELL_DIGITS_FROM = 7  # 7+ digits without separators are identifiers (ISBN, LCCN, phone), read digit by digit
 
 # Words after which a numeral is read in the oblique (genitive) form; it is also the default.
 _NOMINATIVE_AFTER = {"هو", "هي", "هم", "كان", "كانت", "أصبح", "بلغ", "وصل", "يبلغ"}
@@ -40,6 +41,15 @@ _PAGE_REF = re.compile(rf"(?:\bانظر\s+)?(?<![{AR}])صص?\.?\s*\d+(?:\s*[-–
 # the end of an Arabic word: a footnote marker the extraction left in the text.
 _GLUED_MARKER = re.compile(rf"(?:(?<=[^\d\s][.،؛:!?؟»”\")])|(?<=[{AR_LETTERS}]))\d{{1,3}}(?=\s|$|[.،؛:])")
 _HEADING_NUMBER = re.compile(r"^\s*\d+(?:\.\d+)*\.?\s+")
+# a multi-level section number opening a paragraph (a heading merged into its paragraph: "3.6 جعل ...")
+_SECTION_PREFIX = re.compile(rf"^\s*\d+(?:\.\d+)+\.?\s+(?=[{AR}])")
+_LATIN_BRACKET = re.compile(r"\s*\[([^\[\]]*)\]")
+_MARKS = re.compile(r"[™©®℠]")
+_REFERENCE_NUMBER = re.compile(r"((?:ال)?(?:شكل|جدول|قسم|مخطط|إطار|معادلة|ملحق|خريطة|رسم))\s+(\d+(?:\.\d+)+)(?![\d.])")
+_MONTHS = ("يناير", "فبراير", "مارس", "أبريل", "إبريل", "مايو", "يونيو", "يوليو", "أغسطس", "سبتمبر", "أكتوبر",
+           "نوفمبر", "ديسمبر", "كانون الثاني", "شباط", "آذار", "نيسان", "أيار", "حزيران", "تموز", "آب", "أيلول",
+           "تشرين الأول", "تشرين الثاني", "كانون الأول")
+_DATE = re.compile(rf"(?<![\d.])(\d{{1,2}})\s+({'|'.join(_MONTHS)})(?![{AR}])")
 _LIST_MARKER = re.compile(r"^\s*(?:\d+|[A-Za-z]|[أبجده])[.)\-]\s+")
 _DEFINITE_DIGIT = re.compile(r"ال[ـ]?(?=\d)")
 _THOUSANDS = re.compile(r"(?<![\d.])\d{1,3}(?:,\d{3})+(?![\d,])")
@@ -51,7 +61,7 @@ _ORDINAL = re.compile(
     rf"({'|'.join(_ORDINAL_NOUNS_M + _ORDINAL_NOUNS_F)})\s+(?:رقم\s+)?(?:ال[ـ]?)?(\d+|[IVXLCDM]+)(?![\dA-Za-z{AR}])")
 _DECIMAL = re.compile(r"\d+\.\d+")
 _INTEGER = re.compile(r"\d+")
-_ACRONYM = re.compile(r"(?<![A-Za-z])(?:(?:[A-Z]\.){2,}|[A-Z]{2,6}(?![A-Za-z]))")
+_ACRONYM = re.compile(r"(?<![A-Za-z])(?:(?:[A-Z]\.){2,}|[A-Z]{2,6}(?![A-Za-z])|[A-Za-z](?![A-Za-z'’]))")
 _LATIN_WORD = re.compile(r"[A-Za-z][A-Za-z'’\-]*")
 _ABBREVIATIONS = [
     (re.compile(rf"(?<![{AR}])أ\.\s?د\.\s?"), "الأستاذ الدكتور ", "abbreviation"),
@@ -103,8 +113,8 @@ def _case_at(text: str, start: int) -> str:
 
 def _number_words(digits: str, case: str) -> str:
     value = int(digits)
-    if value > MAX_CARDINAL:
-        return " ".join(cardinal(int(d)) for d in digits)  # an identifier: read digit by digit
+    if value > MAX_CARDINAL or len(digits) >= SPELL_DIGITS_FROM:
+        return " ".join(cardinal(int(d), case="nom") for d in digits)  # an identifier: digit by digit
     return cardinal(value, case=case)  # type: ignore[arg-type]
 
 
@@ -125,7 +135,16 @@ def _remove_unspoken(out: Normalized, structure: str) -> None:
     if any(ch in out.text for ch in _SUPERSCRIPTS):
         out.text = "".join(ch for ch in out.text if ch not in _SUPERSCRIPTS)
         out.note("footnote_marker_removed")
+    _sub(out, _MARKS, "", "symbol_removed")
     _sub(out, _BRACKET_REF, "", "bracket_reference_removed")
+
+    def latin_bracket(match: re.Match[str]) -> str:
+        inner = match.group(1)
+        if _LATIN_LETTER.search(inner) and not _ARABIC_LETTER.search(inner):
+            out.note("latin_parenthetical_removed")  # e.g. an acronym gloss: "... المتنافسة [ACH]"
+            return ""
+        return match.group(0)
+    out.text = _LATIN_BRACKET.sub(latin_bracket, out.text)
 
     def paren(match: re.Match[str]) -> str:
         inner = match.group(1)
@@ -139,14 +158,16 @@ def _remove_unspoken(out: Normalized, structure: str) -> None:
             # a reference/list number such as (3) or (12، 14); years such as (1939-1945) are spoken
             out.note("numeric_parenthetical_removed")
             return ""
-        return " " + inner  # keep the Arabic content; the brackets themselves are not spoken
+        return "، " + inner + "، "  # keep the content, spoken as a parenthetical pause
 
     out.text = _PAREN.sub(paren, out.text)
     _sub(out, _PAGE_REF, "", "page_reference_removed")
     _sub(out, _GLUED_MARKER, "", "footnote_marker_removed")
     if structure == "heading":
         _sub(out, _HEADING_NUMBER, "", "section_number_removed")
-    elif structure == "list_item":
+    else:
+        _sub(out, _SECTION_PREFIX, "", "section_number_removed")
+    if structure == "list_item":
         _sub(out, _LIST_MARKER, "", "list_marker_removed")
 
 
@@ -176,6 +197,20 @@ def _expand_latin(out: Normalized, lexicon: PronunciationLexicon) -> None:
 
 def _expand_ordinals(out: Normalized) -> None:
     """Before Latin expansion, so a Roman numeral (القرن XX) is not spelled as letters."""
+    def reference(match: re.Match[str]) -> str:
+        out.note("reference_number")  # الشكل 1.6 -> الشكل واحد نقطة ستة (not a decimal)
+        return match.group(1) + " " + " نقطة ".join(cardinal(int(p), case="nom") for p in match.group(2).split("."))
+    out.text = _REFERENCE_NUMBER.sub(reference, out.text)
+
+    def date(match: re.Match[str]) -> str:
+        day = int(match.group(1))
+        if not 1 <= day <= 31:
+            return match.group(0)
+        out.note("date")
+        case = "gen" if _previous_word(out.text, match.start()) in _PREPOSITIONS else "nom"
+        return f"{ordinal(day, case=case)} من {match.group(2)}"  # type: ignore[arg-type]
+    out.text = _DATE.sub(date, out.text)
+
     def ordinal_words(match: re.Match[str]) -> str:
         noun, value = match.group(1), match.group(2)
         number = int(value) if value.isdigit() else roman_to_int(value)
@@ -232,7 +267,9 @@ def _expand_numbers(out: Normalized) -> None:
 
     def integer(match: re.Match[str]) -> str:
         value = int(match.group(0))
-        out.note("year" if len(match.group(0)) == 4 and 1000 <= value <= 2100 else "cardinal")
+        digits = len(match.group(0))
+        out.note("year" if digits == 4 and 1000 <= value <= 2100 else
+                 "digits_spelled" if digits >= SPELL_DIGITS_FROM else "cardinal")
         return _number_words(match.group(0), _case_at(out.text, match.start()))
     out.text = _INTEGER.sub(integer, out.text)
 
@@ -240,7 +277,8 @@ def _expand_numbers(out: Normalized) -> None:
 def _clean(out: Normalized) -> None:
     for pattern, repl, rule in _SYMBOLS:
         _sub(out, pattern, repl, rule)
-    text = out.text.replace("ـ", "")
+    text = re.sub(rf"(?<![{AR_LETTERS}])([لبك])ـ\s*", r"\1", out.text)  # "لـ سي" -> "لسي"
+    text = text.replace("ـ", "")
     text = re.sub(r"\s+", " ", text)
     text = re.sub(r"\s+([.،؛:!?؟,])", r"\1", text)
     text = re.sub(r"([،؛,:])(?:\s*[،؛,:])+", r"\1", text)

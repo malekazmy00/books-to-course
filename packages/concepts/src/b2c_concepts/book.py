@@ -39,6 +39,20 @@ class Occurrence:
     end: int
 
 
+_TOC_LINE = re.compile(r"[^\n]{0,40}?[A-Za-z][^\n]{0,160}?(?:\s|\.)\d{1,3}")
+
+
+def toc_like(text: str) -> bool:
+    """A contents/figures listing: most lines end in a page number (or one short such line)."""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if not lines:
+        return False
+    hits = sum(bool(_TOC_LINE.fullmatch(ln)) for ln in lines)
+    if len(lines) == 1:
+        return hits == 1 and len(lines[0].split()) <= 14
+    return hits / len(lines) >= 0.5
+
+
 def term_pattern(term: str, kind: str) -> re.Pattern[str]:
     words = [re.escape(w) for w in term.replace("™", " ").replace("®", " ").split()]
     if not words:
@@ -87,7 +101,8 @@ class BookIndex:
 
     # ------------------------------------------------------------------ queries
     def lesson_blocks(self) -> list[BookBlock]:
-        return [b for b in self.blocks if b.idx in self.lesson_of]
+        """Teaching text: blocks inside lessons, without table-of-contents-like listings."""
+        return [b for b in self.blocks if b.idx in self.lesson_of and not toc_like(b.text)]
 
     def occurrences(self, term: str, kind: str) -> list[Occurrence]:
         pattern = term_pattern(term, kind)
@@ -120,4 +135,4 @@ class BookIndex:
         return text[start:start + size]
 
 
-__all__ = ["BODY_TYPES_V1", "BODY_TYPES_V2", "BookBlock", "BookIndex", "LessonRef", "Occurrence", "term_pattern"]
+__all__ = ["BODY_TYPES_V1", "BODY_TYPES_V2", "BookBlock", "BookIndex", "LessonRef", "Occurrence", "term_pattern", "toc_like"]

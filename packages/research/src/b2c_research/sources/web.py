@@ -119,7 +119,7 @@ class WebResearch:
             raw = html_to_text(res.text()) if "html" in res.content_type else res.text()
             s = self.builder.build(url=hit.url, provider=f"web:{self.search.name}", title=hit.title or None,
                                    tier=tier_for_url(hit.url), fetched_at=res.fetched_at, raw_text=raw,
-                                   section_hint=q.section, concept=q.concept)
+                                   section_hint=q.section, concept=q.concept, purpose=f"{q.section}: {q.query}")
             if s:
                 out.append(s)
         return out

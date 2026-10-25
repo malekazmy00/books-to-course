@@ -24,6 +24,9 @@ class SourceText:
     section_hint: str | None = None
     concept: str | None = None
     reading: tuple[FurtherReading, ...] = ()
+    # Found by a search (Wikipedia search, web search): the judge must confirm the page is about
+    # ``purpose`` in the book's sense before anything is extracted from it.
+    purpose: str | None = None
 
 
 def source_id_for(url: str) -> str:
@@ -47,7 +50,7 @@ class SourceBuilder:
 
     def build(self, *, url: str, provider: str, title: str | None, tier: int, fetched_at: datetime, raw_text: str,
               section_hint: str | None = None, concept: str | None = None,
-              reading: Iterable[Mapping[str, Any]] = ()) -> SourceText | None:
+              reading: Iterable[Mapping[str, Any]] = (), purpose: str | None = None) -> SourceText | None:
         clean = sanitize_text(raw_text, max_chars=self.max_chars)
         for sentence in clean.removed:
             self.refuse(url, "injection", f"instruction-like text removed: {sentence[:200]}")
@@ -67,7 +70,8 @@ class SourceBuilder:
         items = tuple(FurtherReading(title=r["title"], authors=list(r.get("authors") or []), year=r.get("year"),
                                      url=r.get("url") or url, source_id=sid, tier=tier, note=r.get("note"))
                       for r in reading if r.get("title"))
-        return SourceText(source=source, text=clean.text, section_hint=section_hint, concept=concept, reading=items)
+        return SourceText(source=source, text=clean.text, section_hint=section_hint, concept=concept, reading=items,
+                          purpose=purpose)
 
 
 class KnowledgeProvider(Protocol):

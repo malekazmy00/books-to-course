@@ -129,6 +129,42 @@ def test_judge_rejection_and_unjudged_quotes_are_not_published():
     assert d.published() == [] and d.metrics["citation_support_rate"] == 0
 
 
+def test_searched_pages_must_be_judged_relevant_before_extraction():
+    b = SourceBuilder(max_chars=20_000)
+    helmet = b.build(url="https://en.wikipedia.org/wiki/Advanced_Combat_Helmet", provider="wikipedia",
+                     title="Advanced Combat Helmet", tier=1, fetched_at=NOW, raw_text="The ACH is a combat helmet.",
+                     section_hint="concept_in_field", concept="ACH", purpose="concept in field: ACH")
+    ach = b.build(url="https://en.wikipedia.org/wiki/Analysis_of_competing_hypotheses", provider="wikipedia",
+                  title="Analysis of competing hypotheses", tier=1, fetched_at=NOW,
+                  raw_text="ACH was developed by Richards J. Heuer.", section_hint="concept_in_field", concept="ACH",
+                  purpose="concept in field: ACH")
+    asked = []
+
+    def judge(pv, msg):
+        data = json.loads(msg[msg.index("{"):])
+        if pv.startswith("kr-judge-relevance"):
+            asked.extend(p["page_title"] for p in data["pages"])
+            return {"verdicts": [{"id": p["id"], "relevant": "competing" in p["page_title"]} for p in data["pages"]]}
+        return judge_script(pv, msg)
+
+    extracted = []
+
+    def extractor(pv, msg):
+        extracted.append(msg)
+        return {"claims": [{"section": "concept_in_field", "kind": "fact", "concept": "ACH",
+                            "statement": "ACH was developed by Heuer.", "quote": "ACH was developed by Richards J. Heuer."}]}
+
+    d = build_dossier(book_id="b", meta=META, sources=[helmet, ach],
+                      extractor=ModelRole(ScriptedLLM(extractor), ident("deepseek/x"), "deepseek"),
+                      judge=ModelRole(ScriptedLLM(judge), ident("google/y"), "google"),
+                      queries=[], rejected=[], clock=lambda: NOW, workers=1)
+    assert sorted(asked) == ["Advanced Combat Helmet", "Analysis of competing hypotheses"]
+    assert len(extracted) == 1 and "combat helmet" not in extracted[0]
+    assert [s.title for s in d.sources] == ["Analysis of competing hypotheses"]
+    assert any(r.stage == "validation" and "Advanced_Combat_Helmet" in r.url for r in d.rejected)
+    assert d.metrics["irrelevant_pages"] == 1
+
+
 def test_same_family_judge_is_refused():
     with pytest.raises(ValueError):
         build(judge_family="deepseek")

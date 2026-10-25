@@ -59,10 +59,20 @@ def build_dossier(*, book_id: str, meta: BookMeta, sources: Sequence[SourceText]
                   extractor_options: dict | None = None, max_further_reading: int = 15) -> KnowledgeDossier:
     if extractor.family == judge.family:
         raise ValueError("the citation judge must be from a different model family than the extractor")
-    by_sid = {s.source.source_id: s for s in sources}
     ext = ClaimExtractor(extractor, **(extractor_options or {}))
     jdg = CitationJudge(judge)
     judged_by = judge.identity.model_id
+    rejected = list(rejected)
+    searched = [s for s in sources if s.purpose]
+    if searched:
+        verdicts = jdg.relevant(meta.full_title + (f" by {', '.join(meta.authors)}" if meta.authors else ""),
+                                [(s.source.source_id, s.purpose, s.source.title or "", s.text[:700]) for s in searched])
+        for s in searched:
+            if not verdicts.get(s.source.source_id):
+                rejected.append(RejectedItem(url=s.source.url, stage="validation",
+                                             reason=f"judge: page is not about {s.purpose!r} in this book's sense"))
+        sources = [s for s in sources if not s.purpose or verdicts.get(s.source.source_id)]
+    by_sid = {s.source.source_id: s for s in sources}
 
     def run_extract(src: SourceText) -> tuple[list[RawClaim], list[str]]:
         return ext.extract(meta, src, concepts=concepts)
@@ -166,7 +176,7 @@ def build_dossier(*, book_id: str, meta: BookMeta, sources: Sequence[SourceText]
 
     published = [c for c in claims if c.status != "rejected"]
     best_tier = Counter(str(min(e.tier for e in c.evidence)) for c in published)
-    rejected_items = list(rejected)
+    rejected_items = rejected
     metrics = {
         "sources": len(sources),
         "source_tiers": dict(Counter(str(s.source.tier) for s in sources)),
@@ -185,6 +195,7 @@ def build_dossier(*, book_id: str, meta: BookMeta, sources: Sequence[SourceText]
         "published_by_section": dict(Counter(c.section for c in published)),
         "rejected_items_by_stage": dict(Counter(r.stage for r in rejected_items)),
         "injection_removed": sum(r.stage == "injection" for r in rejected_items),
+        "irrelevant_pages": sum(r.stage == "validation" for r in rejected_items),
         "further_reading": len(reading),
     }
     return KnowledgeDossier(book_id=book_id, title=meta.full_title, authors=list(meta.authors),

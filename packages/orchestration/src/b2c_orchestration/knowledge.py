@@ -34,12 +34,12 @@ from temporalio.common import RetryPolicy
 with workflow.unsafe.imports_passed_through():
     from b2c_concepts import CONCEPT_LAYER_VERSION, BookIndex, ConceptModel, ConceptSeed, build_concept_layer
     from b2c_concepts.gates import evaluate_concept_layer
-    from b2c_concepts.layer import DEFINE_PROMPT_VERSION, NOVELTY_PROMPT_VERSION
+    from b2c_concepts.layer import DEFINE_PROMPT_VERSION, JUDGE_DEFINITION_VERSION, NOVELTY_PROMPT_VERSION
     from b2c_contracts import (ArtifactRef, ConceptLayer, CourseOutline, CourseOutlineV2, GateResult, KnowledgeDossier, ParsedBook,
                                ParsedBookV2, ProducerIdentity, TranslationUnit, stage_key)
     from b2c_research import RESEARCH_VERSION, BookMeta, ModelRole, build_dossier, extract_book_meta, plan_queries
     from b2c_research.claims import (EXTRACT_PROMPT_VERSION, JUDGE_CONFLICT_VERSION, JUDGE_CORROBORATE_VERSION,
-                                     JUDGE_SUPPORT_VERSION)
+                                     JUDGE_RELEVANCE_VERSION, JUDGE_SUPPORT_VERSION)
     from b2c_research.gates import evaluate_dossier
     from b2c_research.sources import ResearchRunner, SourceBuilder
     from b2c_translation.termbase import TERM_KINDS, BookTermbase, extract_candidates
@@ -133,7 +133,8 @@ def termbase_seeds(termbase: BookTermbase | None, *, units: Sequence[Translation
         approved = [r for r in termbase.entries if r.status == "approved" and r.approved_by and r.kind in TERM_KINDS]
         if approved:
             seeds = [ConceptSeed(r.source, r.kind, "approved", frequency=r.candidate.frequency,
-                                 definition_context=r.candidate.definition_context, expansion=r.candidate.expansion)
+                                 definition_context=r.candidate.definition_context, expansion=r.candidate.expansion,
+                                 signals=tuple(r.candidate.signals))
                      for r in approved]
             return seeds, "approved", [s.term for s in seeds]
         candidates = [r.candidate for r in termbase.entries if r.kind in TERM_KINDS and r.status != "rejected"]
@@ -141,15 +142,30 @@ def termbase_seeds(termbase: BookTermbase | None, *, units: Sequence[Translation
         candidates = [x for x in extract_candidates(list(units)) if x.kind in TERM_KINDS]
     else:
         return [], "candidates", []
-    candidates = sorted(candidates, key=lambda x: (-x.score, -x.frequency, x.source.casefold()))[:max_candidates]
+    candidates = sorted(candidates, key=lambda x: (-_priority(x.score, x.source, x.signals), x.source.casefold()))
+    candidates = candidates[:max_candidates]
     seeds = [ConceptSeed(x.source, x.kind, "candidate", frequency=x.frequency,
-                         definition_context=x.definition_context, expansion=x.expansion) for x in candidates]
+                         definition_context=x.definition_context, expansion=x.expansion, signals=tuple(x.signals))
+             for x in candidates]
     return seeds, "candidates", [s.term for s in seeds]
 
 
-def research_concepts(seeds: Sequence[ConceptSeed], n: int) -> list[str]:
-    ranked = sorted(seeds, key=lambda s: (-s.frequency, s.term.casefold()))
-    return [s.term for s in ranked[:n]]
+def _priority(weight: float, term: str, signals: Sequence[str]) -> float:
+    """Key-concept priority: book-index entries, definitions, multiword terms and acronyms with an
+    expansion first; capitalised headings alone (e.g. "Origins of This Technique") last."""
+    sig = set(signals)
+    bonus = (1.0 * ("index" in sig) + 1.0 * ("defined" in sig) + 0.8 * ("acronym_expansion" in sig)
+             + 0.6 * (len(term.split()) > 1) + 0.4 * ("keyness" in sig) + 0.4 * ("c_value" in sig))
+    if "heading" in sig and not sig & {"defined", "index", "acronym_expansion"}:
+        bonus -= 0.8
+    return weight * max(0.2, 1.0 + bonus)
+
+
+def research_concepts(seeds: Sequence[ConceptSeed], n: int, *, title: str = "") -> list[str]:
+    """The key concepts researched in their field: highest priority, not just restating the title."""
+    t = title.casefold()
+    ranked = sorted(seeds, key=lambda s: (-_priority(s.frequency, s.term, s.signals), s.term.casefold()))
+    return [s.term for s in ranked if not (t and s.term.casefold().rstrip("s") in t)][:n]
 
 
 def attach_gates(promotion: PromotionService, course_id: str, ref: ArtifactRef, outcomes: Sequence[Any], *,
@@ -226,7 +242,7 @@ class KnowledgeActivities:
                   "web": self.web_enabled, "extractor": self.extractor.identity.model_id,
                   "judge": self.judge.identity.model_id, "cache_bust": inp.cache_bust,
                   "prompts": [EXTRACT_PROMPT_VERSION, JUDGE_SUPPORT_VERSION, JUDGE_CORROBORATE_VERSION,
-                              JUDGE_CONFLICT_VERSION]}
+                              JUDGE_CONFLICT_VERSION, JUDGE_RELEVANCE_VERSION]}
         inputs = [parsed_ref] + ([tb_ref] if tb_ref else [])
         key = stage_key(KNOWLEDGE_STAGE, RESEARCH_VERSION, [r.sha256 for r in inputs], config)
 
@@ -234,7 +250,7 @@ class KnowledgeActivities:
             book = load_parsed(self.store, parsed_ref)
             meta, problems = extract_book_meta(front_blocks(book), self.extractor.llm, override=inp.meta_override)
             seeds, basis, _ = termbase_seeds(termbase, units=self._units(inp.units_ref), max_candidates=inp.max_candidates)
-            concepts = research_concepts(seeds, inp.max_research_concepts)
+            concepts = research_concepts(seeds, inp.max_research_concepts, title=meta.full_title)
             queries = plan_queries(meta, concepts, max_concepts=inp.max_research_concepts, web=self.web_enabled)
             builder = SourceBuilder()
             runner = ResearchRunner(self.providers(builder, meta), builder)
@@ -294,8 +310,10 @@ class KnowledgeActivities:
         dossier, dossier_ref, dossier_state = self._dossier(inp)
         model_id = self.concept_model.identity.model_id if self.concept_model else None
         config = {"concept_layer_version": CONCEPT_LAYER_VERSION, "max_candidates": inp.max_candidates,
-                  "max_model_concepts": inp.max_model_concepts, "model": model_id, "dossier": dossier_state,
-                  "prompts": [DEFINE_PROMPT_VERSION, NOVELTY_PROMPT_VERSION], "cache_bust": inp.cache_bust}
+                  "max_model_concepts": inp.max_model_concepts, "model": model_id,
+                  "judge": self.judge.identity.model_id, "dossier": dossier_state,
+                  "prompts": [DEFINE_PROMPT_VERSION, NOVELTY_PROMPT_VERSION, JUDGE_DEFINITION_VERSION],
+                  "cache_bust": inp.cache_bust}
         inputs = [parsed_ref, outline_ref] + ([tb_ref] if tb_ref else []) + ([dossier_ref] if dossier_ref else [])
         key = stage_key(CONCEPT_STAGE, CONCEPT_LAYER_VERSION, [r.sha256 for r in inputs], config)
         index = load_book_index(self.store, parsed_ref, outline_ref)
@@ -307,7 +325,8 @@ class KnowledgeActivities:
                 index, seeds, model=self.concept_model, termbase_basis=basis, clock=self.clock, dossier=dossier,
                 termbase_sha256=termbase.sha256() if termbase else None,
                 dossier_sha256=dossier_ref.sha256 if dossier_ref else None,
-                max_model_concepts=inp.max_model_concepts, workers=self.workers)
+                max_model_concepts=inp.max_model_concepts, workers=self.workers,
+                judge=ConceptModel(self.judge.llm, self.judge.identity) if self.concept_model else None)
             outcomes = evaluate_concept_layer(layer, index, target_terms=targets)
             return {"concept-layer.json": layer.model_dump_json(indent=1).encode("utf-8"),
                     "seeds.json": _dump({"basis": basis, "targets": targets,
@@ -319,7 +338,7 @@ class KnowledgeActivities:
         outcomes = evaluate_concept_layer(layer, index, target_terms=targets)
         status = None
         if self.promotion is not None:
-            identities = [self.concept_model.identity] if self.concept_model else []
+            identities = [self.concept_model.identity, self.judge.identity] if self.concept_model else []
             status = attach_gates(self.promotion, inp.course_id, ref, outcomes, inputs=inputs,
                                   config={k: v for k, v in config.items() if k != "cache_bust"},
                                   identities=identities).status

@@ -174,6 +174,37 @@ def test_prerequisite_cycle_is_broken_and_recorded():
     assert any("cycle" in r.reason for r in layer.rejected)
 
 
+def test_independent_judge_checks_definitions_and_glosses():
+    def judge(pv, msg):
+        assert pv.startswith("cl-judge-definition")
+        data = json.loads(msg[msg.index("{"):])
+        return {"verdicts": [{"id": it["id"], "defines": True, "gloss_faithful": False} for it in data["items"]]}
+
+    def refuse(pv, msg):
+        data = json.loads(msg[msg.index("{"):])
+        return {"verdicts": [{"id": it["id"], "defines": False, "gloss_faithful": True} for it in data["items"]]}
+
+    jm = lambda s: ConceptModel(ScriptedLLM(s), c.ProducerIdentity(role="judge", model_id="google/y"))
+    _, kept = build(judge=jm(judge))
+    heg = next(x for x in kept.concepts if x.term == "hegemony")
+    assert heg.author_definition is not None and heg.author_definition.gloss is None  # unfaithful gloss dropped
+    _, refused = build(judge=jm(refuse))
+    heg = next(x for x in refused.concepts if x.term == "hegemony")
+    assert heg.author_definition is None and refused.metrics["definitions_rejected_by_judge"] == 1
+    assert any(r.reason.startswith("judge:") for r in refused.rejected)
+
+
+def test_relations_must_name_both_concepts_and_toc_listings_are_not_teaching_text():
+    from b2c_concepts.book import toc_like
+    _, layer = build()
+    pr = next(x for x in layer.concepts if x.term == "passive revolution")
+    assert pr.relations == []  # "A war of position differs from a war of movement." does not name it
+    assert any("concept itself" in r.reason for r in layer.rejected if r.concept_id == pr.concept_id)
+    assert toc_like("7.4.2 Quadrant Hypothesis Generation 151\n7.4.3 Multiple Hypotheses Generator 153")
+    assert toc_like("The Faces and Phases of Popular Mobilization 48")
+    assert not toc_like("Hegemony rests on consent. It was theorised in 1930.")
+
+
 def test_gates_grounding_and_coverage():
     idx, layer = build()
     gates = {g.gate_id: g for g in evaluate_concept_layer(layer, idx, target_terms=[s.term for s in SEEDS])}

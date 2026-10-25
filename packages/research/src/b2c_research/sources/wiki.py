@@ -46,11 +46,13 @@ class WikipediaProvider:
         if q.section == "book_card":
             return norm(meta.title) in t or (t and t in norm(meta.title) and len(t) > 12)
         if q.section == "context":
-            return norm(q.query) in t or t in norm(q.query)
+            extra = len(set(t.split()) - set(norm(q.query).split()))
+            return (norm(q.query) in t and extra <= 2) or t in norm(q.query)
         raw_term = (q.concept or q.query).strip()
         term = norm(raw_term)
         initials = "".join(w[0] for w in t.split() if w not in ("of", "and", "the", "for", "in"))
-        about = (term in t or (raw_term.isupper() and initials == term.replace(" ", ""))
+        extra = len(set(t.replace("(", " ").split()) - set(term.split()))
+        about = ((term in t and extra <= 2) or (raw_term.isupper() and initials == term.replace(" ", ""))
                  or (t in term and len(t) > 4))
         keywords = self.context_keywords or tuple(meta.context_keywords)
         return bool(term) and about and term.split()[0] in body and (not keywords or any(k in body for k in keywords))
@@ -84,7 +86,8 @@ class WikipediaProvider:
                     continue
                 s = self.builder.build(url=url, provider="wikipedia", title=page.get("title"), tier=1,
                                        fetched_at=res.fetched_at, raw_text=f"{page.get('title')}\n{text}",
-                                       section_hint=q.section, concept=q.concept)
+                                       section_hint=q.section, concept=q.concept,
+                                       purpose=f"{q.section.replace('_', ' ')}: {q.query}")
                 if s:
                     return s
         return None

@@ -68,6 +68,9 @@ class Settings(BaseSettings):
 
     # telemetry
     otel_endpoint: str = "http://otel-collector:4318"
+    # R0 (audit 08 H3): prompts/completions (book text) are not copied into LLM spans unless this
+    # is explicitly true (B2C_LLM_CAPTURE_CONTENT). Remote endpoints never capture.
+    llm_capture_content: bool = False
     service_name: str = "b2c"
 
     # Multipart upload limit; uploads are buffered only up to this bounded amount.

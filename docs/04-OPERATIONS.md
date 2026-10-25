@@ -97,6 +97,7 @@
 - **OpenTelemetry** لكل الخدمات، عبر OTel Collector.
   - GenAI semantic conventions لسه بحالة **Development**، فلازم نثبّت الإصدار ونستخدم `OTEL_SEMCONV_STABILITY_OPT_IN`. ده VERIFY.
 - **Langfuse v4:** بيحتاج ClickHouse وRedis وobject store. نستخدم الـ compose الرسمي بتاع Langfuse، ونضيفله الـ limits من الجدول فوق.
+  - **التقاط المحتوى معطّل افتراضيًا (R0، تدقيق 08 H3):** الـ `LLMGateway` لا ينسخ نص الـ prompt أو الـ completion (نص الكتاب) إلى span attributes (`langfuse.observation.input/output`) إلا إذا ضُبط `B2C_LLM_CAPTURE_CONTENT=true` صراحةً، والنقاط البعيدة لا تلتقط أبدًا. سياسة الاحتفاظ في Langfuse للبيانات القديمة لم تُحدَّد بعد.
 - **Prometheus + Grafana:** للـ host والخدمات، مع cAdvisor عشان نشوف استهلاك حاويات b2c بس.
 
 ### 6.2 المقاييس والتنبيهات

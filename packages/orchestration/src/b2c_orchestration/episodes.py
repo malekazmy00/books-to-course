@@ -66,7 +66,7 @@ AR_STAGE = "episode-script-ar"
 EN_ACTIVITY = "build_episode_script_en"
 AR_ACTIVITY = "translate_episode_script"
 WORKFLOW_NAME = "BuildEpisodeScriptsWorkflow"
-AR_VERSION = "episode-scripts-ar-2026-10-25.2"
+AR_VERSION = "episode-scripts-ar-2026-10-25.3"
 TRANSLATION_GATE_ID = "episodes.translation"
 FIRST_MENTION_GATE_ID = "episodes.first-mention"
 TRANSLATION_DEFINITION: dict[str, Any] = {"script_lines": "every line accepted (qa.policy)",
@@ -187,7 +187,7 @@ def term_infos(layer: ConceptLayer, lesson_id: str) -> list[TermInfo]:
 def evaluate_ar_script(script: EpisodeScript, *, units: Mapping[str, TranslationUnit],
                        book_decisions: Mapping[str, str], terms: Sequence[FirstMentionTerm],
                        pre_insertion: Mapping[str, str]) -> list[GateOutcome]:
-    lines = script.all_lines()
+    lines = [x for x in script.all_lines() if not all(src.kind == "outline" for src in x.sources)]
     generated = [x for s in script.sections if s.kind not in ("book_text", "figure_description") for x in s.lines]
     statuses: dict[str, int] = {}
     for x in generated:
@@ -424,7 +424,8 @@ class EpisodeActivities:
                                            t.decision if t else "pending", u.kind)
             ar = assemble_arabic(script, units, results, book_lines=book_lines, key_term_labels=labels,
                                  source_sha256=en_ref.sha256, clock=self.clock)
-            ar_lines = ar.all_lines()
+            # the episode heading (book title, number, title) is a name, not a mention of a term
+            ar_lines = [x for x in ar.all_lines() if not all(src.kind == "outline" for src in x.sources)]
             pre = {x.line_id: x.text for x in ar_lines}
             inserted = insert_first_mentions([x.text for x in ar_lines], terms)
             ar = with_texts(ar, {x.line_id: (text, ins) for x, text, ins in zip(ar_lines, inserted.texts, inserted.inserted)

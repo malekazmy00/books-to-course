@@ -48,6 +48,8 @@ def find_term_spans(text: str, term: str) -> list[tuple[int, int]]:
     matches = list(_WORD_RE.finditer(text))
     keys = [_variants(_ar_key(m.group(0))) for m in matches]
     keys = [k | {_strip_article(v) for v in k} for k in keys]
+    # sound feminine plural of a singular term word: تقنيات -> تقنيه (the key form of تقنية)
+    keys = [k | {v[:-2] + "ه" for v in k if len(v) > 4 and v.endswith("ات")} for k in keys]
     n = len(term_tokens)
     return [(matches[i].start(), matches[i + n - 1].end()) for i in range(len(matches) - n + 1)
             if all(term_tokens[k] in keys[i + k] for k in range(n))]

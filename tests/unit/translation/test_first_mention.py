@@ -40,7 +40,7 @@ def test_terms_not_in_the_text_are_reported_and_latin_targets_skipped():
 def test_span_allows_clitics_and_article():
     assert find_term_span("وللهيمنة دور", "الهيمنة") == (0, 8)
     assert find_term_span("في حرب المواقع الطويلة", "حرب المواقع") == (3, 14)
-    assert find_term_span("هيمنات", "الهيمنة") is None
+    assert find_term_span("مهيمن", "الهيمنة") is None and find_term_span("هيمنات", "الهيمنة") == (0, 6)
 
 
 def unit(text):
@@ -82,3 +82,11 @@ def test_nested_terms_longest_first_and_idempotent():
     assert first_mention_status(out.texts, [sa, sat]) == {"Structured Analytic Technique": "glossed",
                                                           "structured analysis": "glossed"}
     assert first_mention_status(texts, [sa, sat])["structured analysis"] == "not_glossed"
+
+
+def test_plural_of_a_singular_term_is_a_mention_and_protects_nested_terms():
+    sat = FirstMentionTerm(original="Structured Analytic Technique", target="تقنية التحليل المنظم")
+    sa = FirstMentionTerm(original="structured analysis", target="التحليل المنظم")
+    out = insert_first_mentions(["مصطلحات: تقنيات التحليل المنظم، والتحليل المنظم."], [sa, sat])
+    assert out.texts == ["مصطلحات: تقنيات التحليل المنظم (Structured Analytic Technique)، والتحليل المنظم "
+                         "(structured analysis)."]

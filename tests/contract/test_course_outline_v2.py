@@ -58,7 +58,8 @@ def valid():
 
 
 def test_schema_version_bumped_for_outline_v2():
-    assert c.SCHEMA_VERSION == "1.5.0"
+    # 1.5.0 CourseOutline v2; 1.5.1 acceptance by system gates (owner decision: no human reviewer)
+    assert c.SCHEMA_VERSION == "1.5.1"
     o = valid()
     assert o.format == "course-outline/2" and o.requires_review is True
 

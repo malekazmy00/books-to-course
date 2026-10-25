@@ -11,13 +11,17 @@ The gate checks what a structural outline must get right before a human looks at
 
 The internal reference is the book's own PDF bookmarks (else its printed TOC). That is the same
 evidence the builder starts from, so it checks fidelity to the source structure, not truth;
-golden outlines (eval) are resolved and compared with the same function. Passing this gate never
-accepts an outline: acceptance needs a human decision (``HUMAN_GATE_ID``).
+golden outlines (eval) are resolved and compared with the same function.
+
+There is no human reviewer in this product (owner decision 2026-10-25): an outline is accepted
+when this gate passes AND the independent cross-check (``cross_check``: printed TOC and layout
+headings against the chosen structure) passes. Both are system GateResults (promotion service).
 """
 from __future__ import annotations
 
 import statistics
 from collections import Counter
+from dataclasses import dataclass
 
 from b2c_contracts import CourseOutlineV2, OutlineQualityReport, ParsedBookV2, QualityCheck
 
@@ -26,7 +30,9 @@ from .reference import FURNITURE, RefEntry, bookmark_entries, printed_toc_entrie
 from .titles import malformed_title
 
 GATE_ID = "outline-v2.structure"
-HUMAN_GATE_ID = "outline-v2.human-approval"
+CROSS_CHECK_ID = "outline-v2.cross-check"
+PRECEDENCE = ("pdf_outline", "printed_toc", "heading")  # bookmarks > printed TOC > layout headings
+CROSS_CHECK_MIN = 0.9  # agreement below this is flagged (never blocking)
 REPORT_VERSION = "1"
 BOUNDARY_TOLERANCE = 1  # content blocks (furniture not counted), audit 02 §5.3 "±1 block"
 _CHECKS = (
@@ -44,6 +50,11 @@ _CHECKS = (
 )
 GATE_DEFINITION = {"gate_id": GATE_ID, "report_version": REPORT_VERSION, "boundary_tolerance": BOUNDARY_TOLERANCE,
                    "checks": [{"name": n, "op": op, "threshold": t} for n, op, t in _CHECKS]}
+CROSS_CHECK_DEFINITION = {"gate_id": CROSS_CHECK_ID, "precedence": list(PRECEDENCE), "agreement_min": CROSS_CHECK_MIN,
+                          "against": ["printed_toc (resolved entries): boundary_f1, level_accuracy, zone_accuracy",
+                                      "layout headings: share of bookmark/TOC anchors on heading blocks"],
+                          "fails_only_on": "coverage_ratio < 1 or outline of another parse",
+                          "on_disagreement": "pass with flags"}
 
 
 def _f1(tp: int, n_pred: int, n_ref: int) -> tuple[float, float, float]:
@@ -228,5 +239,53 @@ def outline_quality(book: ParsedBookV2, outline: CourseOutlineV2, *, outline_sha
                                 accepted=accepted)
 
 
-__all__ = ["BOUNDARY_TOLERANCE", "GATE_DEFINITION", "GATE_ID", "HUMAN_GATE_ID", "REPORT_VERSION",
-           "compare_to_reference", "internal_reference", "outline_metrics", "outline_quality"]
+@dataclass(frozen=True)
+class CrossCheckResult:
+    passed: bool
+    flags: list[str]
+    reason: str
+    metrics: dict
+
+
+def cross_check(book: ParsedBookV2, outline: CourseOutlineV2, report: OutlineQualityReport) -> CrossCheckResult:
+    """Independent automated cross-check of the chosen structure (no human in this product).
+
+    The tree is built from one source by precedence (``PRECEDENCE``); here it is checked against
+    the sources it was *not* built from: the printed table of contents (resolved entries only:
+    an entry the TOC parser cannot place is a parser miss, not a disagreement) and the layout
+    model's headings (does a bookmark/TOC entry open on a block the layout calls a heading?).
+    Disagreement never blocks: the chosen source stands, the candidate carries a flag and the
+    reason. Only lost coverage (or an outline of another parse) fails the check."""
+    metrics: dict = {"chosen_source": outline.structure_source, "precedence": list(PRECEDENCE)}
+    flags: list[str] = []
+    if report.metrics.get("outline_matches_book") != 1.0 or report.metrics.get("coverage_ratio") != 1.0:
+        return CrossCheckResult(False, [], "coverage below 100% (or the outline is not of this parse): rejected",
+                                metrics)
+    position = {b.block_id: i for i, b in enumerate(book.blocks)}
+    if outline.structure_source != "printed_toc":
+        toc = [e for e in printed_toc_entries(book) if e.index is not None]
+        metrics["printed_toc_resolved_entries"] = len(toc)
+        if len(toc) >= 2:
+            agreement = compare_to_reference(book, outline, toc)
+            for k in ("reference_boundary_f1", "reference_level_accuracy", "reference_zone_accuracy"):
+                metrics["printed_toc_" + k[len("reference_"):]] = agreement[k]
+            if (agreement["reference_boundary_f1"] < CROSS_CHECK_MIN or agreement["reference_level_accuracy"]
+                    < CROSS_CHECK_MIN or (agreement["reference_zone_accuracy"] or 0.0) < CROSS_CHECK_MIN):
+                flags.append("printed_toc_disagrees")
+    if outline.structure_source != "heading":
+        anchors = [m.anchor_block for m in outline.modules if m.source != "heading"]
+        anchors += [lesson.anchor_block for lesson in outline.lessons
+                    if lesson.kind == "section" and lesson.source != "heading"]
+        agree = sum(1 for a in anchors if book.blocks[position[a]].type == "heading")
+        metrics["layout_heading_agreement"] = round(agree / len(anchors), 4) if anchors else None
+        if anchors and agree / len(anchors) < CROSS_CHECK_MIN:
+            flags.append("layout_headings_disagree")
+    reason = ("sources agree" if not flags else
+              f"sources disagree ({', '.join(flags)}); kept {outline.structure_source} by precedence "
+              "bookmarks > printed TOC > layout headings")
+    return CrossCheckResult(True, flags, reason, metrics)
+
+
+__all__ = ["BOUNDARY_TOLERANCE", "CROSS_CHECK_DEFINITION", "CROSS_CHECK_ID", "CrossCheckResult", "GATE_DEFINITION",
+           "GATE_ID", "PRECEDENCE", "REPORT_VERSION", "compare_to_reference", "cross_check", "internal_reference",
+           "outline_metrics", "outline_quality"]

@@ -1,6 +1,6 @@
 # 02 — العقود بين الطبقات (Layer Contracts)
 
-المصدر الوحيد للحقيقة هو `packages/contracts/src/b2c_contracts/models.py` (SCHEMA_VERSION 1.5.0). سجل الإصدارات: 1.3.0 أضاف قبول المخرجات (R1، §7)، و1.4.0 أضاف ParsedBook v2 (R3، §8) بعد دمج العملين، و1.5.0 أضاف CourseOutline v2 (R4، §9).
+المصدر الوحيد للحقيقة هو `packages/contracts/src/b2c_contracts/models.py` (SCHEMA_VERSION 1.5.1). سجل الإصدارات: 1.3.0 أضاف قبول المخرجات (R1، §7)، و1.4.0 أضاف ParsedBook v2 (R3، §8) بعد دمج العملين، و1.5.0 أضاف CourseOutline v2 (R4، §9)، و1.5.1 غيّر دلالة قبوله: بوابات نظامية لا قرار بشري (قرار المالك 2026-10-25، لا يوجد مراجع بشري في المنتج).
 الوثيقة دي بتشرح **إزاي** كل طبقة بتسلّم للطبقة اللي بعدها. والتعريفات نفسها موجودة في الكود.
 
 > الكود ده اتشغّل واتختبر: `tests/contract/test_contracts_invariants.py` ونتيجته 8 passed. الاختبارات دي بتتأكد من القيود الأساسية (negative controls).
@@ -47,7 +47,7 @@ s3://artifacts/{course_id}/{stage}/{key}/<files>
 | Upload ← L1 | `BookUpload` | `rights_status` موجود، والـ mime مدعوم | non-retryable |
 | L1 ← L2/L3 | `ParsedBook` | كل block ليه `refs` ≥ 1، و`page_count` صحيح | retry على دفعات صفحات |
 | L1 v2 ← L2/L3 (1.3.0، R3) | `ParsedBookV2` + `IngestQualityReport` | عقد v2 صالح، و`IngestQualityReport.accepted` (البوابات الحتمية في §7). التقرير غير المقبول لا يمر للمخطط | `accepted=false` يُحفظ ويُوقف المسار (مراجعة) |
-| L2 v2 ← L5 (1.5.0، R4) | `CourseOutlineV2` + `OutlineQualityReport` | العقد يفرض تقسيم كل الكتل إلى دروس ونطاقات مستبعدة بسبب (§9)، والبوابة الحتمية ناجحة، **وقرار بشري** (`GateResult` من نوع `human`) في سجل المخرجات. لا يكفي أي اعتماد آلي | مخرج مرفوض أو مرشح ينتظر الإنسان؛ لا فهرسة |
+| L2 v2 ← L5 (1.5.1، R4) | `CourseOutlineV2` + `OutlineQualityReport` | العقد يفرض تقسيم كل الكتل إلى دروس ونطاقات مستبعدة بسبب (§9)، وحالته `accepted` في سجل المخرجات: بوابة البنية الحتمية **و**الفحص المتقاطع المستقل ناجحان (كلاهما `GateResult` بقرار `system`). لا مراجع بشري في المنتج | مخرج مرفوض بسبب مسجل؛ لا فهرسة |
 | L2 ← L5 | `CourseOutline` | الـ spans متتالية ومتداخلتش؛ لو `llm_inferred` ⇒ `requires_review` | Gate G0 |
 | L3 ← L4 | `StructuredChunk[]` | مفيش chunk بيعدي حدود `section_path`، و`embedding_model` ثابت | retry |
 | L4 ← L5 | LightRAG doc_ids + `ConceptEdge[]` | `doc_status=processed` لكل كتاب؛ كل edge ليه evidence | retry / G1 |
@@ -181,7 +181,7 @@ class GraphRetriever(Protocol):
 **تقرير الجودة:** `IngestQualityReport(metrics, checks[QualityCheck], accepted)`. كل `QualityCheck` يحمل القيمة والعتبة والحكم، والعقد يرفض حكمًا لا يطابق القيمة، ويرفض `accepted=true` إن فشل أي فحص أو لم ينجح أي فحص. الفحص غير القابل للقياس (مثل ربط الحواشي في كتاب بلا حواشٍ) قيمته `null` وحكمه `null`.
 
 ## 9. CourseOutline v2 (SCHEMA 1.5.0، R4)
-المرجع: `docs/audits/2026-10-24/02-outline.md` §5–7، و`00-RESTRUCTURE-PLAN.md` §R4. يُبنى من `ParsedBookV2` حتميًا (`b2c_outline.v2`)، ولا يقبل نفسه: هو دائمًا مسودة (`requires_review` ثابتة `true`)، والقبول قرار بشري يُسجَّل `GateResult(kind="human")` في سجل المخرجات (§7).
+المرجع: `docs/audits/2026-10-24/02-outline.md` §5–7، و`00-RESTRUCTURE-PLAN.md` §R4. يُبنى من `ParsedBookV2` حتميًا (`b2c_outline.v2`)، ولا يقبل نفسه: `requires_review` ثابتة `true` في المسودة، والقبول يُقرَّر في سجل المخرجات (§7) ببوابتين نظاميتين (1.5.1، قرار المالك 2026-10-25: لا مراجع بشري): بوابة البنية الحتمية (`outline-v2.structure`) والفحص المتقاطع المستقل (`outline-v2.cross-check`: الفهرس المطبوع وعناوين التخطيط مقابل البنية المختارة). عند اختلاف المصادر تُعتمد الأسبقية bookmarks > الفهرس المطبوع > عناوين التخطيط، ويُقبل المخطط مع علامة وسبب مسجلين في `GateResult.metrics` ما دامت التغطية 100%، وإلا يُرفض بسبب.
 
 | الحقل | المعنى |
 |---|---|

@@ -19,6 +19,8 @@ from b2c_core.source_text import heading_key
 FURNITURE = frozenset({"running_header", "running_footer", "page_number"})
 _TOC_ITEM = re.compile(r"(?P<title>.+?)\s+(?P<page>\d{1,4}|[ivxlcdm]{1,7})(?=\s+\S|\s*$)", re.I)
 _LEADERS = re.compile(r"(?:\s*\.){3,}\s*")
+_FIGURE_LISTS = ("figures", "listoffigures", "tables", "listoftables", "illustrations", "listofillustrations")
+_TOC_LOCATOR = re.compile(r"\[\s*\d{1,4}\s*\]")
 _NUMBERING = re.compile(r"^(\d{1,2}(?:\.\d{1,2}){0,4})\.?\s+\S")
 
 
@@ -48,19 +50,19 @@ def keys_match(a: str, b: str) -> bool:
 def find_heading(book: ParsedBookV2, title: str, page: int | None, *, after: int = -1,
                  window: int = 0) -> int | None:
     """Block position of the heading (or short title-like block) named ``title`` near ``page``."""
-    best: tuple[int, int] | None = None
+    best: tuple | None = None
     for i, b in enumerate(book.blocks):
         if i <= after or b.type in FURNITURE or b.type in ("table", "figure"):
             continue
         if page is not None and not any(abs(r.page_no - page) <= window for r in b.refs):
             continue
         short = b.type == "heading" or (len(b.text) <= 150 and not b.text.rstrip().endswith("."))
-        if not short or not keys_match(b.text, title):
+        if not short or _TOC_LOCATOR.search(b.text) or not keys_match(b.text, title):
             continue
-        rank = (0 if b.type == "heading" else 1, i)
+        rank = (0 if title_key(b.text) == title_key(title) else 1, 0 if b.type == "heading" else 1, i)
         if best is None or rank < best:
             best = rank
-    return None if best is None else best[1]
+    return None if best is None else best[-1]
 
 
 def bookmark_entries(book: ParsedBookV2) -> list[RefEntry]:
@@ -90,13 +92,17 @@ def printed_toc_entries(book: ParsedBookV2) -> list[RefEntry]:
     """
     labels = _label_pages(book)
     raw: list[tuple[str, str | None, int]] = []
-    in_toc = False
+    in_toc = in_figures = False
     for i, b in enumerate(book.blocks):
         if b.zone != "front_matter":
             continue
         if b.type == "heading":
-            in_toc = title_key(b.text) in ("contents", "tableofcontents")
+            key = title_key(b.text)
+            in_toc = key in ("contents", "tableofcontents")
+            in_figures = key.startswith(_FIGURE_LISTS)
             continue
+        if in_figures:
+            continue  # a list of figures/tables is not the table of contents
         if b.type == "toc_entry" or (in_toc and b.type == "table"):
             cells = [c.strip() for line in b.text.split("\n") for c in line.split("|")] if b.type == "table" \
                 else [b.text]

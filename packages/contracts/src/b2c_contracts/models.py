@@ -15,7 +15,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION = "1.5.0"
+SCHEMA_VERSION = "1.5.1"
 
 
 class Contract(BaseModel):
@@ -501,8 +501,8 @@ class CourseOutline(Contract):
 # included + excluded = 100% of the book by construction. Every node records the evidence it
 # came from and keeps the source title next to the cleaned display title. Ids are derived from
 # the book's structure (titles), not from block ids, so a re-parse keeps them. A v2 outline is
-# always a draft: acceptance is a human GateResult in the stage-output registry (§7), never a
-# flag in the outline.
+# never accepted by a flag in itself: acceptance is decided in the stage-output registry (§7) by
+# system GateResults (structure gate + independent cross-check; 1.5.1: no human reviewer).
 COURSE_OUTLINE_V2_FORMAT = "course-outline/2"
 OutlineSource = Literal["pdf_outline", "printed_toc", "heading", "llm_inferred"]
 ExclusionReason = Literal[
@@ -697,7 +697,7 @@ class OutlineQualityReport(Contract):
     reference: str | None = None  # reference the tree was compared with (e.g. "pdf_outline"), None = none
     metrics: dict[str, Any]
     checks: list[QualityCheck]
-    accepted: bool  # the machine gate only; a human decision is still required
+    accepted: bool  # this gate's verdict; acceptance also needs the cross-check gate (registry)
 
     @property
     def failed(self) -> list[str]:

@@ -5,7 +5,7 @@ import pytest
 
 import b2c_contracts as c
 from b2c_outline.v2 import build_outline_v2
-from b2c_outline.v2.gate import GATE_DEFINITION, compare_to_reference, outline_quality
+from b2c_outline.v2.gate import GATE_DEFINITION, compare_to_reference, cross_check, outline_quality
 from b2c_outline.v2.reference import RefEntry, bookmark_entries, resolve_reference
 
 from tests.unit.outline.v2_fixtures import gramsci_like, sat_like
@@ -105,3 +105,47 @@ def test_gate_definition_is_versionable():
     names = [ch["name"] for ch in GATE_DEFINITION["checks"]]
     assert len(names) == len(set(names)) and "coverage_ratio" in names and "reference_title_f1" in names
     assert all(ch["op"] in ("==", ">=", "<=") for ch in GATE_DEFINITION["checks"])
+
+
+# ----------------------------------------------------------------------------- automated cross-check
+# Owner decision 2026-10-25: there is no human reviewer. Acceptance needs the structure gate and an
+# independent cross-check of the chosen structure against the other sources; disagreement is a
+# flag (precedence bookmarks > printed TOC > headings), only lost coverage rejects.
+def test_cross_check_agrees_on_consistent_books():
+    for parsed in (sat_like(), gramsci_like()):
+        o = build(parsed)
+        result = cross_check(parsed, o, outline_quality(parsed, o))
+        assert result.passed and result.flags == [], result
+        assert result.metrics["chosen_source"] == "pdf_outline"
+        assert result.metrics["layout_heading_agreement"] == 1.0
+
+
+def test_disagreeing_printed_toc_is_flagged_not_blocking():
+    parsed = gramsci_like()
+    blocks = list(parsed.blocks)
+    # the printed TOC names a section heading as if it were a chapter of the tree
+    blocks[5] = blocks[5].model_copy(update={"text": "Conclusion 7", "raw_text": "Conclusion 7"})
+    parsed = parsed.model_copy(update={"blocks": blocks})
+    o = build(parsed)
+    result = cross_check(parsed, o, outline_quality(parsed, o))
+    assert result.passed and "printed_toc_disagrees" in result.flags
+    assert "bookmarks > printed TOC > layout headings" in result.reason
+
+
+def test_bookmarks_without_layout_headings_are_flagged():
+    from tests.unit.outline.v2_fixtures import Row, book, head, para
+    rows = [head("Chapter 1 • A", 1, level=1, bm=(1, "Chapter 1 • A")), para(1, 800),
+            Row("paragraph", "Chapter 2 • B", 2, bm=(1, "Chapter 2 • B")), para(2, 800),
+            Row("paragraph", "Chapter 3 • C", 3, bm=(1, "Chapter 3 • C")), para(3, 800)]
+    parsed = book(rows)
+    o = build(parsed)
+    result = cross_check(parsed, o, outline_quality(parsed, o))
+    assert result.passed and result.flags == ["layout_headings_disagree"]
+    assert result.metrics["layout_heading_agreement"] == pytest.approx(1 / 3, abs=1e-3)
+
+
+def test_lost_coverage_fails_the_cross_check():
+    o = build(sat_like())
+    other = gramsci_like()
+    result = cross_check(other, o, outline_quality(other, o))
+    assert not result.passed and "coverage" in result.reason

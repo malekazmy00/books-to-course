@@ -37,7 +37,8 @@ from b2c_core.source_text import TERMINAL, Vocab, heading_key, normalize_chars
 
 from .normalize import CUT_MIN_WORDS, _edge_furniture_keys, _letters_key, _strip_trailing_marker, letter_spacing_residue
 
-REPORT_VERSION = "2"  # 2: cross-parser agreement, glued-token rate, no 2,000-character limit (D-043)
+REPORT_VERSION = "3"  # 2: cross-parser agreement, glued-token rate, no 2,000-character limit (D-043)
+# 3: a bookmark pointing past its page's text matches the heading the text layer prints atop the next (D-045)
 GATE_ID = "ingest-v2.quality"
 # Per-page word F1 below which a page disagrees with an extraction. Basis (eval/reports/
 # ingest-v2-gate.md): pypdf and pdfium, two correct extractions of the same healthy text layer
@@ -46,6 +47,7 @@ GATE_ID = "ingest-v2.quality"
 PAGE_AGREEMENT_MIN = 0.95
 LETTER_AGREEMENT_MIN = 0.95  # same bound on 6-letter shingles: a page above it differs in spacing only
 IMAGE_OVERLAP_MIN = 0.5  # share of a fragment's box inside raster images to count it as image text
+OUTLINE_OPENING_LINES = 3  # text-layer lines that open a page (a running head may come first)
 _WORD = re.compile(r"[a-z]{3,}")
 _LETTERS = re.compile(r"[a-z]+")
 _LIGATURE = re.compile("[ﬀ-ﬆ]")
@@ -415,13 +417,29 @@ def _metrics(views: list[_View], text_layer: dict[str, Any], *, notes_known: boo
     for v in views:
         if v.type == "heading":
             heads_by_page.setdefault(v.pages[0], []).append(heading_key(v.text))
-    matched = 0
+    # D-045: a bookmark whose /XYZ destination is the end of its page marks the heading that opens
+    # the next page (SAT: 23 of 110 bookmarks). It is matched there only when the text layer
+    # itself prints that heading in the next page's first lines; a heading S2 inserts on the
+    # bookmark page still counts as before.
+    openers: dict[int, list[str]] = {}
+    for name in ("text", "text_pdfium"):
+        for p, t in _reference_pages(text_layer, name).items():
+            first_lines = [ln for ln in t.splitlines() if ln.strip()][:OUTLINE_OPENING_LINES]
+            openers.setdefault(p, []).append(heading_key(" ".join(first_lines)))
+
+    def same(key: str, k: str) -> bool:
+        return k == key or (len(k) >= 4 and (key.endswith(k) or key.startswith(k) or k.startswith(key)))
+
+    matched = next_page = 0
     for e in outline:
         key = heading_key(e["title"])
         page = int(e["page_index"]) + 1
-        if any(k == key or (len(k) >= 4 and (key.endswith(k) or key.startswith(k) or k.startswith(key)))
-               for k in heads_by_page.get(page, [])):
+        if any(same(key, k) for k in heads_by_page.get(page, [])):
             matched += 1
+        elif any(same(key, k) and len(k) >= 4 and any(k in o for o in openers.get(page + 1, []))
+                 for k in heads_by_page.get(page + 1, [])):
+            matched += 1
+            next_page += 1
 
     bbox = [b for v in views for b in v.bbox]
     labels = [b for v in views for b in v.labels]
@@ -453,6 +471,7 @@ def _metrics(views: list[_View], text_layer: dict[str, Any], *, notes_known: boo
         "notes_without_label": sum(1 for v in notes if not v.note_label) if notes_known else None,
         "outline_entries": len(outline),
         "outline_match_rate": round(matched / len(outline), 5) if outline else None,
+        "outline_matched_on_next_page": next_page,
         "bbox_coverage": round(sum(bbox) / len(bbox), 5) if bbox else 0.0,
         "printed_label_coverage": round(sum(labels) / len(labels), 5) if has_labels and labels else None,
         "unflagged_unexpected_script_blocks": sum(1 for v in views if _UNEXPECTED_SCRIPT.search(v.text)
@@ -507,6 +526,7 @@ GATE_DEFINITION: dict[str, Any] = {
     "page_agreement_min": PAGE_AGREEMENT_MIN,
     "letter_agreement_min": LETTER_AGREEMENT_MIN,
     "image_overlap_min": IMAGE_OVERLAP_MIN,
+    "outline_next_page": f"heading key in the first {OUTLINE_OPENING_LINES} text-layer lines of the next page",
     "checks": [{"name": n, "op": op, "threshold": t} for n, op, t, _ in GATES],
     "rule": "IngestQualityReport.accepted: every measurable check passed, at least one passed",
 }

@@ -15,7 +15,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION = "1.17.0"
+SCHEMA_VERSION = "1.18.0"
 
 
 class Contract(BaseModel):
@@ -1198,6 +1198,9 @@ TranslatorNoteReason = Literal[
     "unverified",
 ]
 _LATIN_LETTER = re.compile(r"[A-Za-z]")
+# critical_meaning: a critical meaning/polarity problem; fabrication_risk: a short source came back
+# as a much longer text (book-main:u00628 "NOT ES"); noise_source: the source has no words.
+TranslationWithheld = Literal["critical_meaning", "fabrication_risk", "noise_source"]
 
 
 class TranslatorNote(Contract):
@@ -1223,6 +1226,8 @@ class TranslatorNote(Contract):
     best_translation_label_ar: str | None = None
     best_translation_from: Literal["final", "earlier_draft"] | None = None
     announcement_ar: str = Field(min_length=1, max_length=600)
+    # 1.18.0 (D-041): why no translation is offered although a candidate existed (it may be invented).
+    withheld: TranslationWithheld | None = None
 
     @model_validator(mode="after")
     def note_invariants(self) -> "TranslatorNote":
@@ -1240,6 +1245,8 @@ class TranslatorNote(Contract):
             raise ValueError("best_translation must not be blank")
         if (self.best_translation is None) != ("no_translation" in self.reasons):
             raise ValueError("reason no_translation is used exactly when no translation is offered")
+        if self.withheld is not None and self.best_translation is not None:
+            raise ValueError("a withheld translation is not offered")
         return self
 
 
@@ -1366,6 +1373,11 @@ class SpeechSegment(Contract):
     boundary_after: SpeechBoundary | None = None  # None: made before 1.14.0 (no boundary plan)
     break_after: SpeechBreakStrength | None = None
     unvoiced_glosses: list[str] = []  # parenthesised original (Latin) terms not voiced: no reviewed pronunciation
+    # 1.18.0 (D-041): a translator note is spoken in the course voice: its announcement, then the
+    # approximate translation (if one is offered). Every other segment is the author's text.
+    voice: Literal["author", "course"] = "author"
+    note_id: str | None = None
+    note_part: Literal["announcement", "approximate_translation"] | None = None
 
     @field_validator("spoken_text", "source_text")
     @classmethod
@@ -1373,6 +1385,13 @@ class SpeechSegment(Contract):
         if not v.strip():
             raise ValueError("speech text must not be blank")
         return v
+
+    @model_validator(mode="after")
+    def _note(self) -> "SpeechSegment":
+        flags = (self.voice == "course", self.note_id is not None, self.note_part is not None)
+        if any(flags) and not all(flags):
+            raise ValueError("a translator-note segment is the course voice and names its note and part")
+        return self
 
 
 class SpeechExclusion(Contract):
@@ -1388,9 +1407,19 @@ class SpeechTextDocument(Contract):
     source: ArtifactRef  # the accepted translate-book assembly the units belong to
     segments: list[SpeechSegment] = Field(min_length=1)
     excluded: list[SpeechExclusion] = []
+    notes_ref: ArtifactRef | None = None  # 1.18.0: accepted translator-notes artifact of the note segments
 
     @model_validator(mode="after")
     def _segments_invariants(self) -> "SpeechTextDocument":
+        if any(s.note_id for s in self.segments) and self.notes_ref is None:
+            raise ValueError("note segments need the translator-notes artifact (notes_ref)")
+        parts: dict[str, list[str]] = {}
+        for s in self.segments:
+            if s.note_id:
+                parts.setdefault(s.note_id, []).append(s.note_part or "")
+        for seq in parts.values():
+            if seq[0] != "announcement" or seq != sorted(seq, key=lambda p: p == "approximate_translation"):
+                raise ValueError("a note is spoken announcement first, then its approximate translation")
         ids = [s.segment_id for s in self.segments]
         if len(set(ids)) != len(ids):
             raise ValueError("segment_id must be unique")
@@ -1821,6 +1850,9 @@ class ScriptLine(Contract):
     unit_ids: list[str] = []             # translation units this text came from (Arabic; book text)
     status: Literal["accepted", "needs_review", "rejected"] | None = None  # Arabic: translation decision
     inserted_originals: list[str] = []   # Arabic: originals inserted at a first mention (D-032 p.3)
+    # 1.18.0 (D-041): Arabic book text only — this line is the translator note of a unit that was not
+    # accepted (course voice: announcement, then the approximate translation if one is offered).
+    note_id: str | None = None
 
     @field_validator("text")
     @classmethod
@@ -1850,6 +1882,8 @@ class EpisodeSection(Contract):
             if any(not line.unit_ids or not set(line.unit_ids) <= known for line in self.lines):
                 raise ValueError("a book-text line must come from the section's translation units")
             return self
+        if any(line.note_id for line in self.lines):
+            raise ValueError("only book-text lines carry a translator note")
         if self.block_ids or self.unit_ids:
             raise ValueError("only book text refers to book translation units")
         if not self.lines:
@@ -1937,12 +1971,14 @@ class EpisodeScript(Contract):
         if self.language == "en":
             if any(s.lines for s in self.sections if s.kind in BOOK_TEXT_KINDS):
                 raise ValueError("the English script refers to the book text, it does not hold generated book text")
-            if any(line.status is not None or line.inserted_originals for line in self.all_lines()):
-                raise ValueError("translation status belongs to the Arabic script")
+            if any(line.status is not None or line.inserted_originals or line.note_id for line in self.all_lines()):
+                raise ValueError("translation status and notes belong to the Arabic script")
         else:
             if not self.source_script_sha256:
                 raise ValueError("an Arabic script names the English script it translates (source_script_sha256)")
             for line in self.all_lines():
                 if not line.unit_ids or line.status is None:
                     raise ValueError(f"Arabic line {line.line_id} must name its translation unit(s) and decision")
+                if line.note_id and line.status == "accepted":
+                    raise ValueError(f"Arabic line {line.line_id}: a translator note is for a unit that was not accepted")
         return self

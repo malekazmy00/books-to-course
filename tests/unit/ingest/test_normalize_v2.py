@@ -230,11 +230,12 @@ def test_bibliography_and_index_are_typed_back_matter():
                      ("index_entry", "back_matter")]
 
 
-def test_cjk_from_cover_ocr_is_flagged_and_long_blocks_are_flagged():
+def test_cjk_from_cover_ocr_is_flagged_and_long_paragraphs_are_not():
+    # D-043: a paragraph is not defective for being long (the 2,000-character flag is gone)
     doc = Doc(1, 1).add("text", 1, "由").add("text", 1, ("A sentence of prose. " * 120).strip(), top=200)
     book = normalize_docling(META, [doc.json()], text_layer(["a"]))
     assert "unexpected_script" in book.blocks[0].quality_flags
-    assert "long_block" in book.blocks[1].quality_flags
+    assert len(book.blocks[1].text) > 2000 and book.blocks[1].quality_flags == []
 
 
 def test_ligatures_are_normalized_and_raw_text_kept():

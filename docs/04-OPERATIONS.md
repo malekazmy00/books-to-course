@@ -71,6 +71,7 @@
 | ClickHouse | `25.12`, digest in `image-digests.txt` | 2026-09-29 | pinned image |
 | Redis / MinIO | `7.4` / pinned digest; MinIO pinned digest (image tag `latest`) | 2026-09-29 | pinned images; `image-digests.txt` |
 | pypdf | 6.1.3 (uv.lock; b2c-ingest) | 2026-09-29 | project-owned text-PDF parser and extraction fallback; scanned PDFs require Docling/OCR |
+| pypdfium2 (pdfium) — second, independent text-layer extraction and raster-image boxes for the ingest v2 gate (D-043) | `pypdfium2==5.13.0` (uv.lock; `b2c-ingest[docling]` extra, already in the worker image) | 2026-10-25 | `docker exec b2c-worker-1 python -c 'import pypdfium2'` succeeds (read-only check); version recorded in every `text-layer.json` (`pdfium_version`) and in the text-layer stage key. Without it the gate fails `independent_references` instead of passing on one extraction |
 | FastAPI / uvicorn / python-multipart | uv.lock (b2c-api) | 2026-09-30 | local upload/status API on 127.0.0.1:8100 |
 | Docling | 2.131.0 (uv.lock; b2c-ingest[docling]) | 2026-10-01 | CPU PyTorch; OCR/layout/table models prefetched into worker image for offline runtime |
 | Docling models used by ingest v2 (R3, `b2c_ingest.layout`) | HF `docling-project/docling-layout-heron` revision `8f39ad3c0b4c58e9c2d2c84a38465abf757272d8`; `docling-project/docling-layout-heron-onnx` `40bde044036bb181c130ddf6c51792187268748f`; `docling-project/docling-models` (TableFormer) `fc0f2d45e2218ea24bce5045f58a389aed16dc23`; RapidOCR PP-OCRv6 det/rec small (as fetched by `docling-tools models download` of docling 2.131.0) | 2026-10-25 | revisions read from the `.cache/huggingface/trees/<sha>.json` that `docling-tools models download` writes; the worker image fetches the same models at build time (L2 in audit 01: pin these revisions in `docker/worker/Dockerfile` when the image is next rebuilt) |
@@ -101,10 +102,11 @@
 ### 5.1 قاعدة الخيوط مقابل حد المعالج (2026-10-25)
 عدد خيوط الاستدلال (llama.cpp / Ollama / torch) يجب أن يكون **أقل من** قيمة `cpus` للخدمة. llama.cpp يختار افتراضيًا خيطًا لكل نواة فيزيائية (28). مع `cpus: 20` تعطّل الـ CFS quota الخيوط في 94% من الفترات، فانخفض توليد Gemma 4 إلى 0.14 token/s. بعد `num_thread 18` صار 12.3 token/s. وأوزان النماذج تُقرأ من القرص ext4 الخاص بالبيانات، لا من `/mnt/e` (9p بطيء).
 
-### 5.2 مفتاح الاستخراج v2 (R3، 2026-10-25)
-المسار v2 مسجَّل في الـ worker لكنه **غير مفعّل** إنتاجيًا: الـ API ما زال يبدأ `IngestPDFWorkflow`.
+### 5.2 مفتاح الاستخراج v2 (R3، 2026-10-25؛ D-043)
+المسار v2 مسجَّل في الـ worker لكنه **غير مفعّل** إنتاجيًا. المفتاح الصريح `B2C_INGEST_V2_ENABLED` (`Settings.ingest_v2_enabled`) قيمته الافتراضية `false`. حين يكون `true` على الـ API، يبدأ رفع PDF إنجليزي `IngestPDFV2Workflow` بمعرّف workflow مستقل (الهوية تضيف `pipeline=ingest-v2`)، ويُسجَّل `ingest_pipeline: "v2"` في `book-library.json`. وحين يكون `false` يبقى معرّف الرفع v1 كما كان بايتًا ببايت، فلا يتغير أي مفتاح لكتاب قائم. **لا يُفعَّل قبل إغلاق قائمة الجاهزية** في `eval/reports/ingest-v2-gate.md` §5: الترجمة والأسئلة والصوت وعدة مسارات API لا تقبل إلا `ingest-parse-pdf`.
+- البوابة (D-043): `ingest-quality.json` بـ `REPORT_VERSION=2`، و`text-layer.json` بصيغة `pdf-text-layer/2` (pypdf + pdfium + صناديق الصور)، والـ stage versions: text-layer 2 وparse 2. مع خدمة الترقية يُسجَّل `ingest-parse-v2` مرشحًا ويقرره `GateResult` ‏`ingest-v2.quality`.
 - الـ workflow الجديد: `IngestPDFV2Workflow` (task queue `light` للـ workflow، والأنشطة `ingest_v2_text_layer` و`ingest_v2_layout_batch` و`ingest_v2_normalize` على `heavy`). المدخل `IngestV2Input(course_id, upload, source_ref, supplementary_book_ids, cache_bust, page_batch=50)`، بنفس حقول `IngestPDFInput` عدا `ocr_engine`.
-- التفعيل: يبدأ المشغّل (أو الـ API بعد تغيير صريح) `IngestPDFV2Workflow` بدل `IngestPDFWorkflow` لكتاب جديد. الـ workflows الجارية لا تتأثر لأن الاسم جديد ولم يتغير تسلسل أوامر القديم.
+- التفعيل (بعد قائمة الجاهزية): نشر worker وAPI من commit يحمل D-043، ثم `B2C_INGEST_V2_ENABLED=true` للـ API وحده. الـ workflows الجارية لا تتأثر، لأن الاسم جديد ولم يتغير تسلسل أوامر القديم. والإيقاف بإرجاع القيمة إلى `false`.
 - الخيوط: `B2C_DOCLING_THREADS` (افتراضي 8) يجب أن يبقى أقل من `cpus` لخدمة الـ worker (§5.1). المقيس على هذا الخادم: 4–7 ثوانٍ للصفحة بـ 8 خيوط.
 - البوابة: إذا كان `ingest-quality.json` غير مقبول ينتهي الـ workflow بـ `status=needs_review` ولا يبني مخططًا. الكتب العربية (`ocr_language=ar`) ترفض في v2 وتبقى على المسار القديم.
 

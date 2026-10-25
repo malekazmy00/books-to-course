@@ -13,11 +13,15 @@ content carries the book_id):
 * ``build-outline-v2``    the outline v2 candidate (``outline_v2_from_parsed_book``, R4; histories
                           started before the ``outline-v2-activity-v1`` patch call the v1 outline)
 
-Gate: when ``IngestQualityReport.accepted`` is False the workflow stops with
-``status="needs_review"`` and does not build an outline; nothing is passed on silently.
+Gate (D-043): ``ingest-quality.json`` compares the parse page by page with two independent
+extractions of the text layer (pypdf, pdfium) plus the audit 01 §5.4 checks. With a promotion
+service the parse is registered as a candidate and decided by the ``ingest-v2.quality``
+GateResult (accepted / rejected). When ``IngestQualityReport.accepted`` is False the workflow
+stops with ``status="needs_review"`` and does not build an outline; nothing is passed on silently.
 
-Production switch (not enabled by this change): start ``IngestPDFV2Workflow`` with an
-``IngestV2Input`` instead of ``IngestPDFWorkflow``; see docs/04-OPERATIONS.md §5.2.
+Production switch: ``B2C_INGEST_V2_ENABLED=true`` on the API makes an English PDF upload start
+``IngestPDFV2Workflow``; it is off by default (D-043), and the readiness list in
+eval/reports/ingest-v2-gate.md names what still blocks turning it on (docs/04-OPERATIONS.md §5.2).
 """
 from __future__ import annotations
 
@@ -34,7 +38,7 @@ from temporalio import activity, workflow
 from temporalio.exceptions import ApplicationError
 
 with workflow.unsafe.imports_passed_through():
-    from b2c_contracts import ArtifactRef, BookUpload, parsed_book_v1_from_v2, stage_key
+    from b2c_contracts import ArtifactRef, BookUpload, IngestQualityReport, parsed_book_v1_from_v2, stage_key
     from b2c_ingest.layout import (
         DEFAULT_PAGE_BATCH, batch_name, batch_ranges, docling_layout_batch, docling_options,
         docling_versions, pdf_text_layer,
@@ -50,9 +54,9 @@ with workflow.unsafe.imports_passed_through():
     from .queues import HEAVY
     from .retry import DEFAULT_RETRY
 
-TEXT_STAGE, TEXT_STAGE_VERSION = "ingest-text-layer", "1"
+TEXT_STAGE, TEXT_STAGE_VERSION = "ingest-text-layer", "2"  # 2: + pdfium text and image boxes (D-043)
 LAYOUT_STAGE, LAYOUT_STAGE_VERSION = "ingest-layout-batch", "1"
-PARSE_STAGE, PARSE_STAGE_VERSION = "ingest-parse-v2", "1"
+PARSE_STAGE, PARSE_STAGE_VERSION = "ingest-parse-v2", "2"  # 2: cross-parser gate, glued words (D-043)
 
 
 @dataclass
@@ -91,10 +95,20 @@ def _threads() -> int:
         return 8
 
 
+def _pdfium_version() -> str | None:
+    try:
+        from importlib.metadata import version
+
+        return version("pypdfium2")
+    except Exception:
+        return None
+
+
 @dataclass
 class IngestV2Activities:
     store: Any
     prov: Any | None = None
+    promotion: Any | None = None  # PromotionService: the parse becomes a gated candidate (D-043)
 
     def _source(self, upload: BookUpload, source_ref: dict[str, Any], temp_dir: str) -> Path:
         path = Path(temp_dir) / "source.pdf"
@@ -123,7 +137,7 @@ class IngestV2Activities:
         import pypdf
 
         key = stage_key(TEXT_STAGE, TEXT_STAGE_VERSION, [upload.file_sha256],
-                        {"pypdf": pypdf.__version__, "cache_bust": inp.cache_bust})
+                        {"pypdf": pypdf.__version__, "pypdfium2": _pdfium_version(), "cache_bust": inp.cache_bust})
 
         def compute() -> dict[str, bytes]:
             with tempfile.TemporaryDirectory(prefix="b2c-ingest-v2-") as temp_dir:
@@ -205,16 +219,22 @@ class IngestV2Activities:
 
         with activity_heartbeats("ingest_v2_normalize"):
             ref, hit = self.store.get_or_compute(inp.course_id, PARSE_STAGE, key, compute)
-        report = json.loads(self.store.read(ref, "ingest-quality.json"))
-        failed = [c["name"] for c in report["checks"] if c["passed"] is False]
+        report = IngestQualityReport.model_validate_json(self.store.read(ref, "ingest-quality.json"))
+        failed = report.failed
         self._record(PARSE_STAGE, PARSE_STAGE_VERSION, f"{NORMALIZER_NAME}-{NORMALIZER_VERSION}", ref,
                      [text_ref.uri, *[r.uri for r in batch_refs]])
-        log = activity.logger.info if report["accepted"] else activity.logger.warning
-        log("ingest v2 quality gate", extra={"book_id": upload.book_id, "key": ref.key,
-                                             "accepted": report["accepted"], "failed": failed})
+        status = None
+        if self.promotion is not None:
+            status = self.promotion.gate_ingest_parse(
+                inp.course_id, ref, report=report, inputs=[text_ref, *batch_refs],
+                config={"book_id": upload.book_id, "normalizer": NORMALIZER_VERSION,
+                        "report_version": REPORT_VERSION}).status
+        log = activity.logger.info if report.accepted else activity.logger.warning
+        log("ingest v2 quality gate", extra={"book_id": upload.book_id, "key": ref.key, "accepted": report.accepted,
+                                             "failed": failed, "stage_output_status": status})
         wait_for_activity_checkpoint(self.store, "parsed-book-v2:" + upload.book_id)
-        return {"ref": ref.model_dump(mode="json"), "cache_hit": hit, "accepted": bool(report["accepted"]),
-                "failed_checks": failed}
+        return {"ref": ref.model_dump(mode="json"), "cache_hit": hit, "accepted": bool(report.accepted),
+                "failed_checks": failed, "stage_output_status": status}
 
 
 def ingest_v2_activities(acts: IngestV2Activities) -> list[Any]:

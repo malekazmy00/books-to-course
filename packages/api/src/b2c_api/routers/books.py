@@ -17,6 +17,7 @@ from b2c_contracts import (
     stage_key,
 )
 from b2c_orchestration.ingest import IngestPDFInput, IngestPDFWorkflow
+from b2c_orchestration.ingest_v2 import IngestPDFV2Workflow, IngestV2Input
 from b2c_orchestration.queues import LIGHT
 
 from fastapi import File, Form, HTTPException, UploadFile
@@ -210,12 +211,17 @@ def books_router(ctx: ApiContext, router: Any = None) -> Any:
             "supplementary_book_ids": sorted(metadata.supplementary_book_ids),
             "cache_bust": cache_bust or "",
         }
+        # D-043: ingest v2 only behind an explicit setting, for English PDFs. With it off the
+        # identity (and so the workflow id) is exactly the pre-D-043 one.
+        use_v2 = bool(settings.ingest_v2_enabled) and metadata.ocr_language == "en"
+        if use_v2:
+            ingest_identity["pipeline"] = "ingest-v2"
         workflow_id = "b2c-ingest-" + hashlib.sha256(
             json.dumps(ingest_identity, sort_keys=True, ensure_ascii=False).encode("utf-8")
         ).hexdigest()
         # Preserve idempotency for uploads created before configuration became
         # part of the workflow identity. Reuse only when every ingest input matches.
-        if not cache_bust:
+        if not cache_bust and not use_v2:
             try:
                 catalog = await list_course_books(metadata.course_id)
                 matching = next((item for item in catalog.get("books", [])
@@ -232,17 +238,27 @@ def books_router(ctx: ApiContext, router: Any = None) -> Any:
                     workflow_id = matching["workflow_id"]
             except Exception:
                 log.exception("could not inspect existing book configuration before upload")
-        inp = IngestPDFInput(
-            course_id=metadata.course_id, upload=upload.model_dump(mode="json"),
-            source_ref=source_ref.model_dump(mode="json"),
-            supplementary_book_ids=metadata.supplementary_book_ids,
-            cache_bust=cache_bust, ocr_engine=selected_ocr_engine,
-        )
+        inp: IngestPDFInput | IngestV2Input
+        if use_v2:
+            run = IngestPDFV2Workflow.run
+            inp = IngestV2Input(
+                course_id=metadata.course_id, upload=upload.model_dump(mode="json"),
+                source_ref=source_ref.model_dump(mode="json"),
+                supplementary_book_ids=metadata.supplementary_book_ids, cache_bust=cache_bust,
+            )
+        else:
+            run = IngestPDFWorkflow.run
+            inp = IngestPDFInput(
+                course_id=metadata.course_id, upload=upload.model_dump(mode="json"),
+                source_ref=source_ref.model_dump(mode="json"),
+                supplementary_book_ids=metadata.supplementary_book_ids,
+                cache_bust=cache_bust, ocr_engine=selected_ocr_engine,
+            )
         try:
             client = await get_temporal_client()
             try:
                 await client.start_workflow(
-                    IngestPDFWorkflow.run, inp, id=workflow_id, task_queue=LIGHT,
+                    run, inp, id=workflow_id, task_queue=LIGHT,
                     id_reuse_policy=REUSE_ONLY_AFTER_FAILURE,
                 )
             except WorkflowAlreadyStartedError:
@@ -261,6 +277,8 @@ def books_router(ctx: ApiContext, router: Any = None) -> Any:
             "supplementary_book_ids": metadata.supplementary_book_ids,
             "source_filename": file.filename, "uploaded_at": datetime.now(UTC).isoformat(),
             "source_artifact_ref": source_ref.model_dump(mode="json")}
+        if use_v2:
+            library_record["ingest_pipeline"] = "v2"
         await run_in_threadpool(store.put, metadata.course_id, "book-library", library_key,
             {"book-library.json": json.dumps(library_record, ensure_ascii=False).encode("utf-8")})
         progress_warning = await remember_book_progress(

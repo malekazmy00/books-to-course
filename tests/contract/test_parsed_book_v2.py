@@ -160,3 +160,20 @@ def test_quality_report_cannot_accept_a_failed_gate():
     assert report.failed == ["word_recall"]
     with pytest.raises(ValidationError):  # an empty gate is not a pass
         c.IngestQualityReport(book_id=B, report_version="1", metrics={}, checks=[], accepted=True)
+
+
+def test_quality_report_names_the_pages_behind_a_check():
+    """SCHEMA 1.19.0 (D-043): page_findings lists the pages each per-page check found, so a
+    failed gate points a reviewer at pages, not only at a book-level number."""
+    failed = check(name="pages_below_agreement", value=2, op="<=", threshold=0, passed=False)
+    report = c.IngestQualityReport(book_id=B, report_version="2", metrics={}, checks=[failed], accepted=False,
+                                   page_findings={"pages_below_agreement": [12, 40]})
+    assert report.page_findings["pages_below_agreement"] == [12, 40]
+    assert c.IngestQualityReport(book_id=B, report_version="1", metrics={}, checks=[failed],
+                                 accepted=False).page_findings == {}
+    with pytest.raises(ValidationError):  # findings belong to a check of the report
+        c.IngestQualityReport(book_id=B, report_version="2", metrics={}, checks=[failed], accepted=False,
+                              page_findings={"no_such_check": [1]})
+    with pytest.raises(ValidationError):  # physical pages are 1-based
+        c.IngestQualityReport(book_id=B, report_version="2", metrics={}, checks=[failed], accepted=False,
+                              page_findings={"pages_below_agreement": [0]})

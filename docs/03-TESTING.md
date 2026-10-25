@@ -54,6 +54,9 @@
 | T-ING-07 | حالة ingestion عبر Temporal workflow ID | الحالة المعروضة تطابق وصف Temporal |
 | T-ING-08 (R3) | ParsedBook v2 + بوابة الجودة الحتمية: `tests/contract/test_parsed_book_v2.py`، و`tests/unit/ingest/test_normalize_v2.py`، و`tests/unit/ingest/test_quality_v2.py`، و`tests/unit/orchestration/test_ingest_v2.py` (وثائق اصطناعية) | كلها تمر في `make check` |
 | T-ING-09 (R3) | الكتب الحقيقية: `eval/suites/ingest_v2/measure.py` (v1 مقابل v2، وتسميات `source_issue`)، والفحوص الستة عشر المشتقة من البوابات التسع في `01-ingest.md` §5.4 بعتباتها | التقرير `eval/reports/ingest-v2-2026-10-25.md`؛ `accepted=false` لأي كتاب يفشل فحصًا |
+| T-ING-10 (D-043) | بوابة الاستخراج v2: اتفاق المحلّلَين المستقلَّين (pypdf وpdfium) صفحةً صفحة، ولا حد 2000 حرف، والفقرات المدموجة من هندسة الأسطر، و`GateResult` ‏`ingest-v2.quality` عبر خدمة الترقية: `tests/unit/ingest/test_quality_v2.py`، و`tests/unit/orchestration/test_ingest_promotion.py`، و`tests/unit/orchestration/test_ingest_v2.py`، و`tests/contract/test_parsed_book_v2.py` (`page_findings`) | كلها تمر في `make check`؛ العتبات في D-043 |
+| T-ING-11 (D-043) | فصل الكلمات الملتصقة (`b2c_ingest.glued`): الإثبات من bigrams الكتاب أو المعجم، وحماية أسماء العلم والمصطلحات والروابط وCamelCase، ولا تقسيم لـ privative a- ولا للبادئات: `tests/unit/ingest/test_glued_words.py` | كلها تمر. على الكتب الحقيقية (`eval/suites/ingest_v2/glue_eval.py`، الحَكَم pdfium): 0 تقسيم خاطئ على النص السليم |
+| T-ING-12 (D-043) | مفتاح التفعيل `B2C_INGEST_V2_ENABLED` معطّل افتراضيًا، ومعرّف workflow الرفع v1 لا يتغير وهو معطّل: `tests/unit/api/test_ingest_v2_switch.py` | كلها تمر |
 
 ### L2 Outline
 | ID | الاختبار | معيار النجاح |

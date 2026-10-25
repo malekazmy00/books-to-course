@@ -65,6 +65,10 @@ class Settings(BaseSettings):
     # R0 (audit 02 P3): automatic structural outline approval is not a production path. A human
     # approves the outline; B2C_ALLOW_SYSTEM_OUTLINE_APPROVAL=true is an explicit development opt-in.
     allow_system_outline_approval: bool = False
+    # D-043: an English PDF upload starts IngestPDFV2Workflow (ParsedBook v2, cross-parser gate,
+    # outline v2) instead of IngestPDFWorkflow. Off by default: translation, QA and audio still read
+    # only `ingest-parse-pdf` artifacts (readiness list: eval/reports/ingest-v2-gate.md).
+    ingest_v2_enabled: bool = False
 
     # telemetry
     otel_endpoint: str = "http://otel-collector:4318"

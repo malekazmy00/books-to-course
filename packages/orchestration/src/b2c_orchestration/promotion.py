@@ -18,8 +18,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from b2c_contracts import (ArtifactRef, GateResult, IndexQualityReport, OutlineQualityReport, ProducerIdentity,
-                           StageOutputRecord)
+from b2c_contracts import (ArtifactRef, GateResult, IndexQualityReport, IngestQualityReport, OutlineQualityReport,
+                           ProducerIdentity, StageOutputRecord)
 from b2c_core import get_logger
 from b2c_core.revision import code_revision as running_code_revision
 from b2c_core.revision import is_clean_revision
@@ -29,6 +29,9 @@ from b2c_outline.v2.gate import GATE_ID as OUTLINE_GATE_ID
 from b2c_outline.v2.gate import CROSS_CHECK_DEFINITION as OUTLINE_CROSS_CHECK_DEFINITION
 from b2c_outline.v2.gate import CROSS_CHECK_ID as OUTLINE_CROSS_CHECK_ID
 from b2c_outline.v2.gate import CrossCheckResult
+from b2c_ingest.quality import GATE_DEFINITION as INGEST_GATE_DEFINITION
+from b2c_ingest.quality import GATE_ID as INGEST_GATE_ID
+from b2c_ingest.quality import gate_result as ingest_gate_result
 
 log = get_logger("b2c.promotion")
 SYSTEM_ACTOR = "system:promotion"
@@ -107,6 +110,12 @@ def _index_policy() -> GatePolicy:
 
 
 INDEX_CONTENT_POLICY = _index_policy()
+
+
+# Ingest v2 (R3, D-043): the deterministic ingest quality gate (cross-parser text agreement and the
+# audit 01 §5.4 checks). Its version is the digest of its definition, the same digest
+# ``b2c_ingest.quality.gate_version`` writes into the GateResult.
+INGEST_QUALITY_POLICY = GatePolicy(gate_id=INGEST_GATE_ID, kind="deterministic", definition=INGEST_GATE_DEFINITION)
 
 
 def evaluate_translation_assembly(counts: Mapping[str, int], *, total_units: int) -> tuple[bool, dict[str, int]]:
@@ -271,6 +280,21 @@ class PromotionService:
         return self.settle(course_id, artifact)
 
 
+    def gate_ingest_parse(self, course_id: str, artifact: ArtifactRef, *, report: IngestQualityReport,
+                          inputs: Iterable[ArtifactRef] = (), config: Mapping[str, Any] | None = None
+                          ) -> StageOutputRecord:
+        """Candidate -> ingest quality gate -> accepted | rejected, for one ParsedBook v2 artifact."""
+        policy = INGEST_QUALITY_POLICY
+        record = self.record_candidate(course_id, artifact, required_gates=[policy.gate_id], inputs=inputs,
+                                       config=config)
+        if record.status != "candidate":
+            return record
+        result = ingest_gate_result(report, artifact, decided_at=self.clock())
+        if result.gate_version != policy.version:  # pragma: no cover - both digest GATE_DEFINITION
+            raise RuntimeError("ingest gate version and promotion policy version disagree")
+        self.attach_gate(course_id, result)
+        return self.settle(course_id, artifact)
+
     def gate_index_build(self, course_id: str, artifact: ArtifactRef, *, report: IndexQualityReport,
                          inputs: Iterable[ArtifactRef] = (), config: Mapping[str, Any] | None = None
                          ) -> StageOutputRecord:
@@ -290,7 +314,7 @@ class PromotionService:
         return self.settle(course_id, artifact)
 
 
-__all__ = ["GatePolicy", "INDEX_CONTENT_POLICY", "OUTLINE_CROSS_CHECK_POLICY", "OUTLINE_REQUIRED_GATES",
+__all__ = ["GatePolicy", "INDEX_CONTENT_POLICY", "INGEST_QUALITY_POLICY", "OUTLINE_CROSS_CHECK_POLICY", "OUTLINE_REQUIRED_GATES",
            "TRANSLATOR_NOTES_POLICY", "evaluate_translator_notes",
            "OUTLINE_STRUCTURE_POLICY", "NotAccepted", "PromotionService", "TRANSLATION_ASSEMBLY_POLICY",
            "TransitionRefused", "evaluate_translation_assembly"]

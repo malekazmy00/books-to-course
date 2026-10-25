@@ -6,7 +6,9 @@ item, or one unwrapped paragraph of the text layer, with page + bbox), then one 
 
 1. characters: ligatures / full-width forms (per-character NFKC), invisible characters, spaced
    punctuation; then letter-spaced OCR/small-caps repair against the book's own vocabulary
-   (rules shared with translation units, ``b2c_core.source_text``);
+   (rules shared with translation units, ``b2c_core.source_text``); then glued words are split
+   (``glued.py``: the book's own bigrams + the pinned wordfreq lexicon, proper nouns protected),
+   with the dash the pdfium extraction of the same page prints between the parts, if any;
 2. furniture: Docling page headers/footers, plus text repeated at page edges (>= 3 pages and
    mostly at an edge), become running_header / running_footer / page_number blocks; nothing
    is dropped;
@@ -25,7 +27,8 @@ item, or one unwrapped paragraph of the text layer, with page + bbox), then one 
    footnote on the same page or to the endnote of the matching notes run, and removed from
    ``text`` (kept as ``NoteRef``); weak candidates that link to nothing are left in the text;
 7. quality flags per block (cut at page break, letter-spacing / ligature residue, unexpected
-   script, block longer than 2,000 characters, note without label).
+   script, note without label). Block length is not a defect (D-043): a 2,500-character
+   academic paragraph is one paragraph.
 
 Same intermediate + same NORMALIZER_VERSION => byte-identical ParsedBook v2.
 """
@@ -38,6 +41,7 @@ from typing import Any
 from b2c_contracts import (
     BlockV2, Note, NoteRef, OutlineEntry, PageInfo, PageRef, ParsedBookV2,
 )
+from .glued import GlueSplitter, Separators, reference_separators
 from b2c_core.source_text import (
     BULLET, CONTINUATION_WORDS, NAV_LABELS, NOTE_LABEL, PAGE_NUMBER, TERMINAL, MarkerSequence, Vocab,
     citation_score, fix_punct_spacing, heading_key, index_like, is_bibliographic,
@@ -46,8 +50,7 @@ from b2c_core.source_text import (
 )
 
 NORMALIZER_NAME = "b2c-normalize"
-NORMALIZER_VERSION = "1"
-LONG_BLOCK_CHARS = 2000
+NORMALIZER_VERSION = "2"  # 2: glued-word split (D-043); no long_block flag
 CUT_MIN_WORDS = 8  # shorter page-final lines (epigraph attributions, labels) are not cut prose
 
 _FRONT_KEYS = ("cover", "titlepage", "halftitle", "copyright", "contents", "tableofcontents",
@@ -477,7 +480,7 @@ def _tracked_word(text: str, vocab: Vocab) -> str | None:
     return word if vocab.is_word(word.lower()) or vocab.count(word) >= 1 else None
 
 
-def _normalize_text(frags: list[_Frag], lexicon=zipf) -> Vocab:
+def _normalize_text(frags: list[_Frag], lexicon=zipf, references: dict[int, Separators] | None = None) -> Vocab:
     for f in frags:
         text, changed = normalize_chars(f.raw)
         if changed:
@@ -502,6 +505,17 @@ def _normalize_text(frags: list[_Frag], lexicon=zipf) -> Vocab:
         if repaired != f.text:
             f.tags.append("ocr_letter_spacing")
             f.text = repaired
+    splitter = GlueSplitter([f.text for f in frags if f.label not in _HEADING_LABELS], lexicon=lexicon)
+    for f in frags:
+        if f.label in ("code", "formula"):
+            continue
+        seps: Separators = {}
+        for page in dict.fromkeys(p for p, _ in f.refs):
+            seps.update((references or {}).get(page, {}))
+        split, found = splitter.split(f.text, seps)
+        if found:
+            f.tags.append("glued_words_split")
+            f.text = split
     return vocab
 
 
@@ -1009,7 +1023,9 @@ def _build(meta: BookMeta, frags: list[_Frag], text_layer: dict[str, Any], parse
            heights: dict[int, float]) -> ParsedBookV2:
     page_count = int(text_layer["page_count"])
     frags = [f for f in frags if 1 <= f.page <= page_count]
-    vocab = _normalize_text(frags)
+    references = {int(p["page_no"]): reference_separators(p["text_pdfium"])
+                  for p in text_layer["pages"] if p.get("text_pdfium")}
+    vocab = _normalize_text(frags, references=references)
     for f in frags:
         f.kind = _base_kind(f)
     _mark_repeated_edges(frags)
@@ -1076,8 +1092,6 @@ def _build(meta: BookMeta, frags: list[_Frag], text_layer: dict[str, Any], parse
             flags.append("ligature_residue")
         if _UNEXPECTED_SCRIPT.search(it.text):
             flags.append("unexpected_script")
-        if len(it.text) > LONG_BLOCK_CHARS and it.kind not in ("table", "code"):
-            flags.append("long_block")
         if it.kind in ("endnote", "footnote") and not head.note_label:
             flags.append("note_without_label")
         refs = []

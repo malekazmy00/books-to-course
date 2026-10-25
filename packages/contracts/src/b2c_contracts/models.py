@@ -14,7 +14,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION = "1.4.0"
+SCHEMA_VERSION = "1.5.0"
 
 
 class Contract(BaseModel):
@@ -495,6 +495,28 @@ class CourseOutline(Contract):
 
 
 # ---------------------------------------------------------------- L3 chunks
+# 1.5.0 (R5, docs/audits/2026-10-24/03-indexing-retrieval.md §5): a chunk records exactly which
+# character ranges of which blocks it holds (`parts`), so lesson coverage is checkable by
+# construction (every body character of a lesson span in exactly one chunk), plus its evidence
+# class, its lesson, a text fingerprint and the chunker version. All new fields have defaults:
+# chunks written by 1.4.0 and earlier still validate (they simply carry no parts).
+EvidenceClass = Literal["body", "note"]
+
+
+class ChunkPart(Contract):
+    """Characters [start, end) of one block's indexed text."""
+
+    block_id: str
+    start: int = Field(ge=0)
+    end: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def check_range(self) -> "ChunkPart":
+        if self.end <= self.start:
+            raise ValueError("a chunk part must be a non-empty range")
+        return self
+
+
 class StructuredChunk(Contract):
     chunk_id: str
     book_id: str
@@ -505,6 +527,73 @@ class StructuredChunk(Contract):
     text: str
     token_count: int = Field(ge=1)
     embedding_model: str  # "BAAI/bge-m3@<revision>"
+    evidence_class: EvidenceClass = "body"  # notes are evidence, never lesson teaching content
+    lesson_id: str | None = None  # the accepted-outline lesson whose span holds it (spine only)
+    parts: list[ChunkPart] = []
+    text_sha256: str | None = None
+    chunker_version: str | None = None
+    context_header: str | None = None  # "Book > Module > Lesson"; for retrieval text, not display
+    quality_flags: list[str] = []
+
+    @model_validator(mode="after")
+    def check_parts(self) -> "StructuredChunk":
+        if self.parts:
+            order = list(dict.fromkeys(p.block_id for p in self.parts))
+            if order != self.block_ids:
+                raise ValueError("chunk parts must cover exactly block_ids, in order")
+        if self.text_sha256 is not None and \
+                self.text_sha256 != hashlib.sha256(self.text.encode("utf-8")).hexdigest():
+            raise ValueError("text_sha256 does not match the chunk text")
+        return self
+
+
+class IndexQualityReport(Contract):
+    """Deterministic content gate of one book's index build; `accepted` only if every check passed."""
+
+    book_id: str
+    role: Literal["spine", "supplementary"]
+    report_version: str
+    chunker_version: str
+    source_format: Literal["parsed-book/1", "parsed-book/2"]
+    outline_sha256: str | None = None
+    metrics: dict[str, float | int | None]
+    checks: list[QualityCheck]
+    accepted: bool
+
+    @property
+    def failed(self) -> list[str]:
+        return [c.name for c in self.checks if c.passed is False]
+
+    @model_validator(mode="after")
+    def check_acceptance(self) -> "IndexQualityReport":
+        if self.accepted and (self.failed or not any(c.passed for c in self.checks)):
+            raise ValueError("a report with failed (or no passing) checks cannot be accepted")
+        return self
+
+
+class SupplementLinkJudgement(Contract):
+    """One recorded relevance decision lesson -> supplementary chunk (audit 03 H1).
+
+    Below the threshold the chunk is not linked; "no supplementary evidence" is a valid outcome.
+    `calibrated=False` says the threshold has not been fitted against human relevance labels yet.
+    """
+
+    lesson_id: str
+    chunk_id: str
+    book_id: str
+    rank: int = Field(ge=1)
+    method: str = Field(min_length=1)
+    score: float
+    threshold: float
+    verdict: Literal["linked", "below_threshold"]
+    calibrated: bool
+    policy_version: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def check_verdict(self) -> "SupplementLinkJudgement":
+        if (self.verdict == "linked") != (self.score >= self.threshold):
+            raise ValueError("verdict must be 'linked' exactly when score >= threshold")
+        return self
 
 
 # ---------------------------------------------------------------- L4 KG

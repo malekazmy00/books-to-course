@@ -1,6 +1,6 @@
 # 02 — العقود بين الطبقات (Layer Contracts)
 
-المصدر الوحيد للحقيقة هو `packages/contracts/src/b2c_contracts/models.py` (SCHEMA_VERSION 1.4.0). سجل الإصدارات: 1.3.0 أضاف قبول المخرجات (R1، §7)، و1.4.0 أضاف ParsedBook v2 (R3، §8) بعد دمج العملين.
+المصدر الوحيد للحقيقة هو `packages/contracts/src/b2c_contracts/models.py` (SCHEMA_VERSION 1.5.0). سجل الإصدارات: 1.3.0 أضاف قبول المخرجات (R1، §7)، و1.4.0 أضاف ParsedBook v2 (R3، §8) بعد دمج العملين، و1.5.0 أضاف provenance الـ chunk وتقرير بوابة الفهرسة وحكم الربط المساند (R5، §9).
 الوثيقة دي بتشرح **إزاي** كل طبقة بتسلّم للطبقة اللي بعدها. والتعريفات نفسها موجودة في الكود.
 
 > الكود ده اتشغّل واتختبر: `tests/contract/test_contracts_invariants.py` ونتيجته 8 passed. الاختبارات دي بتتأكد من القيود الأساسية (negative controls).
@@ -48,7 +48,7 @@ s3://artifacts/{course_id}/{stage}/{key}/<files>
 | L1 ← L2/L3 | `ParsedBook` | كل block ليه `refs` ≥ 1، و`page_count` صحيح | retry على دفعات صفحات |
 | L1 v2 ← L2/L3 (1.3.0، R3) | `ParsedBookV2` + `IngestQualityReport` | عقد v2 صالح، و`IngestQualityReport.accepted` (البوابات الحتمية في §7). التقرير غير المقبول لا يمر للمخطط | `accepted=false` يُحفظ ويُوقف المسار (مراجعة) |
 | L2 ← L5 | `CourseOutline` | الـ spans متتالية ومتداخلتش؛ لو `llm_inferred` ⇒ `requires_review` | Gate G0 |
-| L3 ← L4 | `StructuredChunk[]` | مفيش chunk بيعدي حدود `section_path`، و`embedding_model` ثابت | retry |
+| L3 ← L4 | `StructuredChunk[]` + `IndexQualityReport` | مفيش chunk بيعدي حدود `section_path` أو الدرس، و`embedding_model` ثابت، و`IndexQualityReport.accepted` (§9) | البوابة الفاشلة: لا كتابة في الفهرس، والمخرج `rejected` |
 | L4 ← L5 | LightRAG doc_ids + `ConceptEdge[]` | `doc_status=processed` لكل كتاب؛ كل edge ليه evidence | retry / G1 |
 | L5 ← L6 | `LessonDraft` | كل جملة ليها citation ≥ 1 والـ citation موجود فعلًا، وfaithfulness ≥ العتبة | إعادة توليد ← مراجعة |
 | L6 ← L7 | `LessonSummary`، `GlossaryTerm[]`، `Question[]` | الأسئلة عدّت الـ solver والـ linter | إعادة توليد ← G2 |
@@ -178,3 +178,22 @@ class GraphRetriever(Protocol):
 **التوافق مع v1:** `parsed_book_v1_from_v2(book)` إسقاط بلا استنتاج. يحوّل الأنواع الجديدة إلى أقرب نوع v1، ويعيد علامات الحواشي ملتصقة بموضعها، ويعيد رقم الحاشية في أول نصها، ويجعل المعرّف `f"{book_id}:{first_page}:{seq}"`. نشاط الاستخراج v2 يحفظ `parsed-book.json` (v1) بجانب `parsed-book-v2.json` حتى تنتقل المراحل اللاحقة.
 
 **تقرير الجودة:** `IngestQualityReport(metrics, checks[QualityCheck], accepted)`. كل `QualityCheck` يحمل القيمة والعتبة والحكم، والعقد يرفض حكمًا لا يطابق القيمة، ويرفض `accepted=true` إن فشل أي فحص أو لم ينجح أي فحص. الفحص غير القابل للقياس (مثل ربط الحواشي في كتاب بلا حواشٍ) قيمته `null` وحكمه `null`.
+
+## 9. الفهرسة v2: `StructuredChunk` 1.5.0، و`IndexQualityReport`، و`SupplementLinkJudgement` (R5)
+المرجع: `docs/audits/2026-10-24/03-indexing-retrieval.md` §5–7. الحقول الجديدة كلها لها قيم افتراضية، فالـ chunks المخزنة بإصدار 1.4.0 أو أقدم ما زالت صالحة (بلا `parts`).
+
+| الحقل في `StructuredChunk` | المعنى |
+|---|---|
+| `evidence_class` | ‏`body` (محتوى تعليمي) أو `note` (حاشية/endnote: دليل منفصل، لا يدخل محتوى الدرس) |
+| `lesson_id` | الدرس الذي يقع الـ chunk داخل نطاقه في المخطط المعتمد (الحاشية: درس أول block يستشهد بها) |
+| `parts[]` | `ChunkPart(block_id, start, end)`: المدى `[start, end)` من نص الـ block المفهرس. ترتيب الـ blocks في `parts` يساوي `block_ids` |
+| `text_sha256` | بصمة `text`، والعقد يرفض بصمة لا تطابق النص |
+| `chunker_version` | إصدار الـ chunker، ويدخل في `chunk_id` مع بصمة النص و`parts` |
+| `context_header` | `Book › Module › Lesson` لنص الاسترجاع، لا للعرض |
+| `quality_flags` | أعلام النص المشبوه (مثل `glued_words`) أو `short_section` |
+
+**ثابت التغطية (parity):** كل حرف من نص كل block من نوع body داخل نطاق درس يقع في `parts` لـ chunk واحد بالضبط، إلا الـ blocks المحجورة (نص تالف) فتُذكر بالاسم في التقرير. أي block غير مغطى أو مغطى مرتين يُفشل البوابة.
+
+`IndexQualityReport(book_id, role, report_version, chunker_version, source_format, outline_sha256, metrics, checks[QualityCheck], accepted)` بنفس قاعدة تقرير الاستخراج: لا قبول مع فحص فاشل. نشاط الفهرسة يحفظه بجانب `chunks.json`، ويسجل الـ snapshot مرشحًا في سجل المخرجات (§7) بالبوابة `index.content-gate`. عند الفشل لا يُكتب شيء في جدول الفهرس.
+
+`SupplementLinkJudgement(lesson_id, chunk_id, book_id, rank, method, score, threshold, verdict, calibrated, policy_version)`: حكم صلة مسجل لكل مرشح مساند. ‏`verdict = linked` إذا وفقط إذا `score ≥ threshold`. ‏«لا رابط» نتيجة مقبولة. ‏`calibrated=false` تعني أن العتبة لم تُعاير بعد مقابل أحكام بشرية.

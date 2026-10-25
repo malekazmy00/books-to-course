@@ -42,16 +42,17 @@ from .reference import FURNITURE, bookmark_entries, find_heading, printed_toc_en
 from .titles import TitleVocab, clean_title, english_zipf
 
 BUILDER_NAME = "b2c-outline-v2"
-BUILDER_VERSION = "4"  # 2: figure descriptions in lessons; 3: front-matter lessons; 4: episodes (D-036)
+BUILDER_VERSION = "5"  # 2: figure descriptions in lessons; 3: front-matter lessons; 4: episodes (D-036);
+# 5: episode 1 = course introduction, acknowledgments summarised there (D-037)
 # D-036 (2): front matter taught as lessons of the opening module, before chapter 1
-DEFAULT_FRONT_LESSONS = frozenset({"foreword", "preface", "acknowledgments"})
+DEFAULT_FRONT_LESSONS = frozenset({"foreword", "preface"})  # acknowledgments -> course intro (D-037)
 FRONT_MODULE_TITLE = "Introduction to the Book"  # "مقدمة الكتاب" once translated (D-035)
 _LEGAL_HEADINGS = frozenset({"disclaimer", "legalnotice", "copyright", "permissions", "rightsandpermissions"})
 _NOTE_HEADINGS = frozenset({"note", "notes", "references", "sources"})
 LONG_LIST_ITEMS = 8  # a run of this many list items is flagged for listening
 _ADAPTATION_NOTES = {
-    "acknowledgements": "thanks and names: adapt for listening (e.g. say in summary who is thanked and why); "
-                        "drop no one - the original text stays in the lesson",
+    "acknowledgements": "thanks and names: not narrated here - summarised briefly in episode 1, the course "
+                        "introduction (D-037); the original text stays in the lesson",
     "table": "table: read it as sentences or summarise it row by row; the original table stays in the lesson",
     "long_list": "long list: group or summarise it for listening; the original list stays in the lesson",
     "legal_notice": "legal or copyright notice: mention it briefly; the original text stays in the lesson",
@@ -255,8 +256,15 @@ def build_outline_v2(book: ParsedBookV2, *, course_id: str, supplementary_book_i
     def front_matter(a: int, b: int, node: _Node | None) -> None:
         """Front matter before the first chapter: taught reasons become lessons, the rest is excluded."""
         for start, stop, reason, title, rule in _matter_cuts(bk, a, b, "front_matter", node, nodes):
+            prev = front[-1] if front else None
+            embedded = prev is not None and prev.end + 1 == start and not rule.endswith(":entry")
+            if reason == "acknowledgments" and embedded:
+                prev.end = stop  # thanks inside the Preface stay there, flagged; narrated only in episode 1
+                continue
             if reason not in config.front_lessons:
-                exclude(start, stop, "front_matter", reason, title, rule)
+                # D-037: a standalone acknowledgments section is summarised in episode 1 (course intro)
+                exclude(start, stop, "front_matter", reason, title,
+                        "course_intro:acknowledgments" if reason == "acknowledgments" else rule)
                 continue
             prev = front[-1] if front else None
             if prev is not None and prev.end + 1 == start and not rule.endswith(":entry"):
@@ -330,7 +338,8 @@ def build_outline_v2(book: ParsedBookV2, *, course_id: str, supplementary_book_i
         course_id=course_id, spine_book_id=book.book_id, supplementary_book_ids=list(supplementary_book_ids),
         parsed_sha256=parsed_sha256, block_count=n,
         builder={"name": BUILDER_NAME, "version": BUILDER_VERSION, "config": _config_digest(config)},
-        structure_source=source, size_policy=config.size_policy, modules=modules, excluded_ranges=excluded)
+        structure_source=source, size_policy=config.size_policy, modules=modules, excluded_ranges=excluded,
+        course_intro_episode=True)
 
 
 def _merge_adjacent(ranges: list[ExcludedRange]) -> list[ExcludedRange]:
@@ -704,9 +713,10 @@ def episode_title(text: str) -> str:
     return out or text.strip()
 
 
-def _number_episodes(modules: list[ModuleV2]) -> None:
-    """Every lesson is an episode (D-036 (3)): 1..n in book order, with a title for audio."""
-    k = 0
+def _number_episodes(modules: list[ModuleV2], *, first: int = 2) -> None:
+    """Every lesson is an episode (D-036 (3)) in book order, with a title for audio. Episode 1 is the
+    generated course introduction (D-037), so book lessons start at ``first`` = 2."""
+    k = first - 1
     for m_i, m in enumerate(modules):
         chapter = episode_title(m.display_title)
         lessons = []

@@ -85,8 +85,8 @@ def test_reference_f1_catches_a_lost_section_boundary_and_a_wrong_level():
     lessons[1]["spine_span"]["end_block"] = lessons[2]["spine_span"]["end_block"]  # 5.1 swallows 5.2
     lessons[1]["extra_spans"] = lessons[2]["extra_spans"]  # and its figure descriptions (D-036)
     del lessons[2]
-    for k, lesson in enumerate((x for m in data["modules"] for x in m["lessons"]), start=1):
-        lesson["episode"] = k  # episodes stay 1..n (D-036)
+    for k, lesson in enumerate((x for m in data["modules"] for x in m["lessons"]), start=2):
+        lesson["episode"] = k  # episodes stay 2..n: episode 1 is the course intro (D-037)
     merged = c.CourseOutlineV2.model_validate(data)
     ref = outline_quality(parsed, merged)
     assert ref.metrics["reference_boundary_recall"] == pytest.approx(5 / 6, abs=1e-4)

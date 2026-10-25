@@ -143,12 +143,23 @@ def test_preface_foreword_and_acknowledgments_become_lessons_before_chapter_1():
     assert o.modules[1].display_title == "Chapter 1 • Basics" and o.modules[1].order == 2
 
 
-def test_a_standalone_acknowledgments_section_is_a_lesson_marked_for_audio_adaptation():  # D-036 (2)
+def test_a_standalone_acknowledgments_section_feeds_the_course_introduction():  # D-037
     o = build(gramsci_like_with_acknowledgments())
-    ack = o.modules[0].lessons[0]
-    assert (ack.display_title, ack.kind) == ("Acknowledgments", "front_matter")
-    assert [(a.seqs, a.reason) for a in ack.audio_adaptations] == [((9, 9), "acknowledgements")]
-    assert "acknowledgments" not in {r.reason for r in o.excluded_ranges}
+    assert "acknowledgments" not in {l.display_title.casefold() for l in o.lessons}
+    ack = [r for r in o.excluded_ranges if r.reason == "acknowledgments"]
+    assert len(ack) == 1 and ack[0].rule == "course_intro:acknowledgments"  # summarised in episode 1
+
+
+def test_acknowledgments_inside_the_preface_stay_but_are_not_narrated_there():  # D-037
+    rows = [head("Preface", 1, level=1, zone="front_matter", bm=(1, "Preface")),
+            para(1, 300, zone="front_matter"),
+            head("ACKNOWLEDGMENTS", 2, level=2, zone="front_matter"),
+            para(2, 200, zone="front_matter"),
+            head("Chapter 1 • Basics", 3, level=1, bm=(1, "Chapter 1 • Basics")),
+            para(3, 900)]
+    o = build(book(rows))
+    [ack] = [a for a in o.modules[0].lessons[0].audio_adaptations if a.reason == "acknowledgements"]
+    assert "episode 1" in ack.note and "course introduction" in ack.note
 
 
 def test_long_lists_in_front_matter_are_marked_and_kept():
@@ -304,15 +315,17 @@ def test_v1_projection_of_a_built_outline():
 # ----------------------------------------------------------------------------- episodes (D-036 (3))
 def test_every_lesson_is_an_episode_numbered_in_book_order_with_a_title_for_audio():
     o = build(sat_like())
+    # episode 1 is the generated course introduction (D-037): book lessons start at 2
+    assert o.course_intro_episode is True
     assert [(l.episode, l.episode_title) for l in o.lessons] == [
-        (1, "Preface"), (2, "Getting Organized"), (3, "Sorting"), (4, "Ranking, Scoring, and Prioritizing"),
-        (5, "Simple Brainstorming"), (6, "Cluster Brainstorming")]
+        (2, "Preface"), (3, "Getting Organized"), (4, "Sorting"), (5, "Ranking, Scoring, and Prioritizing"),
+        (6, "Simple Brainstorming"), (7, "Cluster Brainstorming")]
     g = build(gramsci_like())
     assert [l.episode_title for l in g.lessons] == [
         "Introduction", "Gramsci: Lodestar of Renewal", "Critical Approaches",
         "The Originality of the Living Tradition", "Readings of Gramsci",
         "The Originality of the Living Tradition: Conclusion"]
-    assert [l.episode for l in g.lessons] == list(range(1, 7))
+    assert [l.episode for l in g.lessons] == list(range(2, 8))
 
 
 def test_episode_numbers_are_stable_across_reparse():

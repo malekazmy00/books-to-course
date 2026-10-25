@@ -213,6 +213,17 @@ def test_front_matter_lessons_carry_audio_adaptation_flags_inside_the_lesson(): 
         c.AudioAdaptation(start_block=bid(3), end_block=bid(4), reason="boring", note="x")
 
 
+def test_episode_one_can_be_reserved_for_the_course_introduction():  # D-037, 1.11.0
+    ok = outline([module("m", [lesson("m.a", 0, 4, episode=2, episode_title="A"),
+                               lesson("m.b", 5, 9, order=2, episode=3, episode_title="B")])],
+                 course_intro_episode=True)
+    assert [l.episode for l in ok.lessons] == [2, 3]
+    with pytest.raises(ValidationError, match="episode"):  # with the intro reserved, book lessons start at 2
+        outline([module("m", [lesson("m.a", 0, 4, episode=1, episode_title="A"),
+                              lesson("m.b", 5, 9, order=2, episode=2, episode_title="B")])],
+                course_intro_episode=True)
+
+
 def test_lessons_carry_episode_numbers_in_book_order():  # D-036 (3), 1.9.0
     assert tuple(int(x) for x in c.SCHEMA_VERSION.split(".")) >= (1, 9, 0)
     ok = outline([module("m", [lesson("m.a", 0, 4, episode=1, episode_title="Our Vision"),

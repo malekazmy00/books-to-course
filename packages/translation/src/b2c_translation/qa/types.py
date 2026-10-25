@@ -23,6 +23,10 @@ class CheckContext:
     leak_fingerprints: frozenset[str] = frozenset()            # derived from every prompt template version
     # approved termbase: renderings a reviewer ruled out for a locked term (source -> variants)
     forbidden: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    # D-032 principle 3: originals inserted after translation at a term's first mention, as
+    # "العربي (original)". Explicit whitelist: exactly these bracketed glosses are removed before the
+    # checks run (b2c_translation.first_mention), any other Latin is still checked.
+    glossed_originals: frozenset[str] = frozenset()
 
 
 Check = Callable[[CheckContext], list[QAIssue]]

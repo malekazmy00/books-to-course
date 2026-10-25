@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from b2c_contracts import QACategory, QAIssue, Severity
 from b2c_core.arabic_text import normalize_arabic
@@ -678,8 +678,25 @@ DEFAULT_CHECKS: tuple[RegisteredCheck, ...] = (
 )
 
 
+def _gloss_re(original: str) -> re.Pattern[str]:
+    body = r"\s+".join(re.escape(w) for w in original.split())
+    return re.compile(r"\s*\(\s*" + body + r"\s*\)", re.IGNORECASE)
+
+
+def strip_original_glosses(text: str, originals: Iterable[str]) -> str:
+    """Remove the whitelisted ``(original)`` glosses (and only those) from ``text``."""
+    for original in sorted(set(originals), key=len, reverse=True):
+        if original.strip():
+            text = _gloss_re(original).sub("", text)
+    return text
+
+
 def run_checks(ctx: CheckContext, checks: Iterable[RegisteredCheck] = DEFAULT_CHECKS) -> list[QAIssue]:
-    """Run checks in registry order. An empty target short-circuits after ``empty_target``."""
+    """Run checks in registry order. An empty target short-circuits after ``empty_target``.
+
+    Whitelisted first-mention glosses (``ctx.glossed_originals``) are removed first."""
+    if ctx.glossed_originals:
+        ctx = replace(ctx, target=strip_original_glosses(ctx.target, ctx.glossed_originals))
     issues: list[QAIssue] = []
     for check in checks:
         found = check.run(ctx)
@@ -693,4 +710,4 @@ __all__ = ["AR_NEGATION_CUES", "DEFAULT_CHECKS", "LENGTH_RATIO_BOUNDS", "Registe
            "contains_term", "count_source_sentences", "count_target_sentences", "empty_target",
            "footnote_markers", "foreign_script", "latin_not_in_source", "leakage", "length_ratio",
            "named_entity", "normalize_digits", "numbers", "polarity", "quotes", "repetition", "run_checks",
-           "sentence_alignment", "terminology", "untranslated_english"]
+           "sentence_alignment", "strip_original_glosses", "terminology", "untranslated_english"]

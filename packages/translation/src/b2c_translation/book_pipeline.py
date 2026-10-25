@@ -92,6 +92,7 @@ class UnitTranslator:
     def __init__(self, engine: TranslationEngine, *, estimator: QualityEstimator | None = None,
                  memory: Memory | None = None, terms: Mapping[str, str] | None = None,
                  entities: Mapping[str, str] | None = None,
+                 forbidden: Mapping[str, Sequence[str]] | None = None,
                  reference_renderer: Callable[[TranslationUnit], str] | None = None,
                  config: PipelineConfig = PipelineConfig(), clock: Callable[[], datetime] = _now) -> None:
         self.engine = engine
@@ -99,6 +100,7 @@ class UnitTranslator:
         self.memory = memory
         self.terms = dict(terms or {})
         self.entities = dict(entities or {})
+        self.forbidden = {k: tuple(v) for k, v in (forbidden or {}).items()}
         self.reference_renderer = reference_renderer or render_reference_unit
         self.config = config
         self.clock = clock
@@ -200,6 +202,8 @@ class UnitTranslator:
                             target_language=self.config.target_language,
                             terms=terms_in(unit.source_text, self.terms),
                             entities=terms_in(unit.source_text, self.entities),
+                            forbidden={k: v for k, v in self.forbidden.items()
+                                       if k in terms_in(unit.source_text, {k: ""})},
                             leak_fingerprints=_LEAK_FINGERPRINTS)
 
 

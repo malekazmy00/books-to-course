@@ -56,6 +56,7 @@ def check_arabic_target(target: str | None) -> str:
 class TermSelection:
     source: str
     target: str | None = None  # None -> the entry's first (highest-priority) proposal
+    forbidden_variants: tuple[str, ...] = ()
 
 
 def _now() -> datetime:
@@ -98,6 +99,7 @@ def approve_terms(store: TermbaseStore, scope: TermbaseScope, selections: Sequen
             raise TermbaseDecisionRejected(f"{target!r} is not a proposal of {record.source!r}")
         try:
             decided.append(termbase.approve(record.source, target, reviewer, replace=replace,
+                                            forbidden_variants=selection.forbidden_variants,
                                             allow_shared_target=allow_shared_target, now=now))
         except TermbaseError as exc:
             raise TermbaseDecisionRejected(str(exc)) from exc

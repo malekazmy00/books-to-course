@@ -546,7 +546,16 @@ def _table_check(ctx: CheckContext, table: Mapping[str, str], check_id: str,
 
 
 def terminology(ctx: CheckContext) -> list[QAIssue]:
-    return _table_check(ctx, ctx.terms, "terminology", "terminology")
+    issues = _table_check(ctx, ctx.terms, "terminology", "terminology")
+    # A ruled-out rendering is wrong even next to the locked form (e.g. a gloss in brackets).
+    for src_term, variants in ctx.forbidden.items():
+        if not _source_has(ctx.unit.source_text, src_term):
+            continue
+        for variant in variants:
+            if contains_term(ctx.target, variant):
+                issues.append(_issue("forbidden_variant", "terminology", "major", term=src_term,
+                                     variant=variant, expected=ctx.terms.get(src_term)))
+    return issues
 
 
 def named_entity(ctx: CheckContext) -> list[QAIssue]:

@@ -287,3 +287,16 @@ async def test_bearer_auth_applies(monkeypatch, env):
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as http:
         assert (await http.get(base("a" * 64))).status_code == 401
         assert (await http.post(f"{base('a' * 64)}/done", json={"reviewer_id": "aly"})).status_code == 401
+
+
+async def test_approve_records_forbidden_variants(env):
+    async with client(env) as http:
+        run_id = await ready(env, http)
+        ok = await http.post(f"{base(run_id)}/approve", json={
+            "source": "rice", "target": "الأرز", "reviewer_id": "aly", "forbidden_variants": ["الرز", " "]})
+        assert ok.status_code == 200, ok.text
+        assert ok.json()["forbidden_variants"] == ["الرز"]
+        same = await http.post(f"{base(run_id)}/approve", json={
+            "source": "Farmers", "target": "المزارعون", "reviewer_id": "aly",
+            "forbidden_variants": ["المزارعون"]})
+        assert same.status_code == 422  # the approved target cannot be one of its forbidden variants

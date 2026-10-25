@@ -21,6 +21,8 @@ class CheckContext:
     terms: Mapping[str, str] = field(default_factory=dict)     # locked termbase (source -> target)
     entities: Mapping[str, str] = field(default_factory=dict)  # named-entity table (source -> target)
     leak_fingerprints: frozenset[str] = frozenset()            # derived from every prompt template version
+    # approved termbase: renderings a reviewer ruled out for a locked term (source -> variants)
+    forbidden: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 Check = Callable[[CheckContext], list[QAIssue]]

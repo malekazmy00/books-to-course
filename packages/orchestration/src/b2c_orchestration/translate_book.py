@@ -460,8 +460,9 @@ class TranslateBookActivities:
         # Only APPROVED entries: locked terms -> terms, approved names -> entities.
         terms = termbase.locked_terms() if termbase is not None else None
         entities = termbase.entity_table() if termbase is not None else None
+        forbidden = termbase.forbidden_variants() if termbase is not None else None
         return UnitTranslator(engine, estimator=estimator, memory=self.memory, clock=self.clock,
-                              terms=terms, entities=entities, config=PipelineConfig(source_language=inp.source_language,
+                              terms=terms, entities=entities, forbidden=forbidden, config=PipelineConfig(source_language=inp.source_language,
                                                     target_language=inp.target_language))
 
     @activity.defn(name="translate_unit_batch")

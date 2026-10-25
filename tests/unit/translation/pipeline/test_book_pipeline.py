@@ -207,3 +207,12 @@ def test_index_entries_are_kept_verbatim_by_rule():
     engine = FakeEngine([])
     out = translator(engine).translate(unit("hegemony, 12, 45-47", kind="index")).translation
     assert out.origin == "rule" and out.target_text == "hegemony, 12, 45-47" and engine.requests == []
+
+
+def test_forbidden_variants_reach_the_checks():
+    engine = FakeEngine(["أجرِ تحليل ما قبل الفشل أو ما قبل الموت."])
+    t = translator(engine, terms={"Premortem Analysis": "تحليل ما قبل الفشل"},
+                   forbidden={"Premortem Analysis": ("ما قبل الموت",)})
+    out = t.translate(unit("Run a Premortem Analysis.")).translation
+    assert out.decision != "accepted"
+    assert any(i.check_id == "forbidden_variant" for i in out.issues)

@@ -10,7 +10,15 @@ from b2c_contracts import (
 )
 from b2c_pedagogy.srs import build_review_quiz
 
-from b2c_api.serving import S3CourseServingCatalog, learner_question, parse_single_byte_range
+from b2c_api.serving import (
+    S3CourseServingCatalog,
+    learner_course_qa,
+    learner_grounded_question,
+    learner_lesson_assets,
+    learner_question,
+    learner_segments,
+    parse_single_byte_range,
+)
 from b2c_api.srs import PostgresSRSStore
 from fastapi import Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
@@ -109,7 +117,7 @@ def serving_router(ctx: ApiContext, router: Any = None) -> Any:
             "course_id": course.release.course_id,
             "release": course.release.model_dump(mode="json"),
             "outline": course.outline.model_dump(mode="json"),
-            "course_qa": course.qa.model_dump(mode="json"),
+            "course_qa": learner_course_qa(course.qa),
             "audio_lesson_ids": sorted(course.audio_assets),
         }
 
@@ -122,8 +130,8 @@ def serving_router(ctx: ApiContext, router: Any = None) -> Any:
         return {
             "course_id": course_id,
             "lesson": lesson.model_dump(mode="json"),
-            "lesson_assets": asset,
-            "grounded_questions": [item.model_dump(mode="json") for item in scope.items] if scope else [],
+            "lesson_assets": learner_lesson_assets(asset),
+            "grounded_questions": [learner_grounded_question(item) for item in scope.items] if scope else [],
         }
 
     @router.get("/v1/lessons/{lesson_id}/review-quiz")
@@ -149,7 +157,7 @@ def serving_router(ctx: ApiContext, router: Any = None) -> Any:
         asset = course.audio_assets.get(lesson_id)
         if asset is None:
             raise HTTPException(status_code=404, detail="released lesson audio is unavailable")
-        return {"course_id": course_id, "lesson_id": lesson_id, "segments": asset.segments}
+        return {"course_id": course_id, "lesson_id": lesson_id, "segments": learner_segments(asset.segments)}
 
     @router.get("/v1/lessons/{lesson_id}/audio")
     async def stream_lesson_audio(

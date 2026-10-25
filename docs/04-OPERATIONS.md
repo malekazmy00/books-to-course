@@ -29,7 +29,8 @@
 | lightrag | light | 3g | 2 | 1024 | الشغل التقيل بيتعمل عن طريق llm/embed |
 | langfuse (web+worker) + clickhouse + redis + object store | light | 8g | 3 | 1024 | Phase 0 |
 | api + web + workers | mixed | 6g | 4 | 1024 | API 512m/0.5; worker 5g/4 including serial Docling OCR; 512m reserved for web |
-| observability: otel-collector (core) + prometheus + grafana + cadvisor | light | 1.25g | 1.5 | 1024 | 256m + 384m + 384m + 256m. المقاس idle: 17 / 53 / 228 / ~20 MiB anon (Phase 0) |
+| observability: otel-collector (core) + prometheus + grafana + cadvisor | light | 1.25g | 1.4 | 1024 | 256m + 384m + 384m + 256m. المقاس idle: 17 / 53 / 228 / ~20 MiB anon (Phase 0) |
+| alertmanager (اختياري، `ALERTS=1`، تنبيهات تليجرام) | light | 64m | 0.1 | 1024 | أُخذ الـ 0.1 من حصة prometheus (0.5 ← 0.4) ليبقى المجموع 40 معالجًا |
 | **المجموع** | | **83.25g** | | | ≤ 85 ✅ (D-007 بعد التعديل) |
 
 `cpu_shares: 512` معناها إن الخدمة التقيلة بتاخد أولوية أقل من الافتراضي (1024) وقت التنافس، فالمشاريع التانية بتكسب. دي آلية CFS shares الرسمية في Docker.
@@ -136,6 +137,7 @@
 - **Langfuse v4:** بيحتاج ClickHouse وRedis وobject store. نستخدم الـ compose الرسمي بتاع Langfuse، ونضيفله الـ limits من الجدول فوق.
   - **التقاط المحتوى معطّل افتراضيًا (R0، تدقيق 08 H3):** الـ `LLMGateway` لا ينسخ نص الـ prompt أو الـ completion (نص الكتاب) إلى span attributes (`langfuse.observation.input/output`) إلا إذا ضُبط `B2C_LLM_CAPTURE_CONTENT=true` صراحةً، والنقاط البعيدة لا تلتقط أبدًا. سياسة الاحتفاظ في Langfuse للبيانات القديمة لم تُحدَّد بعد.
 - **Prometheus + Grafana:** للـ host والخدمات، مع cAdvisor عشان نشوف استهلاك حاويات b2c بس.
+- **Alertmanager → تليجرام (اختياري):** `make up ALERTS=1`. الصورة `prom/alertmanager:v0.28.1@sha256:27c475db…` (مثبتة). التوكن ورقم المحادثة في `/root/.config/book2course/telegram-bot-token` و`telegram-chat-id` خارج الريبو. القالب `docker/alertmanager/alertmanager.tmpl.yml`؛ لا منفذ منشور، والخروج للإنترنت عبر `b2c_edge` فقط.
 
 ### 6.2 المقاييس والتنبيهات
 | الطبقة | المقاييس | Alert |

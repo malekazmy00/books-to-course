@@ -1,0 +1,22 @@
+# Opt-in alert delivery to Telegram (owner choice 2026-10-25). Enable explicitly:  make up ALERTS=1
+# Secrets stay outside the repository:
+#   /root/.config/book2course/telegram-bot-token   (token from @BotFather)
+#   /root/.config/book2course/telegram-chat-id     (numeric chat id)
+services:
+  alertmanager:
+    cpu_shares: 1024
+    restart: unless-stopped
+    image: prom/alertmanager:v0.28.1@sha256:27c475db5fb156cab31d5c18a4251ac7ed567746a2483ff264516437a39b15ba
+    networks: [b2c_internal, b2c_edge]   # egress to api.telegram.org only through b2c_edge; no published port
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        sed "s/__CHAT_ID__/$$(tr -cd '0-9-' < /run/secrets/telegram_chat_id)/" /etc/alertmanager/alertmanager.tmpl.yml > /tmp/alertmanager.yml
+        && exec /bin/alertmanager --config.file=/tmp/alertmanager.yml --storage.path=/tmp/alertmanager
+    volumes:
+      - ./alertmanager/alertmanager.tmpl.yml:/etc/alertmanager/alertmanager.tmpl.yml:ro
+      - {type: bind, source: "${B2C_TELEGRAM_TOKEN_HOST_FILE:-/root/.config/book2course/telegram-bot-token}", target: /run/secrets/telegram_bot_token, read_only: true, bind: {create_host_path: false}}
+      - {type: bind, source: "${B2C_TELEGRAM_CHAT_HOST_FILE:-/root/.config/book2course/telegram-chat-id}", target: /run/secrets/telegram_chat_id, read_only: true, bind: {create_host_path: false}}
+    mem_limit: 64m
+    cpus: 0.1
+

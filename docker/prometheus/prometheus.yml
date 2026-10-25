@@ -2,6 +2,12 @@ global:
   scrape_interval: 30s
   evaluation_interval: 30s
 
+# Alert delivery: the opt-in alertmanager service (docker/compose.alerts-telegram.yml). Without it,
+# alerts stay visible in Prometheus/Grafana and notification attempts fail harmlessly.
+alerting:
+  alertmanagers:
+    - static_configs: [{targets: ["alertmanager:9093"]}]
+
 rule_files:
   - /etc/prometheus/alerts.yml
 

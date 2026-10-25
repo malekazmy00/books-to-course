@@ -1,0 +1,22 @@
+# Alertmanager → Telegram (opt-in overlay docker/compose.alerts-telegram.yml).
+# __CHAT_ID__ is replaced at container start from /run/secrets/telegram_chat_id; the bot token is
+# read from /run/secrets/telegram_bot_token. Neither lives in the repository.
+route:
+  receiver: telegram
+  group_by: [alertname]
+  group_wait: 1m
+  group_interval: 10m
+  repeat_interval: 6h
+
+receivers:
+  - name: telegram
+    telegram_configs:
+      - bot_token_file: /run/secrets/telegram_bot_token
+        chat_id: __CHAT_ID__
+        parse_mode: HTML
+        send_resolved: true
+        message: |-
+          {{ if eq .Status "firing" }}🔴 تنبيه{{ else }}✅ انتهى{{ end }} — Book2Course
+          {{ range .Alerts }}<b>{{ .Labels.alertname }}</b>
+          {{ .Annotations.summary }}
+          {{ end }}

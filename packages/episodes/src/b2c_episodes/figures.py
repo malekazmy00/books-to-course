@@ -45,11 +45,11 @@ from b2c_contracts import (EpisodeScript, EpisodeSection, FigureDescription,
 
 from .generate import ModelRole, parse_json_object
 
-FIGURE_PROMPT_VERSION = "figure-describe-v1"
+FIGURE_PROMPT_VERSION = "figure-describe-v2"
 FIGURES_VERSION = "figure-descriptions-2026-10-25.1"
 SMALL_TABLE = {"max_rows": 8, "max_columns": 4, "max_cells": 24, "max_words": 160}
 MAX_LINES = 6
-MAX_LINE_WORDS = 45
+MAX_LINE_WORDS = 60
 MAX_DESCRIPTION_WORDS = 160
 PRINTED_FALLBACK_WORDS = 150
 CAPTION_WINDOW = 3          # blocks between a figure and its caption
@@ -69,7 +69,7 @@ Follow the image description guidelines of the DIAGRAM Center (NCAM):
 - Be objective: Do not interpret, judge or add knowledge; describe only what the evidence shows.
 - Describe the data and the relations, not colours or decoration unless they carry meaning.
 - Write out abbreviations and symbols as words.
-Use only numbers and names that appear in the evidence (the label, caption, figure text, table, paragraphs or printed description). Never invent a value, a count, a date or a name. If the figure text is too scrambled to read, describe only what the paragraphs and caption establish.
+Use only numbers and names that appear in the evidence (the label, caption, figure text, table, paragraphs or printed description). Never invent a value, a count, a date or a name. Do not count the parts yourself: do not say "three columns", "four boxes" or "two groups" unless that number is written in the evidence; name the parts instead ("the columns are A, B and C"). If the figure text is too scrambled to read, describe only what the paragraphs and caption establish.
 Return ONLY one JSON object: {{"lines": ["sentence", "..."]}}"""
 
 TABLE_SUMMARY_SYSTEM_NOTE = (" This is a LARGE table that cannot be read row by row: summarise what it lists and "
@@ -352,6 +352,11 @@ NUMBER_WORDS = {"two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7
                 "double": 2, "triple": 3, "half": 2, "third": 3, "quarter": 4, "fourth": 4, "fifth": 5,
                 "sixth": 6, "seventh": 7, "eighth": 8, "ninth": 9, "tenth": 10}
 _ALWAYS_OK = {"figure", "fig", "table", "row", "rows", "column", "columns", "i"}
+# capitalised function and question words (after a colon, a quote or a dash) are not names
+_FUNCTION_WORDS = {"a", "an", "the", "and", "or", "but", "for", "from", "under", "over", "in", "on", "at", "to", "of",
+                   "by", "with", "as", "into", "each", "all", "both", "this", "that", "these", "those", "it", "its",
+                   "their", "then", "next", "finally", "who", "what", "when", "where", "why", "how", "which", "is",
+                   "are", "if", "not", "no", "yes"}
 _NUM = re.compile(r"\d+(?:[.,]\d+)*")
 
 
@@ -382,10 +387,11 @@ def check_figure_grounding(lines: Sequence[str], evidence: str) -> FigureGroundi
             if w.lower() not in ev_words and str(value) not in ev_numbers:
                 bad(w.lower())
         for sentence in re.split(r"(?<=[.!?;:])\s+|\s+[-–—]\s+", line):
-            tokens = re.findall(r"[A-Za-z][A-Za-z'’\-]*", sentence)
+            tokens = re.findall(r"[A-Za-z][A-Za-z0-9'’\-]*", sentence)
             for i, tok in enumerate(tokens):
-                word = re.sub(r"['’]s$", "", tok)
-                if not word[0].isupper() or word.lower() in _ALWAYS_OK or word.lower() in NUMBER_WORDS:
+                word = re.sub(r"['’]s?$", "", tok)
+                if not word or not word[0].isupper() or word.lower() in _ALWAYS_OK or word.lower() in NUMBER_WORDS \
+                        or word.lower() in _FUNCTION_WORDS:
                     continue
                 first = i == 0
                 multi = i + 1 < len(tokens) and tokens[i + 1][0].isupper()
@@ -499,7 +505,8 @@ def describe_figure(fig: FigureCandidate, *, generator: ModelRole | None, image:
             report["gate_failures"] += 1
             report.setdefault("ungrounded", []).append(grounding.ungrounded)
             feedback = ("Your previous answer named things that are not in the evidence: "
-                        + ", ".join(grounding.ungrounded) + ". Remove them; use only the evidence.")
+                        + ", ".join(grounding.ungrounded) + ". Remove them; use only the evidence. Do not count "
+                        "parts yourself; name them instead.")
     lines = list(head)
     if fig.printed and len(fig.printed[0].text.split()) <= PRINTED_FALLBACK_WORDS:
         lines.append("The book describes it as follows: " + _sentence(fig.printed[0].text) + ".")

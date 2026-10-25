@@ -183,3 +183,17 @@ def test_model_failure_falls_back_without_stopping():
 def test_unlabelled_figures_with_little_text_are_decorative(text):
     figures, skipped = collect_figures([fb(1, "figure", text, 10)], book_id=B)
     assert not figures and skipped[0].reason == "decorative"
+
+
+def test_grounding_tokens_keep_digits_and_ignore_capitalised_function_words():
+    evidence = "Hypotheses H1 and H2 are tested. Who? Where?"
+    ok = check_figure_grounding(['The labels read "Who" and "Where": For each hypothesis, H1 and H2 are compared.'],
+                                evidence)
+    assert ok.passed, ok.ungrounded
+    bad = check_figure_grounding(["It compares H1 with H3."], evidence)
+    assert bad.ungrounded == ["3", "H3"]
+
+
+def test_the_prompt_forbids_counting_parts_that_the_evidence_does_not_count():
+    from b2c_episodes.figures import FIGURE_SYSTEM
+    assert "Do not count the parts yourself" in FIGURE_SYSTEM

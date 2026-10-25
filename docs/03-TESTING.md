@@ -161,6 +161,7 @@ T-TR-01 يخص مدخلات `locked` (والكيانات المقفولة)؛ م�
 | T-FIG-06 | الكلام: الوصف المقبول يُقرأ بعد وحدته معلنًا ومختومًا بصوت الكورس، وغير المقبول لا يُقرأ — `tests/unit/speech/test_speech_figures.py` | بوابة `speech.text-frontend` ناجحة |
 | T-FIG-07 | الحلقة: قسم `figure_reading` يقسم نص الكتاب بعد وحدة الإشارة، ويُترجم مع الأسطر، ويُقرأ معلنًا — `tests/unit/episodes/test_episode_figures.py` | 100% |
 | T-FIG-08 | activities: الإنجليزية مرشح ببوابة `figures.grounding`، والعربية عبر `UnitTranslator` ببوابة `figures.translation`، والكلام يقرأ الوثيقة المقبولة — `tests/unit/orchestration/test_figure_activities.py` | 100% |
+| T-FIG-09 | عدّ عناصر الشكل بالكود (D-049): الأسئلة، والتسميات المرقّمة أو المرتّبة بالحروف بلا فجوة، ومفاتيح الرموز، والأرباع حين يسمّي الدليل مصفوفة 2×2، وصفوف الجدول وأعمدته المسماة ومجموعات صفوفه؛ لا عدد للنص المشوّش؛ العدد يدخل الدليل فتقبله البوابة، وأي عدد غيره يُرفض — `tests/unit/episodes/test_figure_counts.py` | 100% |
 
 ### L8 Speech
 | ID | الاختبار | معيار النجاح |

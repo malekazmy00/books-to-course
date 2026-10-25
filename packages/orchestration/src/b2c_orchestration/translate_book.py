@@ -572,8 +572,11 @@ ASSEMBLE_OPTIONS: dict[str, Any] = dict(start_to_close_timeout=timedelta(minutes
                                         heartbeat_timeout=LONG_ACTIVITY_HEARTBEAT_TIMEOUT, retry_policy=_retry(3))
 
 
-TERMBASE_OPTIONS: dict[str, Any] = dict(start_to_close_timeout=timedelta(hours=1),
-                                        schedule_to_close_timeout=timedelta(hours=3),
+# Proposing an Arabic equivalent is one model call per candidate (≈1100 for a 400-page book at
+# ≈6 s each on CPU, shared with other runs): a 1 h attempt failed the Gramsci run on 2026-10-25.
+# Retries reuse the gateway's cached proposals, so a retry continues rather than restarts.
+TERMBASE_OPTIONS: dict[str, Any] = dict(start_to_close_timeout=timedelta(hours=8),
+                                        schedule_to_close_timeout=timedelta(hours=24),
                                         heartbeat_timeout=LONG_ACTIVITY_HEARTBEAT_TIMEOUT, retry_policy=_retry(3))
 CHECK_TERMBASE_OPTIONS: dict[str, Any] = dict(start_to_close_timeout=timedelta(minutes=10),
                                               schedule_to_close_timeout=timedelta(minutes=30),

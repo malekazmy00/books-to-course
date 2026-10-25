@@ -37,6 +37,7 @@
 | D-028 | Translation rebuild: source-only engine input, rule-based references, sentence units, footnotes restored by code, locked termbase, deterministic + semantic QA, explicit acceptance, human review queue, TM; model choice deferred | Accepted 2026-10-24 (owner); see docs/proposals/2026-10-24-translation-rebuild.md |
 | D-029 | واجهات النماذج الخارجية مسموحة **أثناء التطوير** لإثبات فكرة بسرعة بدل النموذج المحلي البطيء، حتى على نص الكتب الحقيقية، بقرار المالك. التشغيل الإنتاجي يبقى محليًا افتراضيًا. الإرسال السابق إلى OpenRouter/DeepSeek تم بقرار المالك، وتُحفظ سجلاته ولا تُحذف | Accepted 2026-10-24 (owner) |
 | D-030 | الـ API متاح داخل الـ tailnet فقط (Tailscale Serve)، ولا نشر عام (Funnel مُغلق منذ 2026-10-24)؛ والتوثيق برمز إلزامي افتراضيًا | Accepted 2026-10-24 (owner) |
+| D-031 | قاموس الكتابين يُعتمد **مؤقتًا** بإيجنت ذكاء اصطناعي بدل مراجع بشري، بمعرّف مراجع `ai-provisional-*` يميّزه، ويُعاد مراجعته بشريًا لاحقًا؛ Gate G3 لا تُعدّ مجتازة بهذا الاعتماد. الفاحص الدلالي أثناء التطوير: DeepSeek عبر OpenRouter (`deepseek-mqm`، D-029)، والمحرك Gemma 4 محليًا | Accepted 2026-10-25 (owner) |
 
 ---
 

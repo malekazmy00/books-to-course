@@ -13,7 +13,8 @@
       "max_source_chars": 1200,
       "max_output_tokens": 2048,
       "timeout_s": 900,
-      "reasoning_effort": "none"
+      "reasoning_effort": "none",
+      "propose_terms": true
     }
   ],
   "qe": [
@@ -29,6 +30,22 @@
       "max_major": 0,
       "max_tokens": 1024,
       "timeout_s": 900,
+      "reasoning_effort": "none"
+    },
+    {
+      "id": "deepseek-mqm",
+      "kind": "llm_judge",
+      "provider": "openrouter",
+      "base_url": "https://openrouter.ai/api/v1",
+      "model_id": "deepseek/deepseek-v4-flash-0731",
+      "revision": null,
+      "allow_remote": true,
+      "api_key_file": "/run/secrets/openrouter_api_key",
+      "prompt_version": "qe-mqm-v1",
+      "max_critical": 0,
+      "max_major": 0,
+      "max_tokens": 1024,
+      "timeout_s": 300,
       "reasoning_effort": "none"
     }
   ]

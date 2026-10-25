@@ -1,0 +1,12 @@
+# Opt-in external semantic QE for development (D-029): the worker may call OpenRouter for the
+# QE profile `deepseek-mqm` (docker/translation-profiles.json). Translation stays local (Gemma 4).
+# Enable explicitly:  make up EXTERNAL_QE=1 PROFILES=gemma4
+services:
+  worker:
+    networks: [b2c_internal, b2c_edge]
+    volumes:
+      - type: bind
+        source: ${B2C_OPENROUTER_KEY_HOST_FILE:-/root/.config/book2course/openrouter-api-key}
+        target: /run/secrets/openrouter_api_key
+        read_only: true
+        bind: {create_host_path: false}

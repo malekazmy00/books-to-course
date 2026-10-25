@@ -10,10 +10,12 @@ export PATH := $(HOME)/.local/bin:$(PATH)
 # EXTERNAL=1 adds the opt-in OpenRouter generation route (D-022); never on by default (rule 6).
 PROFILES ?= local-llm
 EXTERNAL ?= 0
+EXTERNAL_QE ?= 0   # D-029: external semantic QE (OpenRouter) for development
 ALL_PROFILES := local-llm gemma4 gemma4-booktrans speech hy-translation surya mock
 COMPOSE_FILES := -f docker/compose.yml -f docker/compose.observability.yml -f docker/compose.qa-local.yml \
 	-f docker/compose.speech.yml -f docker/compose.hy-translation.yml -f docker/compose.gemma4.yml \
-	$(if $(filter 1,$(EXTERNAL)),-f docker/compose.external-generation.yml)
+	$(if $(filter 1,$(EXTERNAL)),-f docker/compose.external-generation.yml) \
+	$(if $(filter 1,$(EXTERNAL_QE)),-f docker/compose.external-qe.yml)
 COMPOSE_BASE := docker compose -p b2c --env-file .env $(COMPOSE_FILES)
 COMPOSE := $(COMPOSE_BASE) $(foreach p,$(PROFILES),--profile $(p))
 PYTEST  := uv run pytest

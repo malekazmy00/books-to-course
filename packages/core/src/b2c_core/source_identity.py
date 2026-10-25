@@ -30,7 +30,7 @@ def artifact_source_identity(store: Any, ref: ArtifactRef) -> dict[str, Any]:
         if current.uri in seen:
             raise ValueError("cyclic source artifact lineage")
         seen.add(current.uri)
-        if current.stage == "ingest-parse-pdf":
+        if current.stage in ("ingest-parse-pdf", "ingest-parse-v2"):  # v2 stores the v1 projection too
             parsed = ParsedBook.model_validate_json(store.read(current, "parsed-book.json"))
             identity = parsed_source_identity(parsed, current)
             if identity["source_file_sha256"] is None and getattr(store, "s3", None) and getattr(store, "bucket", None):

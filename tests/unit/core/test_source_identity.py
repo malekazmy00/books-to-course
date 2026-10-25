@@ -33,6 +33,16 @@ def test_translation_resolves_exact_input_chain_not_book_alias():
     assert identity["source_file_sha256"] == "a"*64
     assert identity["source_parsed_sha256"] == parsed_ref.sha256
 
+def test_ingest_v2_parsed_artifacts_resolve_like_v1_ones():
+    # R4: an outline approved from an ingest v2 run resolves to the v1 projection stored beside v2
+    parsed_ref = ref("ingest-parse-v2", "b" * 64)
+    approved_ref = ref("approve-outline", "c" * 64)
+    store = Store({(parsed_ref.uri, "parsed-book.json"): book("a" * 64).model_dump_json().encode(),
+                   (approved_ref.uri, "approved-outline.json"): json.dumps(
+                       {"spine_parsed_ref": parsed_ref.model_dump(mode="json")}).encode()})
+    identity = artifact_source_identity(store, approved_ref)
+    assert identity["source_file_sha256"] == "a" * 64 and identity["source_parsed_ref"]["stage"] == "ingest-parse-v2"
+
 def test_legacy_source_never_claims_verified_pdf_hash():
     identity = parsed_source_identity(book(),ref("ingest-parse-pdf","b"*64))
     assert identity["source_file_sha256"] is None

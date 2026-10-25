@@ -18,11 +18,16 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from b2c_contracts import ArtifactRef, GateResult, ProducerIdentity, StageOutputRecord
+from b2c_contracts import ArtifactRef, GateResult, OutlineQualityReport, ProducerIdentity, StageOutputRecord
 from b2c_core import get_logger
 from b2c_core.revision import code_revision as running_code_revision
 from b2c_core.revision import is_clean_revision
 from b2c_core.stage_registry import StageOutputRegistry, TransitionRefused
+from b2c_outline.v2.gate import GATE_DEFINITION as OUTLINE_GATE_DEFINITION
+from b2c_outline.v2.gate import GATE_ID as OUTLINE_GATE_ID
+from b2c_outline.v2.gate import CROSS_CHECK_DEFINITION as OUTLINE_CROSS_CHECK_DEFINITION
+from b2c_outline.v2.gate import CROSS_CHECK_ID as OUTLINE_CROSS_CHECK_ID
+from b2c_outline.v2.gate import CrossCheckResult
 
 log = get_logger("b2c.promotion")
 SYSTEM_ACTOR = "system:promotion"
@@ -64,6 +69,22 @@ def evaluate_translation_assembly(counts: Mapping[str, int], *, total_units: int
               and metrics["needs_review"] <= rule["max_needs_review"] and metrics["rejected"] <= rule["max_rejected"]
               and metrics["pending"] <= rule["max_pending"])
     return passed, metrics
+
+
+# Outline v2 (R4). There is no human reviewer in this product (owner decision 2026-10-25): an outline is
+# accepted when the deterministic structure gate passes AND an independent automated cross-check of the
+# chosen structure against the other sources (printed TOC, layout headings) passes. Both are system
+# decisions; disagreement between sources is a recorded flag, only lost coverage rejects.
+OUTLINE_STRUCTURE_POLICY = GatePolicy(gate_id=OUTLINE_GATE_ID, kind="deterministic",
+                                      definition=OUTLINE_GATE_DEFINITION)
+OUTLINE_CROSS_CHECK_POLICY = GatePolicy(gate_id=OUTLINE_CROSS_CHECK_ID, kind="deterministic",
+                                        definition=OUTLINE_CROSS_CHECK_DEFINITION)
+OUTLINE_REQUIRED_GATES = (OUTLINE_STRUCTURE_POLICY.gate_id, OUTLINE_CROSS_CHECK_POLICY.gate_id)
+
+
+def _gate_metrics(report: OutlineQualityReport) -> dict[str, Any]:
+    numbers = {k: v for k, v in report.metrics.items() if isinstance(v, (int, float)) and not isinstance(v, bool)}
+    return {**numbers, "failed_checks": report.failed, "reference": report.reference}
 
 
 def _now() -> datetime:
@@ -157,6 +178,33 @@ class PromotionService:
             decider="system", decided_by=f"policy:{policy.gate_id}", decided_at=self.clock()))
         return self.settle(course_id, artifact)
 
+    def gate_outline(self, course_id: str, artifact: ArtifactRef, *, parsed_ref: ArtifactRef,
+                     report: OutlineQualityReport, cross_check: CrossCheckResult,
+                     config: Mapping[str, Any] | None = None,
+                     identities: Iterable[ProducerIdentity] = ()) -> StageOutputRecord:
+        """Candidate -> structure gate + independent cross-check (both system) -> accepted | rejected.
 
-__all__ = ["GatePolicy", "NotAccepted", "PromotionService", "TRANSLATION_ASSEMBLY_POLICY", "TransitionRefused",
+        No human acts on outlines (owner decision 2026-10-25). A cross-check that finds the sources
+        disagreeing still passes, with its flags and reason recorded in the GateResult metrics."""
+        record = self.record_candidate(course_id, artifact, required_gates=list(OUTLINE_REQUIRED_GATES),
+                                       inputs=[parsed_ref], config=config, identities=identities)
+        if record.status != "candidate":
+            return record
+        latest = record.latest_gate_results()
+        decisions = (
+            (OUTLINE_STRUCTURE_POLICY, report.accepted, _gate_metrics(report), "outline-quality.json"),
+            (OUTLINE_CROSS_CHECK_POLICY, cross_check.passed,
+             {**{k: v for k, v in cross_check.metrics.items() if not isinstance(v, (dict, list)) or k == "precedence"},
+              "flags": list(cross_check.flags), "reason": cross_check.reason}, "outline-crosscheck.json"),
+        )
+        for policy, passed, metrics, evidence in decisions:
+            if policy.gate_id not in latest:
+                self.attach_gate(course_id, GateResult(
+                    stage=artifact.stage, artifact=artifact, gate_id=policy.gate_id, gate_version=policy.version,
+                    kind=policy.kind, passed=passed, metrics=metrics, evidence_ref=artifact.uri + evidence,
+                    decider="system", decided_by=f"policy:{policy.gate_id}", decided_at=self.clock()))
+        return self.settle(course_id, artifact)
+
+
+__all__ = ["GatePolicy", "OUTLINE_CROSS_CHECK_POLICY", "OUTLINE_REQUIRED_GATES", "OUTLINE_STRUCTURE_POLICY", "NotAccepted", "PromotionService", "TRANSLATION_ASSEMBLY_POLICY", "TransitionRefused",
            "evaluate_translation_assembly"]

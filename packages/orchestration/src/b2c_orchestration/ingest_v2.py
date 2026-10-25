@@ -8,9 +8,10 @@ content carries the book_id):
 * ``ingest-text-layer``   text-layer.json            the PDF text layer, labels, bookmarks
 * ``ingest-layout-batch`` layout/pages-AAAA-BBBB.json DoclingDocument export, all layers (one
                                                       activity and artifact per batch = checkpoint)
-* ``ingest-parse-v2``     parsed-book-v2.json, parsed-book.json (v1 projection for the outline
-                          and translation stages that have not migrated), ingest-quality.json,
-                          ingest-source.json
+* ``ingest-parse-v2``     parsed-book-v2.json, parsed-book.json (v1 projection for the stages
+                          that have not migrated), ingest-quality.json, ingest-source.json
+* ``build-outline-v2``    the outline v2 candidate (``outline_v2_from_parsed_book``, R4; histories
+                          started before the ``outline-v2-activity-v1`` patch call the v1 outline)
 
 Gate: when ``IngestQualityReport.accepted`` is False the workflow stops with
 ``status="needs_review"`` and does not build an outline; nothing is passed on silently.
@@ -45,6 +46,7 @@ with workflow.unsafe.imports_passed_through():
     from .controls import execute_checkpointed, wait_for_activity_checkpoint
     from .heartbeat import LONG_ACTIVITY_HEARTBEAT_TIMEOUT, activity_heartbeats
     from .ingest import BuildOutlineInput
+    from .outline_v2 import OUTLINE_V2_ACTIVITY, OUTLINE_V2_PATCH, BuildOutlineV2Input
     from .queues import HEAVY
     from .retry import DEFAULT_RETRY
 
@@ -247,8 +249,16 @@ class IngestPDFV2Workflow:
             return {"parsed_book": parsed, "outline": None, "status": "needs_review"}
         if inp.upload.get("role") != "spine":
             return {"parsed_book": parsed, "outline": None, "status": "accepted"}
-        outline = await execute_checkpointed(
-            self, "outline_from_parsed_book",
-            BuildOutlineInput(inp.course_id, parsed["ref"], inp.supplementary_book_ids, inp.cache_bust),
-            start_to_close_timeout=timedelta(hours=12), **heavy)
+        if workflow.patched(OUTLINE_V2_PATCH):
+            # R4: the outline is built from ParsedBook v2 and promoted automatically by its structure
+            # gate + independent cross-check (outline_v2.py). Histories started before keep the v1 call.
+            outline = await execute_checkpointed(
+                self, OUTLINE_V2_ACTIVITY,
+                BuildOutlineV2Input(inp.course_id, parsed["ref"], inp.supplementary_book_ids, inp.cache_bust),
+                start_to_close_timeout=timedelta(hours=1), **heavy)
+        else:
+            outline = await execute_checkpointed(
+                self, "outline_from_parsed_book",
+                BuildOutlineInput(inp.course_id, parsed["ref"], inp.supplementary_book_ids, inp.cache_bust),
+                start_to_close_timeout=timedelta(hours=12), **heavy)
         return {"parsed_book": parsed, "outline": outline, "status": "accepted"}

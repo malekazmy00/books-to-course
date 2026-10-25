@@ -99,6 +99,14 @@
 - الخيوط: `B2C_DOCLING_THREADS` (افتراضي 8) يجب أن يبقى أقل من `cpus` لخدمة الـ worker (§5.1). المقيس على هذا الخادم: 4–7 ثوانٍ للصفحة بـ 8 خيوط.
 - البوابة: إذا كان `ingest-quality.json` غير مقبول ينتهي الـ workflow بـ `status=needs_review` ولا يبني مخططًا. الكتب العربية (`ocr_language=ar`) ترفض في v2 وتبقى على المسار القديم.
 
+### 5.3 مفتاح المخطط v2 (R4، 2026-10-25)
+مُوصَل لكنه **غير منشور** (لم يُعَد بناء أي صورة ولم يُعَد تشغيل أي worker).
+- النشاط: `outline_v2_from_parsed_book` (`b2c_orchestration.outline_v2`، queue `heavy`، مهلة ساعة). يقرأ `parsed-book-v2.json` من artifact `ingest-parse-v2` ويكتب artifact `build-outline-v2` فيه `course-outline-v2.json` و`course-outline.json` (إسقاط v1 لنفس معرّفات `parsed-book.json`) و`outline-quality.json` و`outline-crosscheck.json` و`source-identity.json`.
+- الـ workflow: `IngestPDFV2Workflow` يستدعيه خلف `workflow.patched("outline-v2-activity-v1")`؛ التواريخ التي بدأت قبل التصحيح تستدعي `outline_from_parsed_book` (v1) كما كانت. `IngestPDFWorkflow` لم يتغير.
+- القبول آلي بالكامل (قرار المالك 2026-10-25: لا مراجع بشري): خدمة الترقية (R1) تسجل المخرج `candidate` ببوابتين مطلوبتين نظاميتين، `outline-v2.structure` و`outline-v2.cross-check`، ثم تقرر `accepted` أو `rejected` بسبب. يشترط القبول أيضًا `B2C_GIT_REVISION` نظيفًا للـ worker (P8)، وإلا يبقى `candidate`.
+- التسليم للفهرسة: `POST /v1/ingestions/{id}/outline/approve-system` (أو `/approve`) لمخطط v2 لا يقرر شيئًا ولا يحتاج `B2C_ALLOW_SYSTEM_OUTLINE_APPROVAL`: يكتب `approved-outline.json` (مفتاح محتوى ثابت) ويبدأ الفهرسة فقط إن كان المخرج `accepted` وكان المخطط مطابقًا تمامًا لما بُني. مخططات v1 تبقى على سلوك R0 (الاعتماد الآلي القديم معطّل افتراضيًا).
+- التفعيل: نشر worker وAPI من هذا الفرع، ثم بدء `IngestPDFV2Workflow` لكتاب جديد (§5.2).
+
 ## 6. المراقبة (Observability)
 
 ### 6.1 الأدوات

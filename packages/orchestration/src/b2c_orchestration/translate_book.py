@@ -13,6 +13,9 @@ A new workflow type with new activity names, registered beside the old
     translate_unit_batch  x N   one bounded batch of units; each unit result is upserted into
                                 Postgres as soon as it is decided (a crash loses at most one unit)
     assemble_translation        accepted/dropped text per block -> artifact (stage "translate-book")
+    build_translator_notes      every unit not accepted -> a translator note in place (stage
+                                "translator-notes", D-040); gate ``translator-notes.coverage`` proves
+                                each unit is accepted, dropped or annotated
 
 Durable state is the ``translation_unit_results`` table (``translation_store``), not JSON under
 ``_system/`` (audit 08 §2.2). Artifacts stay immutable: an assembly is keyed by the digest of
@@ -34,11 +37,12 @@ from temporalio.common import RetryPolicy
 from temporalio.exceptions import ApplicationError
 
 with workflow.unsafe.imports_passed_through():
-    from b2c_contracts import (ArtifactRef, ParsedBook, ProducerIdentity, QAIssue, TranslationUnit, UnitTranslation,
-                               stage_key)
+    from b2c_contracts import (ArtifactRef, ParsedBook, ProducerIdentity, QAIssue, TranslationUnit,
+                               TranslatorNotesDocument, UnitTranslation, stage_key)
     from b2c_llm_gateway import InvalidLLMOutput, LLMOutputTruncated, LLMRequestRejected
     from b2c_translation.book_pipeline import Draft, PipelineConfig, UnitResult, UnitTranslator, assemble_blocks
     from b2c_translation.glossary import ContextualGlossary
+    from b2c_translation.notes import NOTES_BUILDER_VERSION, build_translator_notes
     from b2c_translation.qa.estimators import NotConfigured
     from b2c_translation.termbase import (BookTermbase, GlossarySource, MemoryTermSource, PriorTermbaseSource,
                                           TermbaseError, TransliterationSource)
@@ -56,6 +60,8 @@ with workflow.unsafe.imports_passed_through():
 PARSED_STAGE = "ingest-parse-pdf"
 UNITS_STAGE = "translation-units"
 ASSEMBLY_STAGE = "translate-book"
+NOTES_STAGE = "translator-notes"
+NOTES_PATCH = "translator-notes-v1"
 TERMBASE_STAGE = "book-termbase"
 TERMBASE_APPROVED_STAGE = "book-termbase-approved"
 TERMBASE_STAGE_VERSION = "book-termbase-2026-10-24.1"
@@ -195,6 +201,14 @@ class AssemblyResult(BaseModel):
     # Registry status of the assembly (R1): accepted only when every unit has a publishable
     # decision. None when the worker has no registry (results of older histories also lack it).
     status: str | None = None
+
+
+class TranslatorNotesResult(BaseModel):
+    artifact: dict[str, Any]
+    counts: dict[str, int]  # the coverage gate metrics (recomputed from the stored results)
+    results_digest: str
+    cache_hit: bool
+    status: str | None = None  # registry status; None when the worker has no registry
 
 
 # ------------------------------------------------------------------ identities
@@ -568,6 +582,45 @@ class TranslateBookActivities:
         return result
 
 
+    # .............................................................. translator notes (D-040)
+    @activity.defn(name="build_translator_notes")
+    def translator_notes(self, inp: AssembleTranslationInput) -> TranslatorNotesResult:
+        """Every unit that is not accepted/dropped becomes a translator note in place. The coverage
+        gate is recomputed from the stored decisions, so a unit cannot be lost silently."""
+        from .promotion import evaluate_translator_notes
+
+        ref = _scoped_ref(inp.units_ref, bucket=self.artifact_store.bucket, course_id=inp.course_id,
+                          stage=UNITS_STAGE)
+        with activity_heartbeats("build_translator_notes"):
+            units = self.units_cache.get(self.artifact_store, ref)
+            known = {u.unit_id for u in units}
+            stored = [r for r in self.result_store.fetch_run(inp.run_id) if r.unit_id in known]
+            translations = {r.unit_id: r.translation for r in stored}
+            drafts = {r.unit_id: r.drafts for r in stored}
+            digest = translation_results_digest(translations)
+            key = stage_key(NOTES_STAGE, NOTES_BUILDER_VERSION, [ref.sha256, digest], {"run_id": inp.run_id})
+
+            def compute() -> dict[str, bytes]:
+                doc = build_translator_notes(units, translations, drafts, run_id=inp.run_id, units_ref=ref,
+                                             results_digest=digest)
+                return {"translator-notes.json": doc.model_dump_json(indent=1).encode("utf-8")}
+
+            out_ref, cache_hit = self.artifact_store.get_or_compute(inp.course_id, NOTES_STAGE, key, compute)
+            noted = [n.unit_id for n in TranslatorNotesDocument.model_validate_json(
+                self.artifact_store.read(out_ref, "translator-notes.json")).notes]
+            decisions = {u.unit_id: (translations[u.unit_id].decision if u.unit_id in translations else None)
+                         for u in units}
+            _, metrics = evaluate_translator_notes(decisions, noted)
+            status = None
+            if self.promotion is not None:
+                status = self.promotion.gate_translator_notes(
+                    inp.course_id, out_ref, units_ref=ref, decisions=decisions, noted=noted,
+                    config={"run_id": inp.run_id, "builder_version": NOTES_BUILDER_VERSION,
+                            "results_digest": digest}).status
+        return TranslatorNotesResult(artifact=out_ref.model_dump(mode="json"), counts=metrics,
+                                     results_digest=digest, cache_hit=cache_hit, status=status)
+
+
 # ------------------------------------------------------------------ workflows
 def _retry(maximum_attempts: int) -> RetryPolicy:
     return RetryPolicy(initial_interval=timedelta(seconds=10), backoff_coefficient=2.0,
@@ -585,6 +638,8 @@ ASSEMBLE_OPTIONS: dict[str, Any] = dict(start_to_close_timeout=timedelta(minutes
                                         schedule_to_close_timeout=timedelta(hours=2),
                                         heartbeat_timeout=LONG_ACTIVITY_HEARTBEAT_TIMEOUT, retry_policy=_retry(3))
 
+NOTES_OPTIONS: dict[str, Any] = ASSEMBLE_OPTIONS
+
 
 # Proposing an Arabic equivalent is one model call per candidate (≈1100 for a 400-page book at
 # ≈6 s each on CPU, shared with other runs): a 1 h attempt failed the Gramsci run on 2026-10-25.
@@ -600,6 +655,14 @@ CHECK_TERMBASE_OPTIONS: dict[str, Any] = dict(start_to_close_timeout=timedelta(m
 class TermbaseApproval(BaseModel):
     """Payload of the ``termbase_approved`` signal: the reviewer who finished the review."""
     reviewer_id: str = Field(pattern=r"^[A-Za-z0-9._@-]{1,120}$")
+
+
+async def _translator_notes(inp: AssembleTranslationInput) -> TranslatorNotesResult | None:
+    """The notes step (D-040). Patched: histories recorded before it replay without it."""
+    if not workflow.patched(NOTES_PATCH):
+        return None
+    return await workflow.execute_activity("build_translator_notes", inp, result_type=TranslatorNotesResult,
+                                           **NOTES_OPTIONS)
 
 
 @workflow.defn(name="TranslateBookWorkflow")
@@ -674,12 +737,15 @@ class TranslateBookWorkflow:
             "assemble_translation",
             AssembleTranslationInput(run_id=run_id, course_id=inp.course_id, units_ref=prepared.units_ref),
             result_type=AssemblyResult, **ASSEMBLE_OPTIONS)
+        notes = await _translator_notes(AssembleTranslationInput(run_id=run_id, course_id=inp.course_id,
+                                                                 units_ref=prepared.units_ref))
         return {"run_id": run_id, "units_ref": prepared.units_ref, "unit_count": len(ids),
                 "translated": totals["translated"], "skipped": totals["skipped"],
                 "assembly": assembled.model_dump(mode="json"),
                 "termbase": None if gate is None else {"digest": gate.digest, "approved_ref": gate.snapshot,
                                                        "locked_terms": gate.locked_terms,
-                                                       "entities": gate.entities}}
+                                                       "entities": gate.entities},
+                **({} if notes is None else {"translator_notes": notes.model_dump(mode="json")})}
 
 
 @workflow.defn(name="AssembleBookTranslationWorkflow")
@@ -690,10 +756,12 @@ class AssembleBookTranslationWorkflow:
     async def run(self, inp: AssembleTranslationInput) -> dict[str, Any]:
         assembled: AssemblyResult = await workflow.execute_activity(
             "assemble_translation", inp, result_type=AssemblyResult, **ASSEMBLE_OPTIONS)
-        return {"run_id": inp.run_id, "assembly": assembled.model_dump(mode="json")}
+        notes = await _translator_notes(inp)
+        return {"run_id": inp.run_id, "assembly": assembled.model_dump(mode="json"),
+                **({} if notes is None else {"translator_notes": notes.model_dump(mode="json")})}
 
 
-__all__ = ["ASSEMBLY_STAGE", "AssembleBookTranslationWorkflow", "AssembleTranslationInput", "AssemblyResult",
+__all__ = ["ASSEMBLY_STAGE", "NOTES_PATCH", "NOTES_STAGE", "TranslatorNotesResult", "AssembleBookTranslationWorkflow", "AssembleTranslationInput", "AssemblyResult",
            "BatchOutcome", "BuildTermbaseInput", "CheckTermbaseInput", "PrepareUnitsInput", "PreparedUnits", "TranslateBookActivities", "TranslateBookInput",
            "TERMBASE_APPROVED_STAGE", "TERMBASE_PATCH", "TERMBASE_QUERY", "TERMBASE_SIGNAL", "TERMBASE_STAGE",
            "TermbaseApproval", "TermbaseBuild", "TermbaseGate",

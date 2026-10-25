@@ -61,6 +61,39 @@ TRANSLATION_ASSEMBLY_POLICY = GatePolicy(
                 "max_pending": 0, "min_units": 1, "all_units_decided": True})
 
 
+# Translator notes (D-040): no unit is lost silently. Every unit of the book is accepted, dropped,
+# or carries a translator note; recomputed from the stored unit decisions, not from the notes document.
+TRANSLATOR_NOTES_POLICY = GatePolicy(
+    gate_id="translator-notes.coverage", kind="deterministic",
+    definition={"publishable_decisions": ["accepted", "dropped"], "annotated_decisions": ["needs_review", "rejected"],
+                "max_unannotated": 0, "max_pending": 0, "max_spurious_notes": 0, "min_units": 1,
+                "source": "translation_unit_results"})
+
+
+def evaluate_translator_notes(decisions: Mapping[str, str | None],
+                              noted: Iterable[str]) -> tuple[bool, dict[str, int]]:
+    """``decisions``: every unit id of the book -> its stored decision (None = no result yet)."""
+    rule = TRANSLATOR_NOTES_POLICY.definition
+    noted_ids = set(noted)
+    metrics = {"total_units": len(decisions), "accepted": 0, "dropped": 0, "annotated": 0, "unannotated": 0,
+               "pending": 0, "spurious_notes": len(noted_ids - set(decisions))}
+    for unit_id, decision in decisions.items():
+        if decision is None:
+            metrics["pending"] += 1
+            metrics["spurious_notes"] += unit_id in noted_ids
+        elif decision in rule["publishable_decisions"]:
+            metrics[decision] += 1
+            metrics["spurious_notes"] += unit_id in noted_ids
+        elif unit_id in noted_ids:
+            metrics["annotated"] += 1
+        else:
+            metrics["unannotated"] += 1
+    passed = (metrics["total_units"] >= rule["min_units"] and metrics["unannotated"] <= rule["max_unannotated"]
+              and metrics["pending"] <= rule["max_pending"]
+              and metrics["spurious_notes"] <= rule["max_spurious_notes"])
+    return passed, metrics
+
+
 # Index build (R5, audit 03 §5.4): the deterministic content gate of b2c_indexing.index_build.
 # Its check list lives in the report; the policy pins the report and chunker versions, so a
 # changed gate cannot reuse an old policy version.
@@ -194,6 +227,22 @@ class PromotionService:
             decider="system", decided_by=f"policy:{policy.gate_id}", decided_at=self.clock()))
         return self.settle(course_id, artifact)
 
+    def gate_translator_notes(self, course_id: str, artifact: ArtifactRef, *, units_ref: ArtifactRef,
+                              decisions: Mapping[str, str | None], noted: Iterable[str],
+                              config: Mapping[str, Any] | None = None) -> StageOutputRecord:
+        """Candidate -> coverage gate -> accepted | rejected, for one translator-notes artifact."""
+        policy = TRANSLATOR_NOTES_POLICY
+        record = self.record_candidate(course_id, artifact, required_gates=[policy.gate_id], inputs=[units_ref],
+                                       config=config)
+        if record.status != "candidate":
+            return record
+        passed, metrics = evaluate_translator_notes(decisions, noted)
+        self.attach_gate(course_id, GateResult(
+            stage=artifact.stage, artifact=artifact, gate_id=policy.gate_id, gate_version=policy.version,
+            kind=policy.kind, passed=passed, metrics=metrics, evidence_ref=artifact.uri + "translator-notes.json",
+            decider="system", decided_by=f"policy:{policy.gate_id}", decided_at=self.clock()))
+        return self.settle(course_id, artifact)
+
     def gate_outline(self, course_id: str, artifact: ArtifactRef, *, parsed_ref: ArtifactRef,
                      report: OutlineQualityReport, cross_check: CrossCheckResult,
                      config: Mapping[str, Any] | None = None,
@@ -242,5 +291,6 @@ class PromotionService:
 
 
 __all__ = ["GatePolicy", "INDEX_CONTENT_POLICY", "OUTLINE_CROSS_CHECK_POLICY", "OUTLINE_REQUIRED_GATES",
+           "TRANSLATOR_NOTES_POLICY", "evaluate_translator_notes",
            "OUTLINE_STRUCTURE_POLICY", "NotAccepted", "PromotionService", "TRANSLATION_ASSEMBLY_POLICY",
            "TransitionRefused", "evaluate_translation_assembly"]

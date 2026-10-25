@@ -20,3 +20,46 @@ groups:
         annotations:
           summary: "B2C container memory exceeds the 78 GiB budget"
           description: "B2C working-set memory has exceeded 78 GiB for 5 minutes."
+
+  # R0 containment (audit 08 H3). Metric names verified on this stack's Prometheus on 2026-10-25.
+  # temporal_num_pollers is NOT usable for b2c queues: only the server's own Go system workers
+  # export it (client_name="temporal_go"); the b2c Python workers export no SDK metrics.
+  # Server-side matching/history metrics are used instead. No Alertmanager is configured yet, so
+  # these alerts are visible in Prometheus (/alerts) but are not delivered to any channel.
+  - name: b2c-temporal
+    interval: 30s
+    rules:
+      - alert: B2CTaskQueueBacklogWithoutPollers
+        # Tasks are waiting on a b2c queue and the matching service saw no poll at all (neither a
+        # delivered task nor an empty long-poll timeout) for 5 minutes: no worker is polling it,
+        # or every worker slot on it is occupied (saturation). Both need an operator.
+        expr: |
+          (sum by (namespace, taskqueue, task_type) (approximate_backlog_count{job="temporal", namespace="default"}) > 0)
+          unless on (namespace, taskqueue, task_type)
+          (
+            (sum by (namespace, taskqueue, task_type) (rate(poll_success{job="temporal", namespace="default"}[5m])) > 0)
+            or
+            (sum by (namespace, taskqueue, task_type) (rate(poll_timeouts{job="temporal", namespace="default"}[5m])) > 0)
+          )
+        for: 5m
+        labels:
+          severity: critical
+          project: b2c
+        annotations:
+          summary: "Temporal task queue {{ $labels.taskqueue }} has a backlog and no pollers"
+          description: "{{ $labels.task_type }} tasks are waiting on {{ $labels.taskqueue }} and no worker has polled it for 5 minutes (worker down, or all slots busy)."
+      - alert: B2CNoActivityProgress24h
+        # Proxy for "a b2c workflow made no progress for 24 hours": activities kept heartbeating
+        # (something is running) but not one activity completed in the namespace in 24 hours.
+        # Per-workflow progress is not exported by anything in this stack.
+        expr: |
+          (sum by (namespace) (increase(activity_heartbeat_count{job="temporal", namespace="default"}[24h])) > 0)
+          unless on (namespace)
+          (sum by (namespace) (increase(activity_success{job="temporal", namespace="default"}[24h])) > 0)
+        for: 15m
+        labels:
+          severity: warning
+          project: b2c
+        annotations:
+          summary: "No b2c activity completed in 24 hours while activities are running"
+          description: "Namespace-level proxy (not per workflow): activities heartbeated in the last 24h but none completed. A single legitimately long activity (e.g. full-book audio) also triggers it."

@@ -61,6 +61,31 @@ def test_audio_worker_store_records_artifact_provenance(monkeypatch):
     assert created["prov"].migrated
 
 
+def test_audio_worker_registers_speech_v2_beside_the_old_audio_workflow(monkeypatch):  # R7
+    from b2c_orchestration.audio import GenerateMP3Workflow
+    from b2c_orchestration.speech_v2 import GenerateSpeechV2Workflow
+
+    captured = {}
+
+    class FakeWorker:
+        def __init__(self, client, **kwargs):
+            captured.update(kwargs)
+
+        async def run(self):
+            return None
+
+    test_audio_worker_store_records_artifact_provenance(monkeypatch)  # installs the other fakes
+    monkeypatch.setattr(worker_mod, "Worker", FakeWorker)
+    asyncio.run(worker_mod.run_audio_worker())
+    assert captured["workflows"] == [GenerateMP3Workflow, GenerateSpeechV2Workflow]
+    names = sorted(fn.__temporal_activity_definition.name for fn in captured["activities"])
+    assert names == ["generate_mp3", "speech_v2_assemble_track", "speech_v2_prepare", "speech_v2_synthesize_segments"]
+    speech = next(fn.__self__ for fn in captured["activities"]
+                  if fn.__temporal_activity_definition.name == "speech_v2_prepare")
+    assert speech.promotion is not None and speech.promotion.registry.dsn == "postgresql://x"
+    assert speech.result_store.dsn == "postgresql://x" and speech.synthesizer is not None
+
+
 # ------------------------------------------------------------------ D-028 part D
 def test_translate_book_worker_registers_new_names_on_its_own_queue(monkeypatch):
     from b2c_orchestration.queues import TRANSLATE_BOOK, max_concurrent_activities

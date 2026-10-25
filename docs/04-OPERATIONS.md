@@ -100,6 +100,14 @@
 - الخيوط: `B2C_DOCLING_THREADS` (افتراضي 8) يجب أن يبقى أقل من `cpus` لخدمة الـ worker (§5.1). المقيس على هذا الخادم: 4–7 ثوانٍ للصفحة بـ 8 خيوط.
 - البوابة: إذا كان `ingest-quality.json` غير مقبول ينتهي الـ workflow بـ `status=needs_review` ولا يبني مخططًا. الكتب العربية (`ocr_language=ar`) ترفض في v2 وتبقى على المسار القديم.
 
+### 5.3 الكلام v2 (R7، 2026-10-25)
+المسار مسجَّل في عامل الصوت (`B2C_WORKER_MODE=audio`، طابور `audio`) لكنه **غير مفعّل**: الـ API ما زال يبدأ `GenerateMP3Workflow` وحده، والـ workflows الجارية لا تتأثر (أسماء جديدة، وتسلسل أوامر القديم لم يتغير).
+- الـ workflow: `GenerateSpeechV2Workflow`، والأنشطة `speech_v2_prepare` و`speech_v2_synthesize_segments` و`speech_v2_assemble_track`. المدخل `GenerateSpeechV2Input(course_id, assembly_ref, termbase_ref?, lexicon_overrides, loudness_profile, voice_id, seed, max_attempts, require_intelligibility, limits, track_ids?)`.
+- الشرط: تجميعة `translate-book` **مقبولة** في سجل المخرجات، ونتائج وحداتها لم تتغير بعد التجميع (بصمة `results_digest`).
+- المزود: `B2C_FASIH_TTS_URL` (افتراضي `http://fasih-tts:3006`)، مقطع واحد لكل طلب `/v1/tts`. هوية النموذج من `/info` للخدمة، والـ revision من `B2C_FASIH_MODEL_REVISION` (افتراضي `unpinned` إلى أن تُثبَّت الأوزان، انظر الجدول أعلاه).
+- ملف الصوت: `app-speech-16` افتراضيًا (‎-16 LUFS، ‎-1 dBTP)، أو `acx`. قرار المالك Q2 معلّق.
+- المخرجات: `speech-text` (النص المنطوق والخطة)، و`speech-segment-audio` (WAV + `qa.json` لكل مقطع، بمفتاح المحتوى)، و`speech-track` (`track.wav` و`segments.json` و`track.json` و`qa.json`). ترميز MP3 للتسليم لم يُبنَ بعد (لا encoder في صورة العامل).
+
 ## 6. المراقبة (Observability)
 
 ### 6.1 الأدوات

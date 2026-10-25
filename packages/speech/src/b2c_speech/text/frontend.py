@@ -14,6 +14,11 @@ SCHEMA 1.14.0) the prosodic boundary after it: a sentence is split into phrases 
 engine's real input (``EngineProfile``), each segment ends at a phrase / sentence / list item /
 paragraph / heading / section boundary with an SSML break strength and a realized pause
 (docs/proposals/2026-10-25-speech-readability.md).
+
+Translator notes (D-041): with ``notes`` (from an accepted ``translator-notes`` artifact, named by
+``notes_ref``), a unit that was not accepted but carries a note is spoken in the course voice: the
+note's announcement, then its approximate translation when one is offered. The English original is
+never spoken. A unit without a result, or not accepted and without a note, still refuses the build.
 """
 from __future__ import annotations
 
@@ -22,7 +27,7 @@ from collections import Counter
 from collections.abc import Mapping, Sequence
 
 from b2c_contracts import (ArtifactRef, SpeechExclusion, SpeechSegment, SpeechTextDocument, TranslationUnit,
-                           UnitTranslation)
+                           TranslatorNote, UnitTranslation)
 
 from .lexicon import PronunciationLexicon
 from .normalize import NORMALIZER_VERSION, Normalized, normalize_text, speech_text_violations
@@ -74,7 +79,8 @@ def build_speech_text(units: Sequence[TranslationUnit], translations: Mapping[st
                       book_id: str, source: ArtifactRef, lexicon: PronunciationLexicon | None = None,
                       language: str = "ar", profile: str | EngineProfile = DEFAULT_ENGINE_PROFILE,
                       max_chars: int | None = None, max_words: int | None = None,
-                      target_chars: int | None = None) -> SpeechTextDocument:
+                      target_chars: int | None = None, notes: Mapping[str, TranslatorNote] | None = None,
+                      notes_ref: ArtifactRef | None = None) -> SpeechTextDocument:
     """``max_chars``/``max_words`` override the profile's phrase limits; ``target_chars`` is kept
     for callers of the first version and has no effect (phrases are no longer merged up to it)."""
     if language != "ar":
@@ -83,13 +89,20 @@ def build_speech_text(units: Sequence[TranslationUnit], translations: Mapping[st
     engine = engine_profile(profile)
     limit_chars = max_chars or engine.max_phrase_chars
     limit_words = max_words or engine.max_phrase_words
+    notes = dict(notes or {})
+    if notes and notes_ref is None:
+        raise ValueError("translator notes are spoken only from an accepted translator-notes artifact (notes_ref)")
+    for uid in notes:
+        if (t := translations.get(uid)) is not None and t.decision in PUBLISHABLE:
+            raise ValueError(f"a translator note belongs to a unit that was not accepted, not to {uid} ({t.decision})")
     not_ready = [u.unit_id for u in units
-                 if (t := translations.get(u.unit_id)) is None or t.decision not in PUBLISHABLE]
+                 if (t := translations.get(u.unit_id)) is None or (t.decision not in PUBLISHABLE
+                                                                  and u.unit_id not in notes)]
     if not_ready:
-        raise NotSpeechReady(f"{len(not_ready)} unit(s) are not accepted (first: {not_ready[0]}); "
-                             "speech is made from accepted translations only")
-    # unit, structure, source text, phrase, boundary, normalization
-    pieces: list[tuple[TranslationUnit, str, str, str, str, Normalized]] = []
+        raise NotSpeechReady(f"{len(not_ready)} unit(s) are not accepted and carry no translator note "
+                             f"(first: {not_ready[0]}); speech is made from accepted translations and notes only")
+    # unit, structure, source text, phrase, boundary, normalization, note part
+    pieces: list[tuple[TranslationUnit, str, str, str, str, Normalized, str | None]] = []
     excluded: list[SpeechExclusion] = []
     seen_glosses: set[str] = set()
     for unit in units:
@@ -101,37 +114,57 @@ def build_speech_text(units: Sequence[TranslationUnit], translations: Mapping[st
         if structure is None:
             excluded.append(SpeechExclusion(unit_id=unit.unit_id, reason=f"not_spoken_kind:{unit.kind}"))
             continue
-        text, stripped = strip_restored_markers(translation.target_text, unit.footnote_markers)
-        if wrong_language(text, language):
-            excluded.append(SpeechExclusion(unit_id=unit.unit_id, reason="wrong_language"))
+        note = notes.get(unit.unit_id) if translation.decision not in PUBLISHABLE else None
+        # (structure, text, note part): the author's text, or the note's announcement + approximate translation
+        spans: list[tuple[str, str, str | None]] = []
+        if note is None:
+            spans.append((structure, translation.target_text, None))
+        else:
+            spans.append(("paragraph", note.announcement_ar, "announcement"))
+            if note.best_translation:
+                spans.append((structure, note.best_translation, "approximate_translation"))
+        unit_pieces: list[tuple[TranslationUnit, str, str, str, str, Normalized, str | None]] = []
+        reason = None
+        for span_structure, raw, part in spans:
+            text, stripped = strip_restored_markers(raw, unit.footnote_markers)
+            if wrong_language(text, language):
+                reason = reason or "wrong_language"
+                continue
+            normalized = normalize_text(text, lexicon=lexicon, structure=span_structure, seen_glosses=seen_glosses,
+                                        terminal=True)
+            if stripped:
+                normalized.rules.insert(0, "footnote_marker_removed")
+            if not re.search(r"\w", normalized.text):
+                reason = reason or "empty_after_normalization"
+                continue
+            phrases = _phrases(normalized.text, limit_chars, limit_words, engine.min_phrase_chars)
+            for i, (phrase, boundary) in enumerate(phrases):
+                last = i == len(phrases) - 1
+                unit_pieces.append((unit, span_structure, text, phrase,
+                                    STRUCTURE_BOUNDARY[span_structure] if last else boundary, normalized, part))
+        if not unit_pieces:
+            excluded.append(SpeechExclusion(unit_id=unit.unit_id, reason=reason or "empty_after_normalization"))
             continue
-        normalized = normalize_text(text, lexicon=lexicon, structure=structure, seen_glosses=seen_glosses,
-                                    terminal=True)
-        if stripped:
-            normalized.rules.insert(0, "footnote_marker_removed")
-        if not re.search(r"\w", normalized.text):
-            excluded.append(SpeechExclusion(unit_id=unit.unit_id, reason="empty_after_normalization"))
-            continue
-        phrases = _phrases(normalized.text, limit_chars, limit_words, engine.min_phrase_chars)
-        for i, (phrase, boundary) in enumerate(phrases):
-            last = i == len(phrases) - 1
-            pieces.append((unit, structure, text, phrase, STRUCTURE_BOUNDARY[structure] if last else boundary,
-                           normalized))
+        pieces += unit_pieces
     boundaries = plan_boundaries([p[1] for p in pieces], [p[4] for p in pieces])
     segments: list[SpeechSegment] = []
-    for (unit, structure, text, phrase, _, normalized), boundary in zip(pieces, boundaries):
+    for (unit, structure, text, phrase, _, normalized, part), boundary in zip(pieces, boundaries):
         seq = len(segments)
+        note_fields = {} if part is None else {"voice": "course", "note_id": notes[unit.unit_id].note_id,
+                                               "note_part": part}
         segments.append(SpeechSegment(
             segment_id=f"{book_id}:s{seq:05d}", seq=seq, unit_ids=[unit.unit_id], block_ids=list(unit.block_ids),
             structure=structure, source_text=text, spoken_text=phrase,
             rules_applied=list(dict.fromkeys(normalized.rules)), lexicon_hits=sorted(set(normalized.lexicon_hits)),
             lexicon_misses=sorted(set(normalized.lexicon_misses)), pause_after_ms=PAUSE_MS[boundary],
             boundary_after=boundary, break_after=BREAK_STRENGTH[boundary],  # type: ignore[arg-type]
-            unvoiced_glosses=sorted(set(normalized.unvoiced_glosses))))
+            unvoiced_glosses=sorted(set(normalized.unvoiced_glosses)), **note_fields))
     if not segments:
         raise NotSpeechReady("no spoken text: every unit was excluded")
+    noted = any(s.note_id for s in segments)
     return SpeechTextDocument(book_id=book_id, language=language, frontend_version=f"{FRONTEND_VERSION}-{engine.name}",
-                              lexicon_digest=lexicon.digest, source=source, segments=segments, excluded=excluded)
+                              lexicon_digest=lexicon.digest, source=source, segments=segments, excluded=excluded,
+                              notes_ref=notes_ref if noted else None)
 
 
 def _phrases(text: str, max_chars: int, max_words: int, min_chars: int) -> list[tuple[str, str]]:

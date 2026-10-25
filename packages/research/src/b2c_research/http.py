@@ -12,6 +12,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import threading
+import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -41,6 +43,9 @@ class FetchLimits:
     max_bytes: int = 2_000_000
     timeout_s: float = 20.0
     max_redirects: int = 3
+    min_interval_s: float = 1.0   # politeness: at most one request per host per interval
+    max_retries: int = 3          # on HTTP 429/503, honouring Retry-After (capped)
+    max_retry_wait_s: float = 30.0
 
 
 @dataclass(frozen=True)
@@ -98,12 +103,16 @@ class HttpxFetcher:
     def __init__(self, *, policy: DomainPolicy | None = None, limits: FetchLimits | None = None,
                  cache: FileFetchCache | None = None, transport: httpx.BaseTransport | None = None,
                  clock: Callable[[], datetime] = _now, user_agent: str = USER_AGENT,
-                 default_params: Mapping[str, str] | None = None) -> None:
+                 default_params: Mapping[str, str] | None = None,
+                 sleep: Callable[[float], None] = time.sleep) -> None:
         self.policy = policy or DomainPolicy()
         self.limits = limits or FetchLimits()
         self.cache = cache
         self.clock = clock
         self.default_params = dict(default_params or {})
+        self.sleep = sleep
+        self._last: dict[str, float] = {}
+        self._lock = threading.Lock()
         self._client = httpx.Client(timeout=self.limits.timeout_s, transport=transport, follow_redirects=False,
                                     headers={"User-Agent": user_agent, "Accept-Encoding": "gzip, deflate"})
 
@@ -116,14 +125,25 @@ class HttpxFetcher:
         if self.cache is not None and (hit := self.cache.get(full)) is not None:
             return hit
         current = full
-        for _ in range(self.limits.max_redirects + 1):
+        hops = retries = 0
+        while hops <= self.limits.max_redirects:
             reason = self.policy.refusal(current)
             if reason:
                 raise FetchRefused("policy", f"redirect target refused: {reason}")
+            self._throttle(httpx.URL(current).host)
             try:
                 with self._client.stream("GET", current, headers=dict(headers or {})) as r:
                     if r.status_code in (301, 302, 303, 307, 308) and r.headers.get("location"):
                         current = str(httpx.URL(current).join(r.headers["location"]))
+                        hops += 1
+                        continue
+                    if r.status_code in (429, 503) and retries < self.limits.max_retries:
+                        retries += 1
+                        try:
+                            wait = float(r.headers.get("retry-after", ""))
+                        except ValueError:
+                            wait = 2.0 * 2 ** retries
+                        self.sleep(min(self.limits.max_retry_wait_s, max(1.0, wait)))
                         continue
                     if r.status_code != 200:
                         raise FetchRefused("fetch", f"HTTP {r.status_code}")
@@ -146,6 +166,16 @@ class HttpxFetcher:
                 self.cache.put(result)
             return result
         raise FetchRefused("fetch", "too many redirects")
+
+    def _throttle(self, host: str) -> None:
+        if self.limits.min_interval_s <= 0:
+            return
+        with self._lock:
+            now = time.monotonic()
+            wait = self._last.get(host, -1e9) + self.limits.min_interval_s - now
+            self._last[host] = now + max(0.0, wait)
+        if wait > 0:
+            self.sleep(wait)
 
 
 __all__ = ["FetchLimits", "FetchRefused", "FetchResult", "Fetcher", "FileFetchCache", "HttpxFetcher", "TEXT_TYPES",

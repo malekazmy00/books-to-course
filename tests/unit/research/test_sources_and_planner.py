@@ -87,6 +87,21 @@ def test_wikipedia_requires_a_context_match():
     assert off_topic.run(PlannedQuery("wikipedia.page", "hegemony", "concept_in_field", concept="hegemony"), META) == []
 
 
+def test_wikipedia_concept_page_must_be_about_the_term():
+    def fetcher(title, extract):
+        return RoutingFetcher({
+            "list=search": ("application/json", {"query": {"search": [{"title": title}]}}),
+            "prop=extracts": ("application/json", {"query": {"pages": {"1": {
+                "title": title, "fullurl": "https://en.wikipedia.org/wiki/X", "extract": extract}}}})})
+    p = lambda f: WikipediaProvider(f, builder(), context_keywords=("intelligence", "analysis"))
+    q = lambda term: PlannedQuery("wikipedia.page", term, "concept_in_field", concept=term)
+    off = fetcher("Facilitated communication", "A facilitator supports typing; analysis of evidence shows ...")
+    assert p(off).run(q("facilitator"), META) == []
+    ach = fetcher("Analysis of competing hypotheses", "The analysis of competing hypotheses (ACH) is an "
+                                                      "intelligence analysis methodology.")
+    assert p(ach).run(q("ACH"), META)[0].concept == "ACH"
+
+
 def test_wikidata_renders_labelled_statements():
     f = RoutingFetcher({
         "wbsearchentities": ("application/json", {"search": [{"id": "Q42", "label": "John Chalcraft",

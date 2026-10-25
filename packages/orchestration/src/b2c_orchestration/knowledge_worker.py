@@ -6,7 +6,7 @@ research should run. Model roles come from the environment; remote endpoints nee
 and a key file outside the repository (D-029, CLAUDE.md rule 6). The citation judge must be from a
 different model family than the extractor (learning-companion §2.5).
 
-    B2C_KNOWLEDGE_{EXTRACTOR,JUDGE}_{BASE_URL,MODEL_ID,FAMILY,API_KEY_FILE,ALLOW_REMOTE}
+    B2C_KNOWLEDGE_{EXTRACTOR,JUDGE}_{BASE_URL,MODEL_ID,FAMILY,API_KEY_FILE,ALLOW_REMOTE,REASONING_EFFORT}
     B2C_KNOWLEDGE_CONCEPTS_MODEL_ID      default: the extractor model (same endpoint)
     B2C_KNOWLEDGE_FETCH_CACHE            on-disk fetch cache (keeps original fetch dates)
     B2C_OPENALEX_API_KEY_FILE            optional OpenAlex key; B2C_OPENALEX_MAILTO optional
@@ -55,7 +55,8 @@ def model_role(name: str, *, cache: Any = None, env: Mapping[str, str] | None = 
     base_url, model_id = env[p + "BASE_URL"], model_override or env[p + "MODEL_ID"]
     family = env.get(p + "FAMILY") or model_id.split("/")[0]
     gateway = LLMGateway(base_url, model_id, cache=cache, allow_remote=env.get(p + "ALLOW_REMOTE", "") == "1",
-                         api_key=_key(env.get(p + "API_KEY_FILE")), timeout_s=float(env.get(p + "TIMEOUT_S", "300")))
+                         api_key=_key(env.get(p + "API_KEY_FILE")), timeout_s=float(env.get(p + "TIMEOUT_S", "300")),
+                         reasoning_effort=env.get(p + "REASONING_EFFORT") or None)
     provider = "openrouter" if "openrouter.ai" in base_url else gateway.provider_name
     return ModelRole(gateway, ProducerIdentity(role=role or name, provider=provider, model_id=model_id), family)
 

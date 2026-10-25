@@ -47,9 +47,13 @@ class WikipediaProvider:
             return norm(meta.title) in t or (t and t in norm(meta.title) and len(t) > 12)
         if q.section == "context":
             return norm(q.query) in t or t in norm(q.query)
-        term = norm(q.concept or q.query)
+        raw_term = (q.concept or q.query).strip()
+        term = norm(raw_term)
+        initials = "".join(w[0] for w in t.split() if w not in ("of", "and", "the", "for", "in"))
+        about = (term in t or (raw_term.isupper() and initials == term.replace(" ", ""))
+                 or (t in term and len(t) > 4))
         keywords = self.context_keywords or tuple(meta.context_keywords)
-        return bool(term) and term in body and (not keywords or any(k in body for k in keywords))
+        return bool(term) and about and term.split()[0] in body and (not keywords or any(k in body for k in keywords))
 
     def run(self, q: PlannedQuery, meta: BookMeta) -> list[SourceText]:
         searches = [q.query]

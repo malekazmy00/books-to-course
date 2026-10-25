@@ -126,6 +126,26 @@ def test_fetch_refuses_policy_size_and_content_type():
     assert exc.value.stage == "policy"
 
 
+def test_rate_limit_is_retried_with_retry_after_and_hosts_are_throttled():
+    seen, waits = [], []
+
+    def handler(request):
+        seen.append(1)
+        if len(seen) == 1:
+            return httpx.Response(429, headers={"retry-after": "3"})
+        return httpx.Response(200, headers={"content-type": "application/json"}, text="{}")
+
+    f = HttpxFetcher(policy=DomainPolicy(), transport=httpx.MockTransport(handler), clock=lambda: NOW,
+                     sleep=waits.append, limits=FetchLimits(min_interval_s=0))
+    assert f.get("https://en.wikipedia.org/w/api.php").status == 200 and waits == [3.0] and len(seen) == 2
+    throttled = HttpxFetcher(policy=DomainPolicy(), transport=httpx.MockTransport(handler), clock=lambda: NOW,
+                             sleep=waits.append, limits=FetchLimits(min_interval_s=5))
+    waits.clear()
+    throttled.get("https://en.wikipedia.org/a")
+    throttled.get("https://en.wikipedia.org/b")
+    assert len(waits) == 1 and 4 < waits[0] <= 5
+
+
 def test_redirect_hops_are_checked_by_policy():
     def handler(request):
         if request.url.host == "example.org":

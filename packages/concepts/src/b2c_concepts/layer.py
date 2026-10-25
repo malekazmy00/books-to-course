@@ -152,8 +152,8 @@ def build_concept_layer(index: BookIndex, seeds: Sequence[ConceptSeed], *, model
                                              {"role": "user", "content": "Map this concept.\n" + json.dumps(payload, ensure_ascii=False)}],
                                             prompt_version=DEFINE_PROMPT_VERSION, max_tokens=max_tokens)
             return c, passages, candidates, _parse(reply.text)
-        except Exception:
-            return c, passages, candidates, None
+        except Exception as exc:
+            return c, passages, candidates, {"__error__": type(exc).__name__}
 
     todo = concepts[:max_model_concepts] if max_model_concepts is not None else concepts
     answers = []
@@ -162,9 +162,10 @@ def build_concept_layer(index: BookIndex, seeds: Sequence[ConceptSeed], *, model
             answers = list(pool.map(ask, todo))
     model_failures = 0
     for c, passages, candidates, data in answers:
-        if data is None:
+        if "__error__" in data:
             model_failures += 1
-            rejected.append(RejectedStatement(concept_id=c.cid, kind="definition", reason="model output unusable"))
+            rejected.append(RejectedStatement(concept_id=c.cid, kind="definition",
+                                              reason=f"model output unusable ({data['__error__']})"))
             continue
         blocks = {label: bid for label, bid, _ in passages}
         d = data.get("definition")

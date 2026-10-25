@@ -172,6 +172,9 @@ def main() -> int:
     ap.add_argument("--use-unaccepted-dossier", action="store_true",
                     help="development only: give the concept layer a dossier that is not accepted")
     ap.add_argument("--workers", type=int, default=6)
+    ap.add_argument("--reasoning-effort", default="none",
+                    help="sent to deepseek models (as the deepseek-mqm profile does); thinking tokens otherwise "
+                         "exhaust max_tokens")
     args = ap.parse_args()
 
     work = args.work_dir
@@ -180,7 +183,9 @@ def main() -> int:
     key = args.key_file.read_text().strip()
 
     def role(model: str, name: str) -> ModelRole:
-        gw = LLMGateway(OPENROUTER, model, cache=cache, allow_remote=True, api_key=key, timeout_s=300)
+        effort = args.reasoning_effort if model.startswith("deepseek/") else None
+        gw = LLMGateway(OPENROUTER, model, cache=cache, allow_remote=True, api_key=key, timeout_s=300,
+                        reasoning_effort=effort)
         return ModelRole(gw, ProducerIdentity(role=name, provider="openrouter", model_id=model), model.split("/")[0])
 
     extractor, judge = role(args.extractor_model, "extractor"), role(args.judge_model, "judge")

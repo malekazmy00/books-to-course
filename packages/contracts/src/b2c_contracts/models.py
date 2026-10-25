@@ -15,7 +15,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION = "1.6.0"
+SCHEMA_VERSION = "1.7.0"
 
 
 class Contract(BaseModel):
@@ -583,15 +583,50 @@ class _OutlineNode(Contract):
         return _check_title(v)
 
 
+# 1.7.0 (D-036 (1)): figure and table descriptions are lesson content, read in reading order and
+# marked so speech can introduce them ("وصف الشكل:"). A chapter's description section that the book
+# prints after its (excluded) notes is an extra span of the chapter's last lesson.
+LessonExtraRole = Literal["figure_descriptions"]
+BlockRole = Literal["figure_caption", "figure_description_heading", "figure_description_marker",
+                    "figure_description"]
+
+
+class LessonExtraSpan(OutlineSpanV2):
+    """Blocks of a lesson outside its own span (after it, before the next lesson), read after it."""
+    role: LessonExtraRole
+
+
+class BlockRoleRun(Contract):
+    """Inclusive run of a lesson's blocks with the role they play (how speech introduces them)."""
+    start_block: str
+    end_block: str
+    role: BlockRole
+
+    @property
+    def seqs(self) -> tuple[int, int]:
+        return v2_block_seq(self.start_block), v2_block_seq(self.end_block)
+
+
 class LessonV2(_OutlineNode):
     lesson_id: str = Field(pattern=_OUTLINE_ID)
     kind: LessonKind = "section"
     spine_span: OutlineSpanV2
-    word_count: int = Field(ge=0)  # words of instructional blocks in the span
+    extra_spans: list[LessonExtraSpan] = []  # 1.7.0: read after spine_span, in reading order
+    word_count: int = Field(ge=0)  # words of instructional blocks in the span (+ extra spans)
     size_status: SizeStatus
     size_exception: str | None = None  # documented reason a lesson is outside the size policy
     subheadings: list[str] = []  # heading blocks inside the lesson that are not lesson boundaries
     prior_lessons: list[str] = []  # empty unless there is evidence (audit 02 P12)
+    block_roles: list[BlockRoleRun] = []  # 1.7.0: e.g. figure descriptions, in reading order
+
+    @property
+    def spans(self) -> list[OutlineSpanV2]:
+        """The lesson's blocks in reading order: its own span, then its extra spans."""
+        return [self.spine_span, *self.extra_spans]
+
+    @property
+    def last_seq(self) -> int:
+        return self.spans[-1].seqs[1]
 
     @model_validator(mode="after")
     def _lesson(self) -> "LessonV2":
@@ -600,6 +635,21 @@ class LessonV2(_OutlineNode):
         a, b = self.spine_span.seqs
         if not a <= v2_block_seq(self.anchor_block) <= b:
             raise ValueError("lesson anchor must lie inside its span")
+        book = _v2_block_book(self.spine_span.start_block)
+        previous = b
+        for extra in self.extra_spans:
+            if _v2_block_book(extra.start_block) != book:
+                raise ValueError("an extra span belongs to another book")
+            if extra.seqs[0] <= previous:
+                raise ValueError("extra spans must come after the lesson's span and after each other")
+            previous = extra.seqs[1]
+        ranges = [s.seqs for s in self.spans]
+        previous = -1
+        for run in self.block_roles:
+            x, y = run.seqs
+            if y < x or x <= previous or not any(p <= x and y <= q for p, q in ranges):
+                raise ValueError("block role runs must be ordered and lie inside the lesson's spans")
+            previous = y
         return self
 
 
@@ -662,16 +712,16 @@ class CourseOutlineV2(Contract):
                 a, b = lesson.spine_span.seqs
                 if a <= previous_end:
                     raise ValueError("lessons must follow the book's reading order")
-                previous_end = b
+                previous_end = lesson.last_seq
                 if any(p not in seen for p in lesson.prior_lessons):
                     raise ValueError(f"prior_lessons of {lesson.lesson_id} must refer to earlier lessons")
                 seen.add(lesson.lesson_id)
-                spans.append((a, b, lesson.lesson_id))
+                spans.extend((*s.seqs, lesson.lesson_id) for s in lesson.spans)
             first, last = m.lessons[0].spine_span.seqs[0], m.lessons[-1].spine_span.seqs[1]
             if not first <= v2_block_seq(m.anchor_block) <= last:
                 raise ValueError(f"module {m.module_id} anchor lies outside its lessons")
         spans.extend((*r.seqs, f"excluded:{r.reason}") for r in self.excluded_ranges)
-        for item in [*(l.spine_span for l in self.lessons), *self.excluded_ranges]:
+        for item in [*(s for l in self.lessons for s in l.spans), *self.excluded_ranges]:
             for block_id in (item.start_block, item.end_block):
                 if _v2_block_book(block_id) != self.spine_book_id:
                     raise ValueError(f"span block {block_id} is not in the spine book")

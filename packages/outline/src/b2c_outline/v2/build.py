@@ -7,7 +7,10 @@
 2. Zones: top-level entries classified by title (EPUB SSV-like reasons) split the book into front
    matter, body and back matter; S2 block zones fill in where there are no entries. Front and back
    matter become excluded ranges with a reason, never lessons (P2). Inside the body, apparatus
-   sections (chapter-end notes, figure descriptions, bibliographies) are excluded too.
+   sections (chapter-end notes, bibliographies) are excluded too. Figure and table descriptions
+   are not (D-036 (1)): they stay in their lesson in reading order, marked with block roles; a
+   chapter's description section printed after its excluded notes is an extra span of the
+   chapter's last lesson.
 3. Tree: body top-level entries are modules; their children (next level of the same source, or the
    chapter's own headings when the source has no deeper level) bound lessons. Text before the
    first section is a chapter-introduction lesson, not hidden under the first section's title.
@@ -28,15 +31,15 @@ import unicodedata
 from dataclasses import dataclass, field
 
 from b2c_contracts import (
-    CourseOutlineV2, ExcludedRange, LessonSizePolicy, LessonV2, ModuleV2, OutlineSpanV2, ParsedBookV2,
-    v2_block_seq,
+    BlockRoleRun, CourseOutlineV2, ExcludedRange, LessonExtraSpan, LessonSizePolicy, LessonV2, ModuleV2,
+    OutlineSpanV2, ParsedBookV2, v2_block_seq,
 )
 
 from .reference import FURNITURE, bookmark_entries, find_heading, printed_toc_entries, title_key
 from .titles import TitleVocab, clean_title, english_zipf
 
 BUILDER_NAME = "b2c-outline-v2"
-BUILDER_VERSION = "1"
+BUILDER_VERSION = "2"  # 2: figure descriptions in lessons (D-036)
 # Owner decision Q9 is pending: 600-4,000 words is the audit's proposal (02 §5.2.4), not a decision.
 DEFAULT_SIZE_POLICY = LessonSizePolicy(policy_id="words-600-4000-proposal", min_words=600, max_words=4000)
 INSTRUCTIONAL = frozenset({"paragraph", "list_item", "table", "figure", "caption", "equation", "code", "footnote"})
@@ -69,6 +72,9 @@ _PART = re.compile(r"^\s*(?:part|book|volume)\s+(?:\d+|[ivxlc]+|one|two|three|fo
                    re.I)
 _CAPTION_LIKE = re.compile(r"^(?:figure|fig\.|table|exhibit|chart|map|plate)\s+\d", re.I)
 _TOC_LIKE = re.compile(r"\[\s*\d{1,4}\s*\]")
+_FIGURE_MARKER = re.compile(r"^\s*(?:back\s+to\s+(?:figure|table|image|exhibit)s?|return\s+to\s+(?:figure|table))\b",
+                            re.I)
+TAUGHT_APPARATUS = frozenset({"figure_descriptions"})  # apparatus sections that stay lesson content
 
 
 class OutlineUnavailable(ValueError):
@@ -107,6 +113,7 @@ class _Piece:
     subheadings: list[int] = field(default_factory=list)
     exception: str | None = None
     children: list[_Node] = field(default_factory=list)
+    extras: list[tuple[int, int]] = field(default_factory=list)  # extra spans (figure descriptions)
 
 
 def classify(title: str) -> tuple[str, str] | None:
@@ -168,6 +175,10 @@ class _Book:
         self.prefix = [0]
         for w in words:
             self.prefix.append(self.prefix[-1] + w)
+        self.roles: list[str | None] = [None] * len(self.blocks)  # D-036 block roles
+        for i, b in enumerate(self.blocks):
+            if b.type == "caption":
+                self.roles[i] = "figure_caption"
         self.vocab = TitleVocab.from_texts((b.text for b in self.blocks if b.zone == "body" and b.type in INSTRUCTIONAL),
                                            lexicon=english_zipf)
 
@@ -365,11 +376,16 @@ def _module(bk: _Book, node: _Node, a: int, b: int, nodes: list[_Node], source: 
     if not children:
         children = _heading_children(bk, a, b, {x.index for x in nodes})
     boundaries = {x.index for x in inside} | {c.index for c in children}
-    runs = _apparatus_runs(bk, a, b, boundaries)
-    run_starts = {r[0] for r in runs}
-    children = [c for c in children if not any(r[0] <= c.index <= r[1] for r in runs) and c.index not in run_starts]
+    all_runs = _apparatus_runs(bk, a, b, boundaries)
+    run_starts = {r[0] for r in all_runs}
+    children = [c for c in children if not any(r[0] <= c.index <= r[1] for r in all_runs)
+                and c.index not in run_starts]
+    runs = [r for r in all_runs if r[2] not in TAUGHT_APPARATUS]
+    taught_runs = [r for r in all_runs if r[2] in TAUGHT_APPARATUS]
     for start, stop, reason, title in runs:
         exclude(start, stop, "body", reason, title, "body:apparatus-heading")
+    for start, stop, _reason, _title in taught_runs:
+        _mark_descriptions(bk, start, stop)
 
     def cut(start: int, stop: int) -> int:
         """End of a lesson piece: stop before the first apparatus run inside [start, stop]."""
@@ -396,9 +412,14 @@ def _module(bk: _Book, node: _Node, a: int, b: int, nodes: list[_Node], source: 
     else:
         pieces[0].start = a  # heading-only chapter opening: folded into the first section
     pieces = _plan_sizes(bk, pieces, config.size_policy)
+    for start, stop, _reason, _title in taught_runs:  # descriptions cut off by excluded notes
+        if any(p.start <= start <= p.end for p in pieces):
+            continue
+        owner = [p for p in pieces if p.start < start][-1]
+        owner.extras.append((start, stop))
     for p in pieces:
         p.subheadings = [i for i in range(p.start, p.end + 1) if bk.blocks[i].type == "heading" and i != p.anchor
-                         and not (p.kind != "chapter_intro" and i == node.index)]
+                         and not (p.kind != "chapter_intro" and i == node.index) and bk.roles[i] is None]
     module_key = title_key(node.title)
     module_id = f"{_slug(module_title)}-{_digest(book_id, 'module', module_key)}"
     lessons = []
@@ -459,9 +480,46 @@ def _plan_sizes(bk: _Book, pieces: list[_Piece], policy: LessonSizePolicy) -> li
     return merged
 
 
+def _mark_descriptions(bk: _Book, start: int, stop: int) -> None:
+    """Block roles of a figure-description section: its heading, the 'Back to Figure' markers that
+    open each description, and the description text (captions, tables ...)."""
+    for i in range(start, stop + 1):
+        blk = bk.blocks[i]
+        if blk.type in FURNITURE:
+            continue
+        if i == start:
+            bk.roles[i] = "figure_description_heading"
+        elif _FIGURE_MARKER.match(blk.text):
+            bk.roles[i] = "figure_description_marker"
+        else:
+            bk.roles[i] = "figure_description"
+
+
+def _role_runs(bk: _Book, ranges: list[tuple[int, int]]) -> list[BlockRoleRun]:
+    runs: list[BlockRoleRun] = []
+    for a, b in ranges:
+        current: tuple[int, int, str] | None = None
+        for i in range(a, b + 1):
+            role = bk.roles[i]
+            if role is None:
+                if bk.blocks[i].type in FURNITURE and current is not None:
+                    continue  # a page number inside a run does not break it
+                current = None
+                continue
+            if current is not None and current[2] == role and runs:
+                current = (current[0], i, role)
+                runs[-1] = BlockRoleRun(start_block=bk.blocks[current[0]].block_id, end_block=bk.blocks[i].block_id,
+                                        role=role)  # type: ignore[arg-type]
+                continue
+            current = (i, i, role)
+            runs.append(BlockRoleRun(start_block=bk.blocks[i].block_id, end_block=bk.blocks[i].block_id,
+                                     role=role))  # type: ignore[arg-type]
+    return runs
+
+
 def _lesson(bk: _Book, p: _Piece, order: int, module_id: str, module_title: str, label: str, node: _Node,
             book_id: str, policy: LessonSizePolicy) -> LessonV2:
-    words = bk.words(p.start, p.end)
+    words = bk.words(p.start, p.end) + sum(bk.words(x, y) for x, y in p.extras)
     if p.kind == "chapter_intro":
         generic = title_key(module_title) in _GENERIC
         display = module_title if generic else f"{label} · Introduction"
@@ -495,8 +553,11 @@ def _lesson(bk: _Book, p: _Piece, order: int, module_id: str, module_title: str,
         anchor_block=bk.blocks[p.anchor].block_id,
         spine_span=OutlineSpanV2(start_block=bk.blocks[p.start].block_id, end_block=bk.blocks[p.end].block_id,
                                  pages=bk.pages(p.start, p.end)),
+        extra_spans=[LessonExtraSpan(start_block=bk.blocks[x].block_id, end_block=bk.blocks[y].block_id,
+                                     pages=bk.pages(x, y), role="figure_descriptions") for x, y in p.extras],
         word_count=words, size_status=status, size_exception=exception,  # type: ignore[arg-type]
-        subheadings=[bk.blocks[i].block_id for i in p.subheadings])
+        subheadings=[bk.blocks[i].block_id for i in p.subheadings],
+        block_roles=_role_runs(bk, [(p.start, p.end), *p.extras]))
 
 
 def _unique_ids(modules: list[ModuleV2]) -> None:

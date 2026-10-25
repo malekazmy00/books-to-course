@@ -51,14 +51,50 @@ def test_chapter_intro_is_its_own_lesson_not_hidden_under_the_first_section():
     assert first.anchor_block == "bk:b00026"
 
 
-def test_front_matter_and_chapter_end_apparatus_are_excluded_with_reasons():
+def test_front_matter_and_chapter_end_notes_are_excluded_with_reasons():
     o = build(sat_like())
     ranges = [(seq(r.start_block), seq(r.end_block), r.zone, r.reason) for r in o.excluded_ranges]
     assert ranges == [(0, 1, "front_matter", "title_page"), (2, 3, "front_matter", "toc"),
                       (4, 5, "front_matter", "preface"),
-                      (19, 21, "body", "endnotes"), (22, 23, "body", "figure_descriptions")]
+                      (19, 21, "body", "endnotes")]
     ranking = by_title(o, "5.2 Ranking, Scoring, and Prioritizing")
     assert seq(ranking.spine_span.end_block) == 18  # ends right before NOTES (furniture included)
+
+
+def test_figure_descriptions_stay_in_the_lesson_in_reading_order_with_block_roles():  # D-036 (1)
+    o = build(sat_like())
+    ranking = by_title(o, "5.2 Ranking, Scoring, and Prioritizing")
+    # the chapter's descriptions follow its NOTES: they are read at the end of the chapter's last
+    # lesson (the notes stay excluded) and count toward the lesson
+    assert [(e.seqs, e.role) for e in ranking.extra_spans] == [((22, 23), "figure_descriptions")]
+    assert [(r.seqs, r.role) for r in ranking.block_roles] == [((22, 22), "figure_description_heading"),
+                                                               ((23, 23), "figure_description")]
+    assert ranking.word_count == 1200 + 1000 + 30
+    assert "bk:b00022" not in ranking.subheadings
+
+
+def test_figure_markers_captions_and_descriptions_inside_a_lesson_are_marked():
+    rows = [head("Chapter 1 • Basics", 1, level=1, bm=(1, "Chapter 1 • Basics")),
+            head("1.1 Terms", 1, level=2, bm=(2, "1.1 Terms")),
+            para(1, 700),
+            para(1, 4, kind="figure", text="Box A Box B"),
+            para(1, 7, kind="caption", text="Figure 1.1 Two Boxes and an Arrow"),
+            para(2, 300),
+            head("Descriptions of Images and Figures", 2, level=3),  # 6: no notes before it
+            para(2, 3, kind="caption", text="Back to Figure"),
+            para(2, 40, kind="caption"),
+            para(2, 3, kind="caption", text="Back to Figure"),
+            para(2, 30, kind="caption"),
+            head("1.2 Methods", 3, level=2, bm=(2, "1.2 Methods")),
+            para(3, 800)]
+    o = build(book(rows))
+    terms = by_title(o, "1.1 Terms")
+    assert terms.spine_span.seqs == (0, 10) and terms.extra_spans == []
+    assert [(r.seqs, r.role) for r in terms.block_roles] == [
+        ((4, 4), "figure_caption"), ((6, 6), "figure_description_heading"), ((7, 7), "figure_description_marker"),
+        ((8, 8), "figure_description"), ((9, 9), "figure_description_marker"), ((10, 10), "figure_description")]
+    assert terms.word_count == 700 + 4 + 7 + 300 + 3 + 40 + 3 + 30  # heading words do not count
+    assert o.excluded_ranges == []
 
 
 def test_front_matter_policy_can_include_the_preface():
@@ -79,7 +115,8 @@ def test_every_block_is_included_or_excluded():
     parsed = sat_like()
     o = build(parsed)
     covered = set()
-    for item in [*(l.spine_span for l in o.lessons), *o.excluded_ranges]:
+    for item in [*(l.spine_span for l in o.lessons), *(e for l in o.lessons for e in l.extra_spans),
+                 *o.excluded_ranges]:
         a, b = item.seqs
         covered.update(range(a, b + 1))
     assert covered == set(range(len(parsed.blocks))) and o.block_count == len(parsed.blocks)

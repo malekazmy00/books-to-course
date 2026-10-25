@@ -169,3 +169,31 @@ def test_v1_projection_maps_ids_through_the_parsed_book_v1_projection():
     assert v1.excluded_prefix_block_ids == v1_ids[:2] and v1.requires_review is True
     with pytest.raises(ValueError, match="block_count"):
         c.course_outline_v1_from_v2(outline([module("m", [lesson("m.a", 0, 10)])], n=11), book)
+
+
+# ----------------------------------------------------------------------------- D-036 (1.7.0)
+def test_figure_descriptions_stay_in_their_lesson_as_an_extra_span_with_block_roles():
+    # SAT: a chapter's figure descriptions follow its NOTES; the notes stay excluded and the
+    # descriptions are read at the end of the chapter's last lesson, in reading order
+    assert tuple(int(x) for x in c.SCHEMA_VERSION.split(".")) >= (1, 7, 0)
+    extra = c.LessonExtraSpan(start_block=bid(8), end_block=bid(9), pages=(1, 1), role="figure_descriptions")
+    roles = [c.BlockRoleRun(start_block=bid(8), end_block=bid(8), role="figure_description_heading"),
+             c.BlockRoleRun(start_block=bid(9), end_block=bid(9), role="figure_description")]
+    o = outline([module("m", [lesson("m.a", 2, 6, extra_spans=[extra], block_roles=roles)])],
+                [excluded(0, 1), excluded(7, 7, "endnotes", "body")])
+    assert o.lessons[0].extra_spans[0].seqs == (8, 9)
+    assert o.lessons[0].block_roles[1].role == "figure_description"
+
+
+def test_extra_spans_and_block_roles_are_checked():
+    extra = c.LessonExtraSpan(start_block=bid(8), end_block=bid(9), pages=(1, 1), role="figure_descriptions")
+    with pytest.raises(ValidationError, match="after"):  # an extra span follows the lesson's own span
+        lesson("m.a", 2, 8, extra_spans=[extra])
+    with pytest.raises(ValidationError, match="role"):  # roles mark blocks of the lesson only
+        lesson("m.a", 2, 6, block_roles=[c.BlockRoleRun(start_block=bid(7), end_block=bid(7),
+                                                        role="figure_description")])
+    with pytest.raises(ValidationError, match="overlap"):  # extra span counted in the partition
+        outline([module("m", [lesson("m.a", 2, 6, extra_spans=[extra])])],
+                [excluded(0, 1), excluded(7, 8, "endnotes", "body")])
+    with pytest.raises(ValidationError, match="reading order"):  # the next lesson starts after it
+        outline([module("m", [lesson("m.a", 0, 2, extra_spans=[extra]), lesson("m.b", 3, 7, order=2)])])

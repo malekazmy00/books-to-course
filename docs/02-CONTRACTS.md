@@ -1,6 +1,6 @@
 # 02 — العقود بين الطبقات (Layer Contracts)
 
-المصدر الوحيد للحقيقة هو `packages/contracts/src/b2c_contracts/models.py` (SCHEMA_VERSION 1.2.1).
+المصدر الوحيد للحقيقة هو `packages/contracts/src/b2c_contracts/models.py` (SCHEMA_VERSION 1.3.0).
 الوثيقة دي بتشرح **إزاي** كل طبقة بتسلّم للطبقة اللي بعدها. والتعريفات نفسها موجودة في الكود.
 
 > الكود ده اتشغّل واتختبر: `tests/contract/test_contracts_invariants.py` ونتيجته 8 passed. الاختبارات دي بتتأكد من القيود الأساسية (negative controls).
@@ -46,6 +46,7 @@ s3://artifacts/{course_id}/{stage}/{key}/<files>
 |---|---|---|---|
 | Upload ← L1 | `BookUpload` | `rights_status` موجود، والـ mime مدعوم | non-retryable |
 | L1 ← L2/L3 | `ParsedBook` | كل block ليه `refs` ≥ 1، و`page_count` صحيح | retry على دفعات صفحات |
+| L1 v2 ← L2/L3 (1.3.0، R3) | `ParsedBookV2` + `IngestQualityReport` | عقد v2 صالح، و`IngestQualityReport.accepted` (البوابات الحتمية في §7). التقرير غير المقبول لا يمر للمخطط | `accepted=false` يُحفظ ويُوقف المسار (مراجعة) |
 | L2 ← L5 | `CourseOutline` | الـ spans متتالية ومتداخلتش؛ لو `llm_inferred` ⇒ `requires_review` | Gate G0 |
 | L3 ← L4 | `StructuredChunk[]` | مفيش chunk بيعدي حدود `section_path`، و`embedding_model` ثابت | retry |
 | L4 ← L5 | LightRAG doc_ids + `ConceptEdge[]` | `doc_status=processed` لكل كتاب؛ كل edge ليه evidence | retry / G1 |
@@ -129,3 +130,28 @@ class GraphRetriever(Protocol):
 
 ## 6. Provenance للموافقة على المخطط
 `OutlineApprovalProvenance` يميز صراحةً بين `human` و`system`. المسار البشري يتطلب `reviewer_id` حقيقيًا. المراجع النظامي يحمل `system_id` وإصدار السياسة وبصمة دليل، ولا يقبل أي `reviewer_id`. سياسة `b2c-outline-structural-review` تتحقق من مصدر غير مستنتج آليًا، وعناوين دروس موجودة بالنص، وتغطية متصلة كاملة للكتل، واتساق الصفحات والمتطلبات السابقة. نجاحها يثبت سلامة البنية فقط؛ لا يعني اعتمادًا تربويًا أو مراجعة بشرية.
+
+## 7. ParsedBook v2 (SCHEMA 1.3.0، R3)
+المرجع: `docs/audits/2026-10-24/01-ingest.md` §5–6. الـ block في v2 وحدة منطقية (فقرة، عنوان، حاشية، مدخل)، لا شريحة صفحة. لا يُسقط شيء رآه المحلل: الترويسات وأرقام الصفحات تبقى blocks في المنطقة `furniture`.
+
+| الحقل | المعنى |
+|---|---|
+| `BlockV2.block_id` | `f"{book_id}:b{seq:05d}"` بترتيب القراءة، غير مربوط بصفحة |
+| `type` | الأنواع الأحد عشر في v1 مع `endnote`، و`bibliography_entry`، و`toc_entry`، و`index_entry`، و`running_header`، و`running_footer`، و`page_number` (بدل `page_header`/`page_footer`) |
+| `zone` | `front_matter` أو `body` أو `back_matter` أو `furniture`. ‏`furniture` يساوي بالضبط أنواع الترويسة والتذييل ورقم الصفحة |
+| `refs` | كل أجزاء الـ block بترتيب القراءة: صفحة أو أكثر، مع `bbox` (أعلى-يسار، نقاط PDF) و`printed_label` من `/PageLabels` |
+| `raw_text` / `text` | نص المحلل كما هو (الأجزاء مفصولة بـ `\n`)، ونتيجة التطبيع الحتمي |
+| `level` + `level_source` | للعناوين فقط: `pdf_outline` أو `layout` أو `numbering` أو `section_word` |
+| `note_refs[]` | علامات الإحالة: تُزال من `text` ويُحفظ موضعها `offset` والـ `note_id` المربوط (أو `null` إن لم تُربط) |
+| `note_label` | الرقم المطبوع لحاشية أو endnote |
+| `normalization[]` / `quality_flags[]` | خطوات التطبيع التي غيّرت الـ block، والعيوب المتبقية المرصودة |
+| `ParsedBookV2.pages[]` | كل صفحة: `printed_label` و`status ∈ {content, furniture_only, empty}` |
+| `outline[]` | الـ bookmarks ومعها `block_id` العنوان المطابق (أو `null`) |
+| `notes[]` | `Note(note_id, kind, label, block_ids, cited_by)` |
+| `normalizer` | اسم وإصدار التطبيع؛ إعادة التطبيع من نفس الوسيط تعطي نفس الـ SHA |
+
+الثوابت التي يفرضها العقد: الصفحات `1..page_count` بالترتيب، و`block_id` و`note_id` فريدان، وكل ref داخل الكتاب نفسه، وكل رابط حاشية أو مدخل outline يشير إلى block موجود، والحاشية تشير إلى block من نوع footnote/endnote.
+
+**التوافق مع v1:** `parsed_book_v1_from_v2(book)` إسقاط بلا استنتاج. يحوّل الأنواع الجديدة إلى أقرب نوع v1، ويعيد علامات الحواشي ملتصقة بموضعها، ويعيد رقم الحاشية في أول نصها، ويجعل المعرّف `f"{book_id}:{first_page}:{seq}"`. نشاط الاستخراج v2 يحفظ `parsed-book.json` (v1) بجانب `parsed-book-v2.json` حتى تنتقل المراحل اللاحقة.
+
+**تقرير الجودة:** `IngestQualityReport(metrics, checks[QualityCheck], accepted)`. كل `QualityCheck` يحمل القيمة والعتبة والحكم، والعقد يرفض حكمًا لا يطابق القيمة، ويرفض `accepted=true` إن فشل أي فحص أو لم ينجح أي فحص. الفحص غير القابل للقياس (مثل ربط الحواشي في كتاب بلا حواشٍ) قيمته `null` وحكمه `null`.

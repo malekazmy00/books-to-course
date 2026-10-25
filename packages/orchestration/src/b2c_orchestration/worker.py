@@ -42,7 +42,7 @@ from .telemetry import setup_tracing
 log = get_logger("b2c.worker")
 
 
-def translation_gateway_factory(cache):
+def translation_gateway_factory(cache, *, capture_content: bool = False):
     """llm_gateway client per translation/QE profile (rule 5); local unless the profile opts in."""
     def make(profile):
         api_key = None
@@ -51,7 +51,7 @@ def translation_gateway_factory(cache):
             api_key = Path(profile.api_key_file).read_text(encoding="utf-8").strip() or None
         return LLMGateway(profile.base_url, profile.model_id, cache=cache, timeout_s=profile.timeout_s,
                           allow_remote=profile.allow_remote, api_key=api_key,
-                          reasoning_effort=profile.reasoning_effort)
+                          reasoning_effort=profile.reasoning_effort, capture_content=capture_content)
     return make
 
 
@@ -73,7 +73,8 @@ def translate_book_worker(client, s, *, store, cache, executor) -> Worker:
     from b2c_translation.memory import TranslationMemory
 
     try:
-        runtime = ProfileRuntime(load_translation_profiles(s), gateway_factory=translation_gateway_factory(cache))
+        runtime = ProfileRuntime(load_translation_profiles(s), gateway_factory=translation_gateway_factory(
+            cache, capture_content=s.llm_capture_content))
     except Exception as exc:  # a bad profiles file must not take the other queues down
         log.error("translation profiles unavailable", extra={"error": type(exc).__name__})
         runtime = _UnavailableProfiles(type(exc).__name__)
@@ -116,7 +117,7 @@ async def run_worker() -> None:
             token_limit=s.inception_free_token_limit)
         budget.migrate()
     gateway = LLMGateway(s.llm_base_url, s.llm_model_id, cache=cache, timeout_s=s.llm_timeout_s,
-                         reasoning_effort=s.llm_reasoning_effort,
+                         reasoning_effort=s.llm_reasoning_effort, capture_content=s.llm_capture_content,
                          allow_remote=s.llm_allow_remote, api_key=s.llm_api_key,
                          request_budget=budget, free_daily_limit=s.openrouter_free_daily_limit,
                          free_min_interval_s=s.openrouter_free_min_interval_seconds,

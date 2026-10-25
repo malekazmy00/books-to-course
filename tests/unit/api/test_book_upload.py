@@ -420,7 +420,9 @@ async def test_course_qa_generation_waits_for_completed_index():
     assert response.status_code == 409
     assert temporal.starts == []
 
-async def test_system_structural_review_approves_with_machine_provenance_only():
+async def test_system_structural_review_approves_with_machine_provenance_only(monkeypatch):
+    # System approval is an explicit opt-in since R0 (audit 02 P3).
+    monkeypatch.setenv("B2C_ALLOW_SYSTEM_OUTLINE_APPROVAL", "true")
     store = FakeStore()
     temporal = FakeTemporal()
     temporal.status_name = "COMPLETED"

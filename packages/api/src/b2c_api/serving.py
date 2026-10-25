@@ -10,7 +10,14 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
-from b2c_contracts import ArtifactRef, AudioAsset, CourseOutline, CourseRelease, OutlineApprovalProvenance
+from b2c_contracts import (
+    ArtifactRef,
+    AudioAsset,
+    CourseOutline,
+    CourseRelease,
+    OutlineApprovalProvenance,
+    Question,
+)
 from b2c_pedagogy.qa_generation import CourseQAResult
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -174,10 +181,49 @@ def parse_single_byte_range(value: str, size: int) -> tuple[int, int]:
     return start, end
 
 
+# Learner projections are allowlists (audits 06 C4, 09 C4): a field reaches a learner only if
+# it is named here. Answers, rationales, evidence anchors and validator output never do.
+LEARNER_QUESTION_FIELDS = ("qid", "lesson_id", "purpose", "type", "bloom", "stem", "options")
+LEARNER_GROUNDED_FIELDS = ("qa_id", "question", "pages")
+LEARNER_SEGMENT_FIELDS = ("sid", "start_s", "end_s")
+
+
+def _plain(value: Any) -> dict[str, Any]:
+    if hasattr(value, "model_dump"):
+        return value.model_dump(mode="json")
+    return dict(value)
+
+
 def learner_question(question: Any) -> dict[str, Any]:
     """Return question fields safe to show before an answer is submitted."""
-    value = question.model_dump(mode="json")
-    for key in ("answer_index", "answer_text", "rationale", "validation"):
-        value.pop(key, None)
-    return value
+    value = _plain(question)
+    return {key: value[key] for key in LEARNER_QUESTION_FIELDS if key in value}
 
+
+def learner_grounded_question(item: Any) -> dict[str, Any]:
+    """A grounded Q/A pair without its answer, evidence quote or checks."""
+    value = _plain(item)
+    return {key: value[key] for key in LEARNER_GROUNDED_FIELDS if key in value}
+
+
+def learner_lesson_assets(asset: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Lesson text, summary and glossary are learning material; questions lose their answers."""
+    if asset is None:
+        return None
+    return {"lesson_id": asset.get("lesson_id"), "draft": asset.get("draft"), "summary": asset.get("summary"),
+            "glossary": asset.get("glossary", []),
+            "questions": [learner_question(Question.model_validate(item)) for item in asset.get("questions", [])]}
+
+
+def learner_course_qa(qa: Any) -> dict[str, Any]:
+    """Course question bank as a learner may see it: questions only, no answers or provenance."""
+    return {"status": qa.status,
+            "scopes": [{"scope_id": scope.scope_id, "kind": scope.kind, "lesson_ids": list(scope.lesson_ids),
+                        "questions": [learner_grounded_question(item) for item in scope.items]}
+                       for scope in qa.scopes if scope.status == "final"],
+            "lesson_assets": [learner_lesson_assets(asset) for asset in qa.lesson_assets]}
+
+
+def learner_segments(segments: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Audio timing only; segment text may read an answer aloud."""
+    return [{key: segment[key] for key in LEARNER_SEGMENT_FIELDS if key in segment} for segment in segments]

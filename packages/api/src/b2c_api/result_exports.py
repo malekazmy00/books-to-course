@@ -12,14 +12,30 @@ from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 from starlette.concurrency import run_in_threadpool
 from b2c_contracts import ArtifactRef
+from b2c_api.audio_exports import LEGACY_REFUSAL, UNVERIFIED_NOTICE, UNVERIFIED_NOTICE_NAME
 from b2c_api.deps import stream_artifact_file
 
 # Explicit allowlist excludes secrets, internal checkpoints and audio.
-RESULT_STAGES = {"ingest-parse-pdf", "approve-outline", "generate-course-qa", "translate-content", "index-approved-book"}
+RESULT_STAGES = {"ingest-parse-pdf", "approve-outline", "generate-course-qa", "translate-content", "translate-book",
+                 "index-approved-book"}
+# R0 (audits 07 C3, 09 C2): legacy TranslateContentWorkflow output is unverified. It is hidden from
+# discovery and refused by every download/export unless allow_unverified_legacy=true, and then marked.
+# translate-book (v2 assembly) carries only accepted unit text (incomplete blocks have text=null).
+LEGACY_RESULT_STAGES = {"translate-content"}
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 
 class ResultSelection(BaseModel):
     result_ids: list[str] = Field(default_factory=list, max_length=500)
+    allow_unverified_legacy: bool = False
+
+
+def is_legacy_result(result_id: str) -> bool:
+    return result_id.split(":", 1)[0] in LEGACY_RESULT_STAGES
+
+
+def require_verified_result(result_id: str, allow_unverified_legacy: bool) -> None:
+    if is_legacy_result(result_id) and not allow_unverified_legacy:
+        raise HTTPException(409, LEGACY_REFUSAL)
 
 def scoped_ref(store, bucket: str, course_id: str, result_id: str) -> ArtifactRef:
     if not SAFE_ID.fullmatch(course_id) or ".." in course_id:
@@ -55,6 +71,7 @@ def available_results(store, bucket: str, course_id: str) -> list[dict]:
                 ref = scoped_ref(store, bucket, course_id, identity)
                 files = sorted(store.list_files(ref))
                 found.append({"result_id": identity, "stage": ref.stage,
+                    "unverified_legacy": ref.stage in LEGACY_RESULT_STAGES,
                     "artifact_ref": ref.model_dump(mode="json"), "files": files,
                     "created_at": ref.created_at.isoformat(), "course_id": course_id})
         token = page.get("NextContinuationToken")
@@ -107,9 +124,12 @@ def unit_markdown(unit: dict, course_id: str, ref: ArtifactRef) -> str:
                 lines += ["Pages: " + ", ".join(map(str, item["pages"])), ""]
     return "\n".join(lines)
 
-def build_result_archive(store, bucket: str, course_id: str, result_ids: list[str]):
+def build_result_archive(store, bucket: str, course_id: str, result_ids: list[str],
+                         allow_unverified_legacy: bool = False):
     # Write archive on disk; never collect a whole course in memory.
-    selected = result_ids or [r["result_id"] for r in available_results(store, bucket, course_id)]
+    # The default selection ("everything") never includes unverified legacy results.
+    selected = result_ids or [r["result_id"] for r in available_results(store, bucket, course_id)
+                              if not r["unverified_legacy"]]
     if len(selected) > 500:
         raise HTTPException(413, "select at most 500 saved results")
     if not selected:
@@ -119,9 +139,14 @@ def build_result_archive(store, bucket: str, course_id: str, result_ids: list[st
         with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as target:
             for identity in dict.fromkeys(selected):
                 ref = scoped_ref(store, bucket, course_id, identity)
+                require_verified_result(identity, allow_unverified_legacy)
                 directory = ref.stage + "/" + ref.key + "/"
-                provenance = {"course_id": course_id, "artifact_ref": ref.model_dump(mode="json")}
+                unverified = is_legacy_result(identity)
+                provenance = {"course_id": course_id, "artifact_ref": ref.model_dump(mode="json"),
+                              "unverified_legacy": unverified}
                 target.writestr(directory + "provenance.json", json.dumps(provenance, ensure_ascii=False))
+                if unverified:
+                    target.writestr(directory + UNVERIFIED_NOTICE_NAME, UNVERIFIED_NOTICE)
                 for name in sorted(store.list_files(ref)):
                     _, data = read_result_file(store, bucket, course_id, identity, name)
                     target.writestr(directory + name, data)
@@ -147,40 +172,51 @@ def result_exports_router(store_provider: Callable, bucket: str) -> APIRouter:
     router = APIRouter()
 
     @router.get("/v1/courses/{course_id}/results")
-    async def discover(course_id: str) -> dict:
+    async def discover(course_id: str, include_unverified_legacy: bool = False) -> dict:
         items = await run_in_threadpool(available_results, store_provider(), bucket, course_id)
+        hidden = sum(1 for item in items if item["unverified_legacy"])
+        if not include_unverified_legacy:
+            items = [item for item in items if not item["unverified_legacy"]]
         return {"course_id": course_id, "results": items, "total": len(items),
-            "scope": "committed_artifacts_in_this_course", "cross_course_materialization": False}
+            "scope": "committed_artifacts_in_this_course", "cross_course_materialization": False,
+            "unverified_legacy_results": hidden}
 
     @router.get("/v1/courses/{course_id}/results/{result_id}/file")
     async def download(course_id: str, result_id: str, name: str = Query(min_length=1, max_length=300),
-                       preview: bool = False):
+                       preview: bool = False, allow_unverified_legacy: bool = False):
         store = store_provider()
         ref = await run_in_threadpool(result_file_ref, store, bucket, course_id, result_id, name)
+        require_verified_result(result_id, allow_unverified_legacy)
         media = "application/json" if name.endswith(".json") else "text/plain; charset=utf-8" if name.endswith((".txt", ".md")) else "application/octet-stream"
         filename = re.sub(r"[^A-Za-z0-9._-]", "_", name.rsplit("/", 1)[-1])
         try:
             return await stream_artifact_file(store, ref, name, media_type=media, bucket=bucket, headers={
                 "Content-Disposition": f'{"inline" if preview else "attachment"}; filename="{filename}"',
-                "X-Artifact-SHA256": ref.sha256})
+                "X-Artifact-SHA256": ref.sha256,
+                "X-B2C-Verification": "unverified_legacy" if is_legacy_result(result_id) else "not_legacy"})
         except Exception as exc:
             raise HTTPException(503, "saved result file is unavailable") from exc
 
     @router.get("/v1/courses/{course_id}/results/{result_id}/units")
     async def units(course_id: str, result_id: str, name: str = Query(min_length=1, max_length=300),
-                    offset: int = Query(0, ge=0), limit: int = Query(40, ge=1, le=100)):
+                    offset: int = Query(0, ge=0), limit: int = Query(40, ge=1, le=100),
+                    allow_unverified_legacy: bool = False):
         ref, data = await run_in_threadpool(read_result_file, store_provider(), bucket, course_id, result_id, name)
+        require_verified_result(result_id, allow_unverified_legacy)
         try:
             document = json.loads(data)
         except (ValueError, UnicodeDecodeError) as exc:
             raise HTTPException(422, "select a JSON result document") from exc
         records = result_units(document) if isinstance(document, dict) else []
         return {"course_id": course_id, "artifact_ref": ref.model_dump(mode="json"),
-            "units": records[offset:offset+limit], "offset": offset, "total": len(records)}
+            "units": records[offset:offset+limit], "offset": offset, "total": len(records),
+            "unverified_legacy": is_legacy_result(result_id)}
 
     @router.get("/v1/courses/{course_id}/results/{result_id}/units/{unit_id}/file")
-    async def unit_download(course_id: str, result_id: str, unit_id: str, name: str = Query(min_length=1, max_length=300)):
+    async def unit_download(course_id: str, result_id: str, unit_id: str, name: str = Query(min_length=1, max_length=300),
+                            allow_unverified_legacy: bool = False):
         ref, data = await run_in_threadpool(read_result_file, store_provider(), bucket, course_id, result_id, name)
+        require_verified_result(result_id, allow_unverified_legacy)
         try:
             document = json.loads(data)
         except (ValueError, UnicodeDecodeError) as exc:
@@ -188,13 +224,15 @@ def result_exports_router(store_provider: Callable, bucket: str) -> APIRouter:
         unit = next((u for u in result_units(document) if u["unit_id"] == unit_id), None) if isinstance(document, dict) else None
         if unit is None:
             raise HTTPException(404, "saved result unit not found")
-        payload = {"course_id": course_id, "artifact_ref": ref.model_dump(mode="json"), **unit}
+        payload = {"course_id": course_id, "artifact_ref": ref.model_dump(mode="json"), **unit,
+                   "unverified_legacy": is_legacy_result(result_id)}
         return Response(json.dumps(payload, ensure_ascii=False), media_type="application/json",
             headers={"Content-Disposition": f'attachment; filename="{unit_id}.json"'})
 
     @router.post("/v1/courses/{course_id}/results/export")
     async def export(course_id: str, body: ResultSelection):
-        archive = await run_in_threadpool(build_result_archive, store_provider(), bucket, course_id, body.result_ids)
+        archive = await run_in_threadpool(build_result_archive, store_provider(), bucket, course_id, body.result_ids,
+                                          body.allow_unverified_legacy)
         def chunks():
             while chunk := archive.read(1024 * 1024):
                 yield chunk

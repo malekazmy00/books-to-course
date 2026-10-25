@@ -12,10 +12,12 @@ from b2c_contracts import (
 from b2c_orchestration.audio import GenerateMP3Input, GenerateMP3Workflow, validate_mp3_input_lineage
 from b2c_orchestration.queues import AUDIO
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Query
 from fastapi.responses import StreamingResponse
 from starlette.background import BackgroundTask
-from b2c_api.audio_exports import audio_progress, ordered_audio_tracks, validate_audio_manifest, course_audio_checkpoints, audio_zip
+from b2c_api.audio_exports import (LEGACY_REFUSAL, annotate_verification, artifact_unverified, audio_progress,
+                                   audio_zip, course_audio_checkpoints, ordered_audio_tracks, validate_audio_manifest)
+from b2c_orchestration.audio import ACCEPTED_TRANSLATION_STAGE, LEGACY_TRANSLATION_STAGE, UnverifiedLegacySource
 from starlette.concurrency import run_in_threadpool
 from temporalio.exceptions import WorkflowAlreadyStartedError
 from b2c_api.deps import (
@@ -48,7 +50,7 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
     @router.post("/v1/courses/{course_id}/audio", status_code=202)
     async def generate_course_audio(course_id: str, request: MP3GenerationRequest) -> dict[str, Any]:
         source = request.source_artifact_ref
-        if source.stage not in {"ingest-parse-pdf", "generate-course-qa", "translate-content"} or not source.uri.startswith(f"s3://{settings.s3_bucket}/{course_id}/"):
+        if source.stage not in {"ingest-parse-pdf", "generate-course-qa", LEGACY_TRANSLATION_STAGE, ACCEPTED_TRANSLATION_STAGE} or not source.uri.startswith(f"s3://{settings.s3_bucket}/{course_id}/"):
             raise HTTPException(status_code=422, detail="source artifact is outside this course or not an audio-ready artifact")
         outline_ref = request.approved_outline_ref
         if request.source_kind == "course" and (outline_ref is None or outline_ref.stage != "approve-outline" or not outline_ref.uri.startswith(f"s3://{settings.s3_bucket}/{course_id}/")):
@@ -58,7 +60,7 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
                     not request.source_book_ref.uri.startswith(f"s3://{settings.s3_bucket}/{course_id}/")):
                 raise HTTPException(status_code=422, detail="course lesson audio requires the original parsed book")
             if request.source_book_translation_ref is not None and (
-                    request.source_book_translation_ref.stage != "translate-content" or
+                    request.source_book_translation_ref.stage not in {LEGACY_TRANSLATION_STAGE, ACCEPTED_TRANSLATION_STAGE} or
                     not request.source_book_translation_ref.uri.startswith(f"s3://{settings.s3_bucket}/{course_id}/")):
                 raise HTTPException(status_code=422, detail="lesson translation must belong to this course")
         if request.source_kind == "book" and request.book_audio_layout == "lessons":
@@ -79,6 +81,11 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
                                 ("source QA artifact", request.source_qa_artifact_ref)):
             if supplied is not None:
                 await verified_ref(store, course_id, supplied, supplied.stage, label)
+        # R0 (audits 07 C3, 09 C2): a legacy translation needs the explicit opt-in.
+        if not request.allow_unverified_legacy and any(
+                supplied is not None and supplied.stage == LEGACY_TRANSLATION_STAGE
+                for supplied in (source, request.source_book_translation_ref)):
+            raise HTTPException(status_code=409, detail=LEGACY_REFUSAL)
         try:
             client = await get_temporal_client()
             identity = (course_id + source.sha256 + request.source_kind + request.language +
@@ -86,6 +93,9 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
                         (outline_ref.sha256 if outline_ref else "") +
                         (request.source_book_ref.sha256 if request.source_book_ref else "") +
                         (request.source_book_translation_ref.sha256 if request.source_book_translation_ref else ""))
+            if request.allow_unverified_legacy:
+                # The opt-in is part of the identity: such a run never aliases an unmarked one.
+                identity += "\0allow-unverified-legacy"
             legacy_workflow_id = "b2c-mp3-" + hashlib.sha256(identity.encode()).hexdigest()
             workflow_id = legacy_workflow_id
             if request.source_qa_artifact_ref is not None:
@@ -101,7 +111,8 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
                 source_book_translation_ref=request.source_book_translation_ref.model_dump(mode="json") if request.source_book_translation_ref else None,
                 book_audio_layout=request.book_audio_layout, lesson_ids=request.lesson_ids,
                 allow_partial_qa=request.allow_partial_qa, include_summaries=request.include_summaries, include_extra_scopes=request.include_extra_scopes,
-                activity_task_queue=os.getenv("B2C_AUDIO_TASK_QUEUE", AUDIO))
+                activity_task_queue=os.getenv("B2C_AUDIO_TASK_QUEUE", AUDIO),
+                allow_unverified_legacy=request.allow_unverified_legacy)
             if workflow_id != legacy_workflow_id:
                 # A run started before the QA ref was hashed keeps serving the
                 # same request: reuse its ID only if its saved input names the
@@ -113,6 +124,8 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
             store = get_store()
             try:
                 await run_in_threadpool(validate_mp3_input_lineage, store, inp)
+            except UnverifiedLegacySource as exc:
+                raise HTTPException(status_code=409, detail=LEGACY_REFUSAL) from exc
             except (ValueError, KeyError, TypeError) as exc:
                 log.warning("audio request failed source lineage validation: %s", exc)
                 raise HTTPException(status_code=422,
@@ -245,7 +258,8 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
             raise HTTPException(status_code=503, detail="audio manifest is unavailable") from exc
 
     @router.get("/v1/audio/{workflow_id}/tracks/{track_id}")
-    async def download_audio_track(workflow_id: str, track_id: str) -> StreamingResponse:
+    async def download_audio_track(workflow_id: str, track_id: str,
+                                   allow_unverified_legacy: bool = Query(default=False)) -> StreamingResponse:
         manifest = await audio_manifest(workflow_id)
         entry = next((x for x in manifest.get("tracks", []) if x.get("track_id") == track_id), None)
         if entry is None:
@@ -253,11 +267,15 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
         ref = ArtifactRef.model_validate(entry.get("artifact_ref"))
         if ref.stage != "generate-mp3-track" or not ref.uri.startswith(f"s3://{settings.s3_bucket}/{manifest.get('course_id')}/"):
             raise HTTPException(status_code=503, detail="audio track reference is invalid")
+        unverified = await run_in_threadpool(artifact_unverified, get_store(), ref)
+        if unverified and not allow_unverified_legacy:
+            raise HTTPException(status_code=409, detail=LEGACY_REFUSAL)
         name = await audio_course_name(str(manifest["course_id"]))
         filename = next(t["filename"] for t in ordered_audio_tracks(manifest, name) if t["track_id"] == track_id)
         try:
             return await stream_artifact_file(get_store(), ref, "track.mp3", media_type="audio/mpeg",
-                headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+                headers={"Content-Disposition": f'attachment; filename="{filename}"',
+                         "X-B2C-Verification": "unverified_legacy" if unverified else "accepted"})
         except Exception as exc:
             raise HTTPException(status_code=503, detail="audio track is unavailable") from exc
 
@@ -287,7 +305,7 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
             raise HTTPException(503, "course name is unavailable") from exc
         return str((course_settings or {}).get("name") or course_id)
 
-    async def list_course_audio_runs(course_id: str) -> dict[str, Any]:
+    async def list_course_audio_runs(course_id: str, include_unverified_legacy: bool = False) -> dict[str, Any]:
         await audio_course_name(course_id)
         store = get_store()
         try:
@@ -299,6 +317,12 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
         for record in records:
             wid = record["workflow_id"]
             record = await add_audio_lesson_order(record, wid)
+            # R0: unverified (legacy or pre-verification) tracks are hidden unless asked for.
+            all_tracks = await run_in_threadpool(annotate_verification, store, record["tracks"])
+            tracks = all_tracks if include_unverified_legacy else [t for t in all_tracks if not t["unverified_legacy"]]
+            progress_record = record
+            record = {**record, "tracks": tracks,
+                      "hidden_unverified_tracks": len(all_tracks) - len(tracks)}
             # Durable tracks remain listable even after Temporal history expires.
             try:
                 client = await get_temporal_client()
@@ -307,15 +331,16 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
             except Exception:
                 state = "UNKNOWN"
             workflows.append({**record, "status": state,
-                "progress": audio_progress(record, state),
+                "progress": audio_progress(progress_record, state),
                 "tracks": [{**track, "download_url": f"/v1/audio/{wid}/tracks/{track['track_id']}"}
                            for track in ordered_audio_tracks(record, name)],
                 "zip_url": f"/v1/courses/{course_id}/audio/zip?workflow_id={wid}"})
         return {"course_id": course_id, "course_name": name, "workflows": workflows,
-                "total_saved_tracks": sum(len(record["tracks"]) for record in records)}
+                "total_saved_tracks": sum(len(workflow["tracks"]) for workflow in workflows)}
 
     @router.get("/v1/courses/{course_id}/audio/zip")
-    async def download_course_audio_zip(course_id: str, workflow_id: str) -> StreamingResponse:
+    async def download_course_audio_zip(course_id: str, workflow_id: str,
+                                        allow_unverified_legacy: bool = Query(default=False)) -> StreamingResponse:
         manifest = await audio_manifest(workflow_id)
         try:
             validate_audio_manifest(manifest, settings.s3_bucket, course_id)
@@ -328,8 +353,13 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
             raise HTTPException(409, "course audio is incomplete; download saved tracks individually")
         name = await audio_course_name(course_id)
         store = get_store()
+        tracks = await run_in_threadpool(annotate_verification, store, manifest["tracks"])
+        unverified = any(track["unverified_legacy"] for track in tracks)
+        if unverified and not allow_unverified_legacy:
+            raise HTTPException(status_code=409, detail=LEGACY_REFUSAL)
         try:
-            archive = await run_in_threadpool(audio_zip, store, manifest, name)
+            archive = await run_in_threadpool(lambda: audio_zip(store, {**manifest, "tracks": tracks}, name,
+                                                                unverified=unverified))
         except Exception as exc:
             raise HTTPException(503, "course audio archive is unavailable") from exc
         def chunks():
@@ -339,7 +369,8 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
             finally:
                 archive.close()
         return StreamingResponse(chunks(), media_type="application/zip",
-            headers={"Content-Disposition": 'attachment; filename="course-audio.zip"'},
+            headers={"Content-Disposition": 'attachment; filename="course-audio.zip"',
+                     "X-B2C-Verification": "unverified_legacy" if unverified else "accepted"},
             background=BackgroundTask(archive.close))
 
     async def load_audio_input(workflow_id: str) -> GenerateMP3Input | None:
@@ -386,7 +417,8 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
         return await generate_course_audio(course_id, request)
 
     @router.get("/v1/audio/{workflow_id}/file")
-    async def download_audio(workflow_id: str) -> StreamingResponse:
+    async def download_audio(workflow_id: str,
+                             allow_unverified_legacy: bool = Query(default=False)) -> StreamingResponse:
         require_workflow_id("mp3", workflow_id, "audio workflow not found")
         try:
             client = await get_temporal_client()
@@ -399,8 +431,12 @@ def audio_router(ctx: ApiContext, router: Any = None) -> Any:
             ref = ArtifactRef.model_validate(result["artifact"])
             if ref.stage != "generate-mp3" or not ref.uri.startswith(f"s3://{settings.s3_bucket}/{result.get('course_id')}/"):
                 raise HTTPException(status_code=503, detail="MP3 artifact failed scope validation")
+            unverified = await run_in_threadpool(artifact_unverified, get_store(), ref)
+            if unverified and not allow_unverified_legacy:
+                raise HTTPException(status_code=409, detail=LEGACY_REFUSAL)
             return await stream_artifact_file(get_store(), ref, "course.mp3", media_type="audio/mpeg",
-                headers={"Content-Disposition": 'attachment; filename="course.mp3"'})
+                headers={"Content-Disposition": 'attachment; filename="course.mp3"',
+                         "X-B2C-Verification": "unverified_legacy" if unverified else "accepted"})
         except HTTPException:
             raise
         except Exception as exc:

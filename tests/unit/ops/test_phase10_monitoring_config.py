@@ -22,7 +22,9 @@ def test_prometheus_loads_b2c_rules_and_compose_mounts_them():
 def test_b2c_alert_rules_are_scoped_and_have_documented_budget():
     rules = yaml.safe_load((ROOT / "docker/prometheus/alerts.yml").read_text())
     alerts = [rule["alert"] for group in rules["groups"] for rule in group["rules"]]
-    assert alerts == ["B2CScrapeTargetDown", "B2CContainerMemoryBudgetHigh"]
+    assert alerts == ["B2CScrapeTargetDown", "B2CContainerMemoryBudgetHigh",
+                      # R0 (audit 08 H3); see test_r0_alert_rules.py
+                      "B2CTaskQueueBacklogWithoutPollers", "B2CNoActivityProgress24h"]
     memory = next(
         rule for group in rules["groups"] for rule in group["rules"]
         if rule["alert"] == "B2CContainerMemoryBudgetHigh"

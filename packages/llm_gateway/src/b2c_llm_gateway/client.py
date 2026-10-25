@@ -103,7 +103,7 @@ class LLMGateway:
     def __init__(self, base_url: str, model_id: str, *, cache: LLMCache | None = None,
                  timeout_s: float = 600.0, transport: httpx.BaseTransport | None = None,
                  tracer_provider: trace.TracerProvider | None = None,
-                 capture_content: bool = True, allow_remote: bool = False,
+                 capture_content: bool = False, allow_remote: bool = False,
                  api_key: str | None = None, request_budget: Any | None = None,
                  free_daily_limit: int = 40, free_min_interval_s: float = 6.0,
                  page_batch_max_chars: int = 24000, page_batch_max_pages: int = 10,
@@ -120,7 +120,8 @@ class LLMGateway:
         self.base_url = base_url.rstrip("/")
         self.model_id = model_id
         self.cache = cache
-        # Remote document text must never be copied into Langfuse span attributes.
+        # Book text is not copied into span attributes unless explicitly enabled (R0, audit 08 H3;
+        # OTel GenAI semconv); remote document text is never copied into Langfuse span attributes.
         self.capture_content = capture_content if is_local else False
         self.provider_name = (
             "openrouter" if host == "openrouter.ai"

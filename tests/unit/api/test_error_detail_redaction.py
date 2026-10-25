@@ -53,6 +53,8 @@ async def test_audio_lineage_rejection_is_generic(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_system_review_validation_error_keeps_locations_only(monkeypatch):
+    # System approval is an explicit opt-in since R0 (audit 02 P3).
+    monkeypatch.setenv("B2C_ALLOW_SYSTEM_OUTLINE_APPROVAL", "true")
     import b2c_api.routers.ingestion as module
 
     try:

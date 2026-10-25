@@ -34,7 +34,9 @@ def book(book_id, role):
 
 
 @pytest.mark.asyncio
-async def test_system_approval_accepts_supplements_in_any_order():
+async def test_system_approval_accepts_supplements_in_any_order(monkeypatch):
+    # System approval is an explicit opt-in since R0 (audit 02 P3).
+    monkeypatch.setenv("B2C_ALLOW_SYSTEM_OUTLINE_APPROVAL", "true")
     draft_ref = ArtifactRef(stage="build-outline", key="a" * 64,
                             uri="s3://artifacts/course-1/build-outline/" + "a" * 64 + "/",
                             sha256="b" * 64, created_at=datetime.now(UTC))

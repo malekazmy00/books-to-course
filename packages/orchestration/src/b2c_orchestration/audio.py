@@ -38,6 +38,65 @@ class GenerateMP3Input(BaseModel):
     include_summaries: bool = True
     include_extra_scopes: bool = True
     activity_task_queue: str = "heavy"
+    # R0 (audits 07 C3, 09 C2): a legacy translate-content translation is used only on explicit
+    # request, and the produced artifacts then carry unverified_legacy=true.
+    allow_unverified_legacy: bool = False
+
+
+LEGACY_TRANSLATION_STAGE = "translate-content"     # TranslateContentWorkflow: no per-segment verification
+ACCEPTED_TRANSLATION_STAGE = "translate-book"      # translate-book v2 assembly: accepted units only
+TRANSLATION_UNITS_STAGE = "translation-units"
+VERIFICATION_FILE = "verification.json"            # written into every new MP3 / track artifact
+
+
+class UnverifiedLegacySource(ValueError):
+    """A legacy (unverified) translation was requested without the explicit opt-in."""
+
+
+def require_legacy_opt_in(reference: ArtifactRef, inp: GenerateMP3Input, label: str) -> None:
+    if reference.stage == LEGACY_TRANSLATION_STAGE and not inp.allow_unverified_legacy:
+        raise UnverifiedLegacySource(
+            f"{label} is a legacy translation without per-segment verification ({LEGACY_TRANSLATION_STAGE}); "
+            "use an accepted translate-book assembly, or pass allow_unverified_legacy=true to use it explicitly")
+
+
+def accepted_translation_blocks(store: Any, reference: ArtifactRef,
+                                course_id: str) -> tuple[ArtifactRef, dict[str, str | None]]:
+    """Read a translate-book assembly: (its parsed source ref, block_id -> accepted text).
+
+    Only blocks with ``complete=true`` carry text. A block joined into another one
+    (``merged_into``) maps to "" because its text is spoken with its owner; a block that is not
+    accepted yet maps to ``None``. Blocks the unit builder never translated are absent.
+    """
+    if reference.stage != ACCEPTED_TRANSLATION_STAGE:
+        raise ValueError("not a translate-book assembly")
+    document = json.loads(store.read(reference, "translation.json"))
+    units_ref = ArtifactRef.model_validate(document.get("units_ref") or {})
+    if units_ref.stage != TRANSLATION_UNITS_STAGE or not units_ref.uri.startswith(f"s3://{store.bucket}/{course_id}/"):
+        raise ValueError("translation assembly units are outside the course")
+    build = json.loads(store.read(units_ref, "build.json"))
+    source_ref = ArtifactRef.model_validate(build.get("source_artifact_ref") or {})
+    blocks = document.get("blocks")
+    if not isinstance(blocks, dict) or not blocks:
+        raise ValueError("translation assembly has no blocks")
+    texts: dict[str, str | None] = {}
+    for block_id, block in blocks.items():
+        owner = block.get("merged_into")
+        complete = bool(block.get("complete")) and (owner is None or bool((blocks.get(owner) or {}).get("complete")))
+        if not complete:
+            texts[block_id] = None
+        elif owner is not None:
+            texts[block_id] = ""
+        else:
+            texts[block_id] = str(block.get("text") or "")
+    return source_ref, texts
+
+
+def verification_record(translation_ref: ArtifactRef | None) -> dict[str, Any]:
+    """What a produced audio artifact was spoken from; legacy translations stay marked forever."""
+    return {"unverified_legacy": translation_ref is not None and translation_ref.stage == LEGACY_TRANSLATION_STAGE,
+            "translation_source": translation_ref.stage if translation_ref else None,
+            "translation_sha256": translation_ref.sha256 if translation_ref else None}
 
 
 def is_front_matter_lesson(lesson: Any) -> bool:
@@ -140,14 +199,38 @@ def validate_mp3_input_lineage(store: Any, inp: GenerateMP3Input) -> None:
         language, confidence, _ = detect_source_language(text)
         return language if language in {"en", "ar"} and confidence >= 0.85 else None
 
+    def accepted(reference: ArtifactRef, expected_source: ArtifactRef, label: str) -> dict[str, str | None]:
+        source_ref, texts = accepted_translation_blocks(store, reference, inp.course_id)
+        if source_ref.sha256 != expected_source.sha256 or source_ref.stage != expected_source.stage:
+            raise ValueError(f"{label} was translated from a different source")
+        pending = sorted(block_id for block_id, text in texts.items() if text is None)
+        if pending:
+            raise ValueError(f"{label} has {len(pending)} block(s) not accepted yet (first: {pending[0]}); "
+                             "audio requires every translated block to be accepted")
+        joined = "\n".join(text for text in texts.values() if text)
+        if not joined.strip():
+            raise ValueError(f"{label} has no accepted text")
+        found = detected_language(joined)
+        if found is not None and found != inp.language:
+            raise ValueError(f"{label} language does not match audio")
+        return texts
+
     source = ref(inp.source_artifact_ref, "audio source")
+    # Refuse an unverified legacy translation before reading anything else.
+    require_legacy_opt_in(source, inp, "audio source translation")
+    if inp.source_book_translation_ref:
+        require_legacy_opt_in(ref(inp.source_book_translation_ref, "book translation"), inp, "book translation")
     outline_ref = ref(inp.approved_outline_ref, "approved outline") if inp.approved_outline_ref else None
     source_book_ref = ref(inp.source_book_ref, "source book") if inp.source_book_ref else None
 
     if inp.source_kind == "book":
         original_ref = source
         pack = None
-        if source.stage == "translate-content":
+        if source.stage == ACCEPTED_TRANSLATION_STAGE:
+            original_ref, _ = accepted_translation_blocks(store, source, inp.course_id)
+            pack = accepted(source, source_book_ref or original_ref, "book translation")
+        elif source.stage == "translate-content":
+            require_legacy_opt_in(source, inp, "book translation")
             info_ref = json_asset(source, "translation-source.json")
             original_ref = ArtifactRef.model_validate(info_ref.get("source_artifact_ref", {}))
             if original_ref.stage != "ingest-parse-pdf":
@@ -179,6 +262,7 @@ def validate_mp3_input_lineage(store: Any, inp: GenerateMP3Input) -> None:
         raise ValueError("course audio requires its original parsed book")
     source_book = ParsedBook.model_validate_json(store.read(source_book_ref, "parsed-book.json"))
     if source.stage == "translate-content":
+        require_legacy_opt_in(source, inp, "course translation")
         qa_pack, qa_ref = translated(source, ref(inp.source_qa_artifact_ref, "source QA artifact"),
                                      inp.language, "course translation")
         if qa_ref.sha256 != ArtifactRef.model_validate(inp.source_qa_artifact_ref).sha256:
@@ -217,8 +301,12 @@ def validate_mp3_input_lineage(store: Any, inp: GenerateMP3Input) -> None:
     book_language = detected_language("\n".join(block.text for block in source_book.blocks))
     book_pack = None
     if inp.source_book_translation_ref:
-        book_pack, _ = translated(ref(inp.source_book_translation_ref, "book translation"),
-                                  source_book_ref, inp.language, "book translation")
+        book_translation_ref = ref(inp.source_book_translation_ref, "book translation")
+        if book_translation_ref.stage == ACCEPTED_TRANSLATION_STAGE:
+            book_pack = accepted(book_translation_ref, source_book_ref, "book translation")
+        else:
+            require_legacy_opt_in(book_translation_ref, inp, "book translation")
+            book_pack, _ = translated(book_translation_ref, source_book_ref, inp.language, "book translation")
     if book_language and book_language != inp.language and book_pack is None:
         raise ValueError("lesson source language differs from audio; a matching book translation is required")
 
@@ -317,7 +405,7 @@ class MP3Activities:
                       "source_identity": source_identity, "attachment_coverage": coverage,
                       "track_count": track_count if track_count is not None else len(tracks),
                       "tracks": list(tracks), "current_track": current_track,
-                      "renderer_progress": renderer_progress,
+                      "renderer_progress": renderer_progress, "unverified_legacy": legacy_used,
                       "updated_at": __import__("datetime").datetime.now(__import__("datetime").timezone.utc).isoformat()}
             if not workflow_id or not getattr(self.store, "s3", None):
                 return
@@ -328,29 +416,51 @@ class MP3Activities:
                 activity.logger.warning("could not persist incremental audio manifest")
         validate_mp3_input_lineage(self.store, inp)
         ref=ArtifactRef.model_validate(inp.source_artifact_ref)
-        source_identity = artifact_source_identity(self.store,
-            ArtifactRef.model_validate(inp.source_book_ref) if inp.source_book_ref else ref)
-        def persist_audio(course_id, stage, key, compute):
+        if inp.source_book_ref:
+            identity_ref=ArtifactRef.model_validate(inp.source_book_ref)
+        elif ref.stage==ACCEPTED_TRANSLATION_STAGE:
+            identity_ref,_=accepted_translation_blocks(self.store,ref,inp.course_id)
+        else:
+            identity_ref=ref
+        source_identity = artifact_source_identity(self.store, identity_ref)
+        translation_refs=[r for r in (ref, ArtifactRef.model_validate(inp.source_book_translation_ref) if inp.source_book_translation_ref else None)
+                          if r is not None and r.stage in {LEGACY_TRANSLATION_STAGE, ACCEPTED_TRANSLATION_STAGE}]
+        # Lineage validation refused a legacy translation unless allow_unverified_legacy was set.
+        legacy_used=any(r.stage==LEGACY_TRANSLATION_STAGE for r in translation_refs)
+        legacy_key={"unverified_legacy":True} if legacy_used else {}
+        def persist_audio(course_id, stage, key, compute, translation_ref=None):
             def with_identity():
-                return {**compute(), "source-identity.json": source_identity_file(source_identity)}
+                return {**compute(), "source-identity.json": source_identity_file(source_identity),
+                        VERIFICATION_FILE: json.dumps(verification_record(translation_ref)).encode()}
             return self.store.get_or_compute(course_id, stage, key, with_identity)
-        if ref.stage not in {"ingest-parse-pdf","generate-course-qa","translate-content"} or not ref.uri.startswith(f"s3://{self.store.bucket}/{inp.course_id}/"):
+        def mark(manifest):
+            return {**manifest, "unverified_legacy": True} if legacy_used else manifest
+        if ref.stage not in {"ingest-parse-pdf","generate-course-qa",LEGACY_TRANSLATION_STAGE,ACCEPTED_TRANSLATION_STAGE} or not ref.uri.startswith(f"s3://{self.store.bucket}/{inp.course_id}/"):
             raise ApplicationError("source artifact stage or course scope is invalid",type="InvalidMP3Source",non_retryable=True)
         try:
             if inp.source_kind=="book":
+                accepted_blocks=None
+                book_translation_source=ref if ref.stage in {LEGACY_TRANSLATION_STAGE,ACCEPTED_TRANSLATION_STAGE} else None
                 if ref.stage=="ingest-parse-pdf":
                     parsed=ParsedBook.model_validate_json(self.store.read(ref,"parsed-book.json"))
                     pack=None
+                elif ref.stage==ACCEPTED_TRANSLATION_STAGE:
+                    original_ref,accepted_blocks=accepted_translation_blocks(self.store,ref,inp.course_id)
+                    pack=None
+                    parsed=None
+                    if inp.book_audio_layout=="full_book":
+                        parsed=ParsedBook.model_validate_json(self.store.read(original_ref,"parsed-book.json"))
+                        text="\n".join(accepted_blocks[x.block_id] for x in parsed.blocks if x.text.strip() and accepted_blocks.get(x.block_id))
                 elif ref.stage=="translate-content":
                     pack=json.loads(self.store.read(ref,"translation.json"))
                     if pack.get("target_language")!=inp.language:
                         raise ValueError("translation language mismatch")
                     if inp.book_audio_layout=="full_book":
                         text="\n".join(x["text"] for x in pack.get("segments",[]) if x.get("text","").strip())
-                        key=stage_key("generate-mp3","3",[ref.sha256],{"language":inp.language,"kind":"book","render_policy":AUDIO_RENDER_POLICY,"punctuation_route":os.getenv("B2C_SPEECH_PUNCTUATION","off")})
-                        manifest={"kind":"book","language":inp.language,"tracks":[{"track_id":"book","kind":"book","title":"Book","filename":"course.mp3"}]}
-                        out,hit=persist_audio(inp.course_id,"generate-mp3",key,lambda:{"course.mp3":self._render(text,inp.language),"audio-manifest.json":json.dumps(manifest).encode()})
-                        return {"course_id":inp.course_id,"status":"completed","kind":"book","language":inp.language,"artifact":out.model_dump(mode="json"),"cache_hit":hit}
+                        key=stage_key("generate-mp3","3",[ref.sha256],{"language":inp.language,"kind":"book","render_policy":AUDIO_RENDER_POLICY,"punctuation_route":os.getenv("B2C_SPEECH_PUNCTUATION","off"),**legacy_key})
+                        manifest=mark({"kind":"book","language":inp.language,"tracks":[{"track_id":"book","kind":"book","title":"Book","filename":"course.mp3"}]})
+                        out,hit=persist_audio(inp.course_id,"generate-mp3",key,lambda:{"course.mp3":self._render(text,inp.language),"audio-manifest.json":json.dumps(manifest).encode()},book_translation_source)
+                        return {"course_id":inp.course_id,"status":"completed","kind":"book","language":inp.language,"artifact":out.model_dump(mode="json"),"cache_hit":hit,"unverified_legacy":legacy_used}
                     parsed=None
                 else:
                     raise ValueError("book audio requires parsed or translated content")
@@ -359,8 +469,8 @@ class MP3Activities:
                         text="\n".join(x.text for x in parsed.blocks if x.text.strip())
                     key=stage_key("generate-mp3","3",[ref.sha256],{"language":inp.language,"kind":"book","render_policy":AUDIO_RENDER_POLICY,"punctuation_route":os.getenv("B2C_SPEECH_PUNCTUATION","off")})
                     manifest={"kind":"book","language":inp.language,"tracks":[{"track_id":"book","kind":"book","title":"Book","filename":"course.mp3"}]}
-                    out,hit=persist_audio(inp.course_id,"generate-mp3",key,lambda:{"course.mp3":self._render(text,inp.language),"audio-manifest.json":json.dumps(manifest).encode()})
-                    return {"course_id":inp.course_id,"status":"completed","kind":"book","language":inp.language,"artifact":out.model_dump(mode="json"),"cache_hit":hit}
+                    out,hit=persist_audio(inp.course_id,"generate-mp3",key,lambda:{"course.mp3":self._render(text,inp.language),"audio-manifest.json":json.dumps(manifest).encode()},book_translation_source)
+                    return {"course_id":inp.course_id,"status":"completed","kind":"book","language":inp.language,"artifact":out.model_dump(mode="json"),"cache_hit":hit,"unverified_legacy":legacy_used}
                 source_book_ref=ArtifactRef.model_validate(inp.source_book_ref or {})
                 outline_ref=ArtifactRef.model_validate(inp.approved_outline_ref or {})
                 if source_book_ref.stage!="ingest-parse-pdf" or not source_book_ref.uri.startswith(f"s3://{self.store.bucket}/{inp.course_id}/"):
@@ -393,25 +503,34 @@ class MP3Activities:
                         for block in lesson_blocks:
                             if not block.text.strip():
                                 continue
-                            value=translated.get(block.block_id) if pack else block.text
-                            if pack and not value:
-                                raise ValueError("translated lesson segment missing: "+block.block_id)
+                            if accepted_blocks is not None:
+                                # translate-book: only accepted (complete) blocks are spoken.
+                                value=accepted_blocks.get(block.block_id)
+                                if value is None and block.block_id in accepted_blocks:
+                                    raise ValueError("translated lesson block is not accepted: "+block.block_id)
+                                if not value:
+                                    continue
+                            else:
+                                value=translated.get(block.block_id) if pack else block.text
+                                if pack and not value:
+                                    raise ValueError("translated lesson segment missing: "+block.block_id)
                             pieces.append(value)
                         if not pieces:
                             continue
                         track_id=lesson.lesson_id+"-book"
                         config={"language":inp.language,"kind":"book_lesson","track_id":track_id,"model":"fasih-tts-v1" if inp.language=="ar" else "supertonic3","render_policy":AUDIO_RENDER_POLICY,"punctuation_route":os.getenv("B2C_SPEECH_PUNCTUATION","off")}
                         track_key=stage_key("generate-mp3-track","2",[source_book_ref.sha256,outline_ref.sha256,ref.sha256],config)
-                        track_ref,hit=persist_audio(inp.course_id,"generate-mp3-track",track_key,lambda body="\n".join(pieces),cfg=config:{"track.mp3":self._render(body,inp.language),"track.json":json.dumps(cfg).encode(),"track.txt":body.encode("utf-8")})
-                        tracks.append({"track_id":track_id,"kind":"book_lesson","lesson_id":lesson.lesson_id,"title":lesson.title,"language":inp.language,"filename":track_id+".mp3","artifact_ref":track_ref.model_dump(mode="json"),"cache_hit":hit})
+                        track_ref,hit=persist_audio(inp.course_id,"generate-mp3-track",track_key,lambda body="\n".join(pieces),cfg=config:{"track.mp3":self._render(body,inp.language),"track.json":json.dumps(cfg).encode(),"track.txt":body.encode("utf-8")},book_translation_source)
+                        tracks.append({"track_id":track_id,"kind":"book_lesson","lesson_id":lesson.lesson_id,"title":lesson.title,"language":inp.language,"filename":track_id+".mp3","artifact_ref":track_ref.model_dump(mode="json"),"cache_hit":hit,
+                                       "unverified_legacy":verification_record(book_translation_source)["unverified_legacy"]})
                         save_audio_progress("book_lessons", tracks, planned_track_count)
                         wait_for_activity_checkpoint(self.store, "audio-track:" + track_id)
                 if not tracks:
                     raise ValueError("approved outline produced no readable lesson tracks")
-                manifest={"course_id":inp.course_id,"kind":"book_lessons","language":inp.language,"track_count":len(tracks),"tracks":tracks}
-                key=stage_key("generate-mp3","4",[source_book_ref.sha256,outline_ref.sha256,ref.sha256],{"language":inp.language,"kind":"book_lessons","lesson_ids":sorted(selected_lesson_ids),"render_policy":AUDIO_RENDER_POLICY,"punctuation_route":os.getenv("B2C_SPEECH_PUNCTUATION","off")})
-                out,hit=persist_audio(inp.course_id,"generate-mp3",key,lambda:{"audio-manifest.json":json.dumps(manifest,ensure_ascii=False,indent=2).encode()})
-                return {"course_id":inp.course_id,"status":"completed","kind":"book_lessons","language":inp.language,"artifact":out.model_dump(mode="json"),"manifest":manifest,"track_count":len(tracks),"cache_hit":hit}
+                manifest=mark({"course_id":inp.course_id,"kind":"book_lessons","language":inp.language,"track_count":len(tracks),"tracks":tracks})
+                key=stage_key("generate-mp3","4",[source_book_ref.sha256,outline_ref.sha256,ref.sha256],{"language":inp.language,"kind":"book_lessons","lesson_ids":sorted(selected_lesson_ids),"render_policy":AUDIO_RENDER_POLICY,"punctuation_route":os.getenv("B2C_SPEECH_PUNCTUATION","off"),**legacy_key})
+                out,hit=persist_audio(inp.course_id,"generate-mp3",key,lambda:{"audio-manifest.json":json.dumps(manifest,ensure_ascii=False,indent=2).encode()},book_translation_source)
+                return {"course_id":inp.course_id,"status":"completed","kind":"book_lessons","language":inp.language,"artifact":out.model_dump(mode="json"),"manifest":manifest,"track_count":len(tracks),"cache_hit":hit,"unverified_legacy":legacy_used}
             if ref.stage not in {"generate-course-qa","translate-content"} or inp.approved_outline_ref is None:
                 raise ValueError("course audio requires QA and approved outline")
             outline_ref=ArtifactRef.model_validate(inp.approved_outline_ref)
@@ -429,10 +548,16 @@ class MP3Activities:
             book_pack=None
             book_translation={}
             book_translation_ref=None
+            accepted_book=None
             if inp.source_book_translation_ref:
                 book_translation_ref=ArtifactRef.model_validate(inp.source_book_translation_ref)
-                if book_translation_ref.stage!="translate-content" or not book_translation_ref.uri.startswith(f"s3://{self.store.bucket}/{inp.course_id}/"):
+                if book_translation_ref.stage not in {LEGACY_TRANSLATION_STAGE,ACCEPTED_TRANSLATION_STAGE} or not book_translation_ref.uri.startswith(f"s3://{self.store.bucket}/{inp.course_id}/"):
                     raise ValueError("translated lesson source is outside the course")
+            if book_translation_ref is not None and book_translation_ref.stage==ACCEPTED_TRANSLATION_STAGE:
+                translated_source,accepted_book=accepted_translation_blocks(self.store,book_translation_ref,inp.course_id)
+                if translated_source.sha256!=source_book_ref.sha256:
+                    raise ValueError("translated lesson source does not match the original book")
+            elif book_translation_ref is not None:
                 book_pack=json.loads(self.store.read(book_translation_ref,"translation.json"))
                 source_info=json.loads(self.store.read(book_translation_ref,"translation-source.json"))
                 translated_source=ArtifactRef.model_validate(source_info["source_artifact_ref"])
@@ -472,7 +597,7 @@ class MP3Activities:
             planned = len(course_lessons) + len(coverage["ready_lesson_ids"])
 
             save_audio_progress("course", tracks, planned)
-            def add(tid,kind,title,body,lesson_id=None,source_hashes=None):
+            def add(tid,kind,title,body,lesson_id=None,source_hashes=None,translation_ref=None):
                 if dominant_script_language(body) not in {None, inp.language}:
                     raise ValueError("audio track language mismatch: " + tid)
                 cfg={"language":inp.language,"kind":kind,"track_id":tid,"model":"fasih-tts-v1" if inp.language=="ar" else "supertonic3","render_policy":AUDIO_RENDER_POLICY,"punctuation_route":os.getenv("B2C_SPEECH_PUNCTUATION","off")}
@@ -491,13 +616,14 @@ class MP3Activities:
                                           "failed_segments":int(state.get("failed_segments") or 0)})
                     save_audio_progress("course",tracks,planned,current_track=current_track.copy(),renderer_progress=renderer_state.copy())
                 try:
-                    track_ref,hit=persist_audio(inp.course_id,"generate-mp3-track",key,lambda:{"track.mp3":self._render(body,inp.language,report_renderer_progress),"track.json":json.dumps(cfg).encode(),"track.txt":body.encode("utf-8")})
+                    track_ref,hit=persist_audio(inp.course_id,"generate-mp3-track",key,lambda:{"track.mp3":self._render(body,inp.language,report_renderer_progress),"track.json":json.dumps(cfg).encode(),"track.txt":body.encode("utf-8")},translation_ref)
                 except Exception as exc:
                     current_track.update(status="failed",error_type=type(exc).__name__)
                     save_audio_progress("course",tracks,planned,current_track=current_track.copy(),renderer_progress=renderer_state.copy() or None)
                     raise
                 current_track["status"]="completed"
-                tracks.append({"track_id":tid,"kind":kind,"lesson_id":lesson_id,"title":title,"language":inp.language,"filename":tid+".mp3","artifact_ref":track_ref.model_dump(mode="json"),"bytes":len(self.store.read(track_ref,"track.mp3")),"cache_hit":hit})
+                tracks.append({"track_id":tid,"kind":kind,"lesson_id":lesson_id,"title":title,"language":inp.language,"filename":tid+".mp3","artifact_ref":track_ref.model_dump(mode="json"),"bytes":len(self.store.read(track_ref,"track.mp3")),"cache_hit":hit,
+                               "unverified_legacy":verification_record(translation_ref)["unverified_legacy"]})
                 save_audio_progress("course",tracks,planned,current_track=None,renderer_progress=None)
                 wait_for_activity_checkpoint(self.store, "audio-track:" + tid)
             source_blocks=source_book.blocks
@@ -516,16 +642,24 @@ class MP3Activities:
                     for block in lesson_blocks:
                         if not block.text.strip():
                             continue
-                        text=book_translation.get(block.block_id,"") if book_pack else block.text
-                        if book_pack and not text.strip():
-                            raise ValueError("translated source text missing: "+block.block_id)
+                        if accepted_book is not None:
+                            # translate-book: only accepted (complete) blocks are spoken.
+                            text=accepted_book.get(block.block_id)
+                            if text is None and block.block_id in accepted_book:
+                                raise ValueError("translated source block is not accepted: "+block.block_id)
+                            if not text:
+                                continue
+                        else:
+                            text=book_translation.get(block.block_id,"") if book_pack else block.text
+                            if book_pack and not text.strip():
+                                raise ValueError("translated source text missing: "+block.block_id)
                         source_parts.append(text)
                     if source_parts:
                         source_track_id=lesson.lesson_id+"-source-text"
                         source_hashes=[source_book_ref.sha256,outline_ref.sha256]
                         if book_translation_ref:
                             source_hashes.append(book_translation_ref.sha256)
-                        add(source_track_id,"lesson_source_text",lesson.title,"\n".join(source_parts),lesson.lesson_id,source_hashes)
+                        add(source_track_id,"lesson_source_text",lesson.title,"\n".join(source_parts),lesson.lesson_id,source_hashes,book_translation_ref)
                     if inp.allow_partial_qa and lesson.lesson_id not in coverage["ready_lesson_ids"]:
                         continue
                     asset=assets.get(lesson.lesson_id,{}) if inp.include_summaries else {}
@@ -546,7 +680,7 @@ class MP3Activities:
                             lines.append("Explanation: "+val(lesson.lesson_id+":question:"+str(i)+":rationale",str(q["rationale"])))
                     if lines:
                         add(lesson.lesson_id+"-attachment","lesson_attachment",lesson.title+(" — الملخص والأسئلة والإجابات" if inp.include_summaries else " — الأسئلة والإجابات"),
-                            "\n".join(lines),lesson.lesson_id)
+                            "\n".join(lines),lesson.lesson_id,None,ref if pack else None)
             for scope in qa.get("scopes",[]) if inp.include_extra_scopes else []:
                 if scope.get("kind")=="lesson":
                     continue
@@ -557,14 +691,15 @@ class MP3Activities:
                 for i,q in enumerate(scope.get("items",[]),1):
                     lines += ["سؤال: "+val("scope:"+sid+":qa:"+str(i)+":question",str(q.get("question",""))),"الإجابة: "+val("scope:"+sid+":qa:"+str(i)+":answer",str(q.get("answer","")))]
                 if lines:
-                    add(str(scope.get("kind"))+"-"+sid+"-questions",str(scope.get("kind"))+"_questions",str(scope.get("scope_title",sid)),"\n".join(lines))
+                    add(str(scope.get("kind"))+"-"+sid+"-questions",str(scope.get("kind"))+"_questions",str(scope.get("scope_title",sid)),"\n".join(lines),None,None,ref if pack else None)
             if not tracks:
                 raise ValueError("course artifact produced no audio tracks")
-            manifest={"course_id":inp.course_id,"kind":"course","language":inp.language,"track_count":len(tracks),"tracks":tracks,"attachment_coverage":coverage,"qa_status":qa.get("status"),"include_summaries":inp.include_summaries}
+            manifest=mark({"course_id":inp.course_id,"kind":"course","language":inp.language,"track_count":len(tracks),"tracks":tracks,"attachment_coverage":coverage,"qa_status":qa.get("status"),"include_summaries":inp.include_summaries})
             hashes=[qa_ref.sha256,outline_ref.sha256,source_book_ref.sha256]+([ref.sha256] if pack else [])+([book_translation_ref.sha256] if book_translation_ref else [])
-            key=stage_key("generate-mp3","3",hashes,{"language":inp.language,"kind":"course","lesson_ids":inp.lesson_ids,"allow_partial_qa":inp.allow_partial_qa,"include_summaries":inp.include_summaries,"include_extra_scopes":inp.include_extra_scopes,"render_policy":AUDIO_RENDER_POLICY,"punctuation_route":os.getenv("B2C_SPEECH_PUNCTUATION","off")})
-            out,hit=persist_audio(inp.course_id,"generate-mp3",key,lambda:{"audio-manifest.json":json.dumps(manifest,ensure_ascii=False,indent=2).encode()})
-            return {"course_id":inp.course_id,"status":"completed","kind":"course","language":inp.language,"artifact":out.model_dump(mode="json"),"manifest":manifest,"track_count":len(tracks),"cache_hit":hit}
+            key=stage_key("generate-mp3","3",hashes,{"language":inp.language,"kind":"course","lesson_ids":inp.lesson_ids,"allow_partial_qa":inp.allow_partial_qa,"include_summaries":inp.include_summaries,"include_extra_scopes":inp.include_extra_scopes,"render_policy":AUDIO_RENDER_POLICY,"punctuation_route":os.getenv("B2C_SPEECH_PUNCTUATION","off"),**legacy_key})
+            manifest_translation=next((r for r in translation_refs if r.stage==LEGACY_TRANSLATION_STAGE),translation_refs[0] if translation_refs else None)
+            out,hit=persist_audio(inp.course_id,"generate-mp3",key,lambda:{"audio-manifest.json":json.dumps(manifest,ensure_ascii=False,indent=2).encode()},manifest_translation)
+            return {"course_id":inp.course_id,"status":"completed","kind":"course","language":inp.language,"artifact":out.model_dump(mode="json"),"manifest":manifest,"track_count":len(tracks),"cache_hit":hit,"unverified_legacy":legacy_used}
         except ApplicationError:
             raise
         except HTTPError as exc:

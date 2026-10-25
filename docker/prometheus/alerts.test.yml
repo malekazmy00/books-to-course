@@ -1,0 +1,74 @@
+# promtool unit tests for alerts.yml (R0, audit 08 H3). Run read-only with the pinned image:
+#   docker run --rm --entrypoint promtool -v "$PWD/docker/prometheus:/rules:ro" -w /rules \
+#     prom/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e \
+#     test rules alerts.test.yml
+rule_files:
+  - alerts.yml
+
+evaluation_interval: 30s
+
+tests:
+  # hy_translation has a backlog and no polls at all; light has a backlog but is being polled.
+  - interval: 1m
+    input_series:
+      - series: 'approximate_backlog_count{job="temporal",namespace="default",taskqueue="hy_translation",task_type="Activity",partition="0"}'
+        values: '3x20'
+      - series: 'poll_timeouts{job="temporal",namespace="default",taskqueue="hy_translation",task_type="Activity"}'
+        values: '5x20'
+      - series: 'poll_success{job="temporal",namespace="default",taskqueue="hy_translation",task_type="Activity"}'
+        values: '9x20'
+      - series: 'poll_success{job="temporal",namespace="default",taskqueue="light",task_type="Activity"}'
+        values: '4x20'
+      - series: 'approximate_backlog_count{job="temporal",namespace="default",taskqueue="light",task_type="Activity",partition="0"}'
+        values: '2x20'
+      - series: 'poll_timeouts{job="temporal",namespace="default",taskqueue="light",task_type="Activity"}'
+        values: '0+1x20'
+      - series: 'approximate_backlog_count{job="temporal",namespace="default",taskqueue="audio",task_type="Workflow",partition="0"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: B2CTaskQueueBacklogWithoutPollers
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: B2CTaskQueueBacklogWithoutPollers
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              project: b2c
+              namespace: default
+              taskqueue: hy_translation
+              task_type: Activity
+            exp_annotations:
+              summary: "Temporal task queue hy_translation has a backlog and no pollers"
+              description: "Activity tasks are waiting on hy_translation and no worker has polled it for 5 minutes (worker down, or all slots busy)."
+
+  # Activities heartbeat for 25 hours but none completes: the 24h no-progress proxy fires.
+  - interval: 1m
+    input_series:
+      - series: 'activity_heartbeat_count{job="temporal",namespace="default",service_name="history"}'
+        values: '0+10x1500'
+      - series: 'activity_success{job="temporal",namespace="default",taskqueue="heavy",activityType="generate_mp3"}'
+        values: '7x1500'
+    alert_rule_test:
+      - eval_time: 25h
+        alertname: B2CNoActivityProgress24h
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              project: b2c
+              namespace: default
+            exp_annotations:
+              summary: "No b2c activity completed in 24 hours while activities are running"
+              description: "Namespace-level proxy (not per workflow): activities heartbeated in the last 24h but none completed. A single legitimately long activity (e.g. full-book audio) also triggers it."
+
+  # Same heartbeats, but activities keep completing: no alert.
+  - interval: 1m
+    input_series:
+      - series: 'activity_heartbeat_count{job="temporal",namespace="default",service_name="history"}'
+        values: '0+10x1500'
+      - series: 'activity_success{job="temporal",namespace="default",taskqueue="translate_book",activityType="translate_unit_batch"}'
+        values: '0+1x1500'
+    alert_rule_test:
+      - eval_time: 25h
+        alertname: B2CNoActivityProgress24h
+        exp_alerts: []

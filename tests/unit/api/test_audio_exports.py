@@ -9,8 +9,12 @@ from moto import mock_aws
 from b2c_api.app import create_app
 from b2c_api.audio_exports import ordered_audio_tracks, validate_audio_manifest
 from b2c_core import ArtifactStore, Settings
+from b2c_orchestration.audio import VERIFICATION_FILE, verification_record
 
 WID = 'b2c-mp3-'+'a'*64
+# R0: exports only serve audio with a verification record (here: spoken from untranslated text).
+VERIFIED = {VERIFICATION_FILE: json.dumps(verification_record(None)).encode()}
+
 
 class Temporal:
     def __init__(self, state='RUNNING'): self.state=state
@@ -25,7 +29,7 @@ def environment():
         store.ensure_bucket()
         tracks=[]
         for number,(lesson,kind) in enumerate([('lesson2','lesson_attachment'),('lesson1','lesson_source_text'),('lesson2','lesson_source_text')]):
-            ref=store.put('revolution','generate-mp3-track',str(number+1)*64,{'track.mp3':b'ID3-audio-'+str(number).encode()})
+            ref=store.put('revolution','generate-mp3-track',str(number+1)*64,{'track.mp3':b'ID3-audio-'+str(number).encode(),**VERIFIED})
             tracks.append({'track_id':lesson+'-'+kind,'lesson_id':lesson,'kind':kind,'artifact_ref':ref.model_dump(mode='json')})
         record={'workflow_id':WID,'course_id':'revolution','tracks':tracks,'track_count':4,
                 'lesson_order':['lesson1','lesson2'], 'failed_tracks':1,'failed_track_ids':['failed'],

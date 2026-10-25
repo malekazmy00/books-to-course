@@ -116,6 +116,8 @@ def test_course_introduction_episode_00():
     assert [x.text for x in about] == ["According to Wikipedia: The book is a guide to structured analysis of power."]
     assert any(r["reason"] == "no published claim cited" for r in report["rejections"])
     assert script.sections[4].lines[0].attributed_to == "Dario Galasso (review)"
+    # spoken: the person, not the (English) venue
+    assert script.sections[4].lines[0].text.startswith("According to Dario Galasso: ")
     assert script.sections[-1].lines[0].sources[0].block_id == "bk:1:2"
     assert script.sections[3].lines[0].text.startswith("This course presents the book in 3 episodes")
     g = check_grounding(script, block_text=BLOCK_TEXT, lesson_of=LESSON_OF, episode_of_lesson=EPISODE_OF,

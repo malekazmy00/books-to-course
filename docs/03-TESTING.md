@@ -127,6 +127,18 @@
 | T-CL-02 | كل موضع يُعاد فحصه مقابل الكتاب المحلَّل (`concepts.grounding`) | grounding = 1.0 |
 | T-CL-03 | تغطية مفاهيم القاموس المعتمد (`concepts.coverage`) | ≥ 0.9 (سياسة مؤقتة) |
 
+### الأشكال المشتقة: نصوص الحلقات (EN ثم AR، D-035..D-038؛ docs/02 §13)
+| ID | الاختبار | العتبة |
+|---|---|---|
+| T-EP-01 | ثوابت `EpisodeScript`: ترتيب الحلقة والحلقة 00، والأصوات، والإسناد، وخمسة أسئلة بمهلة وموضع، ونص الكتاب إحالة لا توليد — `tests/contract/test_episode_script.py` | 100% (negative controls) |
+| T-EP-02 | كل مقتطف موجود حرفيًا في كتلته، والمراجعة لا تستشهد إلا بحلقات سابقة (`episodes.grounding`) — `tests/unit/episodes/` | grounding = 1.0 |
+| T-EP-03 | مدقق من عائلة أخرى؛ ما لا يدعمه موضعه يُحذف (`episodes.validation`) | نسبة القبول ≥ 0.6 (سياسة مؤقتة) |
+| T-EP-04 | الملخص والمصطلحات يغطيان مفاهيم أول ذكر في الدرس (`episodes.coverage`) | ≥ 0.7 (سياسة مؤقتة) |
+| T-EP-05 | حدود الطول للسماع (`episodes.length`) | 0 تجاوز |
+| T-EP-06 | النص العربي: كل سطر مقبول بسياسة الترجمة، ونص الكتاب من وحدات مقبولة فقط (`episodes.translation`) — `tests/unit/orchestration/test_episode_activities.py` | 100% |
+| T-EP-07 | الأصل عند أول ذكر: حتمي، ويتكرر بلا أثر، ولا يضيف ملاحظات QA بفضل القائمة البيضاء (`episodes.first-mention`) — `tests/unit/translation/test_first_mention.py` | 100% |
+| T-EP-08 | النص العربي يستهلكه front end الكلام بلا حروف لاتينية، مع مهلة السؤال — `tests/unit/speech/test_episode_speech_text.py` | بوابة `speech.text-frontend` ناجحة |
+
 ### L8 Speech
 | ID | الاختبار | معيار النجاح |
 |---|---|---|

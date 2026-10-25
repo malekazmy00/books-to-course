@@ -273,10 +273,32 @@ def _attribution(claim: DossierClaim, dossier: KnowledgeDossier | None) -> str:
     return " and ".join(dict.fromkeys(names)) or "an external source"
 
 
+_PROVIDERS = {"openalex": "OpenAlex", "wikidata": "Wikidata", "wikipedia": "Wikipedia", "openlibrary": "Open Library"}
+
+
+def spoken_attribution(claim: DossierClaim, dossier: KnowledgeDossier | None) -> str:
+    """Who is named aloud: the person holding a viewpoint (without the venue: an English journal
+    title read to an Arabic listener says nothing and is untranslated text), else the open sources
+    by name, else "a published review". The full attribution stays in ``attributed_to``."""
+    if claim.status == "attributed" and claim.kind == "viewpoint" and claim.attributed_to:
+        person = re.split(r"\s+in\s+|\s*\(|,", claim.attributed_to, maxsplit=1)[0].strip()
+        if person:
+            return person
+    names = []
+    if dossier is not None:
+        by_id = {s.source_id: s for s in dossier.sources}
+        for ev in claim.evidence:
+            s = by_id.get(ev.source_id)
+            if s is not None:
+                names.append(_PROVIDERS.get(s.provider, "a published review" if s.tier == 2 else "a published source"))
+    return " and ".join(dict.fromkeys(names)) or "an external source"
+
+
 def _external_line(line_id: str, claim: DossierClaim, dossier: KnowledgeDossier | None) -> ScriptLine:
     who = _attribution(claim, dossier)
     statement = claim.statement.strip()
-    return ScriptLine(line_id=line_id, text=f"According to {who}: {statement}", attributed_to=who,
+    return ScriptLine(line_id=line_id, text=f"According to {spoken_attribution(claim, dossier)}: {statement}",
+                      attributed_to=who,
                       sources=[ScriptSource(kind="dossier", claim_id=claim.claim_id, url=claim.evidence[0].url)])
 
 
@@ -531,7 +553,8 @@ def generate_course_intro(plan: CourseIntroPlan, *, generator: ModelRole, judge:
         for i, c in enumerate(chosen):
             if external:
                 who = " and ".join(dict.fromkeys(_attribution(cl, plan.dossier) for cl in c.claims))
-                out.append(ScriptLine(line_id=lid(code, i), text=f"According to {who}: {c.text}", attributed_to=who,
+                said = " and ".join(dict.fromkeys(spoken_attribution(cl, plan.dossier) for cl in c.claims))
+                out.append(ScriptLine(line_id=lid(code, i), text=f"According to {said}: {c.text}", attributed_to=who,
                                       sources=c.sources))
             else:
                 out.append(ScriptLine(line_id=lid(code, i), text=c.text, sources=c.sources))

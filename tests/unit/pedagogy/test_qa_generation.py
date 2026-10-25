@@ -751,3 +751,52 @@ def test_generation_and_judge_callers_use_separate_output_budgets():
     assert [budget for schema, budget in gateway.budgets if schema == "_CandidateSet"] == [4096,4096]
     assert [budget for schema, budget in gateway.budgets if schema == "_JudgeSet"] == [2048,2048]
     assert all(item.automated_checks["answer_supported"] for scope in result.scopes for item in scope.items)
+
+
+def _two_chunk_lesson():
+    """One lesson whose span holds two chunks; the title matches only the first (audit 03 C1)."""
+    book = ParsedBook(book_id="primary", title="Probability", role="spine", page_count=1,
+        toc_source="headings", parser={"name": "fixture", "version": "1"}, blocks=[
+            Block(block_id="p:1:1", type="paragraph", text="Probability measures the chance of an event.",
+                refs=[PageRef(book_id="primary", page_no=1)], section_path=["Chance"], ocr=False),
+            Block(block_id="p:1:2", type="paragraph", text="Independent events do not change each other's odds.",
+                refs=[PageRef(book_id="primary", page_no=1)], section_path=["Chance"], ocr=False),
+        ])
+    outline = CourseOutline(course_id="course-1", spine_book_id="primary", supplementary_book_ids=[],
+        requires_review=False, modules=[Module(module_id="unit-1", title="Unit", order=1, lessons=[
+            Lesson(lesson_id="lesson-1", title="Probability", order=1,
+                   spine_span=LessonSpan(start_block="p:1:1", end_block="p:1:2", pages=(1, 1)),
+                   provenance="headings")])])
+    chunks = [StructuredChunk(chunk_id=f"c{i}", book_id="primary", role="spine", section_path=["Unit", "Probability"],
+                              block_ids=[b.block_id], pages=[1], text=b.text, token_count=8, embedding_model="test")
+              for i, b in enumerate(book.blocks, 1)]
+    return outline, book, chunks
+
+
+def test_lesson_content_is_the_whole_span_even_when_a_retriever_is_supplied():
+    """T-IDX-04 (C1): retrieval may rank cross-lesson scopes, never thin a lesson's own span."""
+    outline, book, chunks = _two_chunk_lesson()
+    gateway = FakeGateway()
+    asked = []
+
+    def retriever(query, candidates, top_k):
+        asked.append(query)
+        return list(candidates)[:1]  # a top-k that drops content, like the lexical title query did
+
+    result = generate_course_qa(outline, book, chunks, gateway, lesson_question_count=1,
+        group_question_count=1, course_question_count=1, scope_retriever=retriever, retrieval_top_k=1)
+    lesson_scope = next(s for s in result.scopes if s.kind == "lesson")
+    assert lesson_scope.status == "final"
+    assert lesson_scope.source_chunk_ids == ["c1", "c2"]
+    assert {cid for ids in gateway.input_chunk_batches[:1] for cid in ids} == {"c1", "c2"}
+    assert "Probability" not in asked  # the lesson scope never consulted the retriever
+
+
+def test_note_chunks_never_become_lesson_content():
+    outline, book, chunks = _two_chunk_lesson()
+    note = StructuredChunk(chunk_id="n1", book_id="primary", role="spine", section_path=["Unit", "Probability"],
+                           block_ids=["p:1:2"], pages=[1], text="1. Ibid., 42.", token_count=4,
+                           embedding_model="test", evidence_class="note", lesson_id="lesson-1")
+    scopes, _ = _derive_scopes(outline, book, [*chunks, note], lesson_question_count=1,
+                               group_question_count=1, course_question_count=1)
+    assert all("n1" not in [c.chunk_id for c in s.chunks] for s in scopes)

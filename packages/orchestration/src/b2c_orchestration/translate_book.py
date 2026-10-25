@@ -390,8 +390,15 @@ class TranslateBookActivities:
         scope = TermbaseScope(inp.course_id, book_id, inp.source_language, inp.target_language)
         with activity_heartbeats("build_book_termbase"):
             sources, proposer = self._term_sources(inp, book_id)
+            # termhood suggestions (D-039) only when the engine profile enables them
+            classify = getattr(self.runtime, "termhood_classifier", None)
+            try:
+                classifier = classify(inp.engine_profile) if classify is not None else None
+            except UnknownProfile as exc:
+                raise _fail(str(exc), "UnknownTranslationProfile") from exc
+            extra = {"classifier": classifier} if classifier is not None else {}
             extracted = self.termbase_builder(units, sources=sources, source_language=inp.source_language,
-                                              target_language=inp.target_language)
+                                              target_language=inp.target_language, **extra)
             outcome = store.merge_extraction(scope, extracted)
             merged = store.load(scope, extractor_version=extracted.extractor_version)
             sha = merged.sha256()

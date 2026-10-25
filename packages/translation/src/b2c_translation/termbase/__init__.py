@@ -29,10 +29,20 @@ from .sources import (
     TransliterationSource,
     parse_proposal,
 )
+from .termhood import (
+    FEW_SHOT_EXAMPLES,
+    TERMHOOD_TEMPLATE,
+    TermhoodClassifier,
+    TermhoodVerdict,
+    candidate_contexts,
+    parse_termhood,
+)
 from .transliterate import TRANSLITERATION_RULES_VERSION, transliterate_name
 
 __all__ = [
-    "ARTIFACT_FORMAT", "ARTIFACT_FORMAT_VERSION", "ENTITY_KINDS", "EXTRACTOR_VERSION", "PROPOSER_TEMPLATE",
+    "ARTIFACT_FORMAT", "ARTIFACT_FORMAT_VERSION", "ENTITY_KINDS", "EXTRACTOR_VERSION", "FEW_SHOT_EXAMPLES",
+    "PROPOSER_TEMPLATE", "TERMHOOD_TEMPLATE", "TermhoodClassifier", "TermhoodVerdict", "candidate_contexts",
+    "parse_termhood",
     "PROVENANCE_PRIORITY", "TERM_KINDS", "TRANSLATABLE_KINDS", "TRANSLITERATION_RULES_VERSION",
     "BookTermbase", "ConceptIndexSource", "ConsistencyIssue", "GatewayTermProposer", "GlossarySource",
     "MemoryTermSource", "PriorTermbaseSource", "Proposal", "ProposalSource", "TermCandidate",

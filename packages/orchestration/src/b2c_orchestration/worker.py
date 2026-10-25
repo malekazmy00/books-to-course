@@ -68,7 +68,7 @@ class _UnavailableProfiles:
     def fingerprint(self, *_args):
         raise UnknownProfile(f"translation profiles unavailable: {self.reason}")
 
-    engine = estimator = term_proposer = fingerprint
+    engine = estimator = term_proposer = termhood_classifier = fingerprint
 
 
 def translate_book_worker(client, s, *, store, cache, executor) -> Worker:

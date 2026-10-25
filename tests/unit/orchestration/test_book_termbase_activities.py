@@ -193,6 +193,34 @@ def test_sources_in_priority_order_and_proposer_only_when_the_profile_enables_it
     assert by_source["Farmers"].proposals[0].provenance == "gateway_proposer"
 
 
+def test_termhood_classifier_reaches_the_builder_only_when_the_profile_enables_it(artifacts, results, terms):
+    class ClassifyingRuntime(ProposingRuntime):
+        def __init__(self, engine, qe=None, classifier=None):
+            super().__init__(engine, qe)
+            self.classifier = classifier
+
+        def termhood_classifier(self, profile_id):
+            return self.classifier
+
+    class RecordingBuilder(FakeBuilder):
+        def __call__(self, units, *, sources, source_language, target_language, **kw):
+            self.calls.append({"units": units, "sources": sources, **kw})
+            return super().__call__(units, sources=sources, source_language=source_language,
+                                    target_language=target_language)
+
+    marker = object()
+    for classifier, expected in ((None, {}), (marker, {"classifier": marker})):
+        inp = book_input(parsed_ref(artifacts))
+        builder = RecordingBuilder(CANDIDATES)
+        acts = TranslateBookActivities(artifact_store=artifacts, result_store=results,
+                                       runtime=ClassifyingRuntime(TermEngine(), PassingQE(), classifier),
+                                       termbase_store=terms, termbase_builder=builder)
+        prepared = prepare(acts, inp)
+        acts.build_termbase(build_input(inp, prepared))
+        extra = {k: v for k, v in builder.calls[0].items() if k not in ("units", "sources")}
+        assert extra == expected
+
+
 def test_real_builder_runs_on_the_stored_units(artifacts, results, terms):
     """Wiring only: the public ``build_book_termbase`` on stored units; recall is tested elsewhere."""
     from tests.unit.translation.termbase.conftest import make_units

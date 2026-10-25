@@ -15,7 +15,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION = "1.14.0"
+SCHEMA_VERSION = "1.15.0"
 
 
 class Contract(BaseModel):
@@ -1070,7 +1070,7 @@ class TermbaseEntry(Contract):
     forbidden_variants_ar: list[str] = []
     do_not_translate: bool = False
     approved_by: str | None = None  # None => not approved yet (Gate G3)
-    # 1.14.0 (D-039): "locked" = checked strictly (the only tier before 1.14); "hint" = a
+    # 1.15.0 (D-039): "locked" = checked strictly (the only tier before 1.15); "hint" = a
     # preferred rendering given to the engine and checked only as a minor, inflection-tolerant
     # signal. Noise ("dropped") never becomes an entry.
     tier: TermTier = "locked"

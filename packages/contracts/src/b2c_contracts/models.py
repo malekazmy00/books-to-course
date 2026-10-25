@@ -15,7 +15,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION = "1.15.0"
+SCHEMA_VERSION = "1.16.0"
 
 
 class Contract(BaseModel):
@@ -1182,6 +1182,102 @@ class UnitTranslation(Contract):
                 raise ValueError("a human translation is accepted by a human decision")
             if self.origin == "engine" and self.decided_by == "policy" and self.qe is None:
                 raise ValueError("policy acceptance of engine output requires semantic QE")
+        return self
+
+
+# 1.16.0 (D-040, docs/proposals/2026-10-25-learning-companion.md §4): transparent failure. There is
+# no human reviewer in the product: a unit that was not accepted (needs_review / rejected) is
+# neither hidden nor blocking. It becomes a translator note in place, spoken in the COURSE voice
+# (not the author's), carrying the best available translation labelled approximate and the original.
+TRANSLATOR_NOTE_LEAD_AR = "ملاحظة من الكورس:"
+BEST_TRANSLATION_LABEL_AR = "ترجمة تقريبية"
+# Learner-facing reason, primary first. no_translation: no candidate is fit to offer;
+# unverified: no specific problem found but the translation could not be confirmed.
+TranslatorNoteReason = Literal[
+    "no_translation", "meaning", "completeness", "untranslated", "numbers", "names", "terminology", "wording",
+    "unverified",
+]
+_LATIN_LETTER = re.compile(r"[A-Za-z]")
+
+
+class TranslatorNote(Contract):
+    """One annotated unit, anchored where the unit is (block, pages, section).
+
+    Speech reads ``announcement_ar`` then ``best_translation`` (if any) as one course-voice span;
+    the English ``source_text`` is kept for the written episode and the glossary, not voiced.
+    """
+    note_id: str = Field(min_length=1)  # f"{unit_id}:note"
+    unit_id: str = Field(min_length=1)
+    book_id: str = Field(min_length=1)
+    block_ids: list[str] = Field(min_length=1)
+    pages: list[int] = Field(min_length=1)
+    section_path: list[str] = []
+    unit_kind: TranslationUnitKind
+    voice: Literal["course"] = "course"
+    unit_decision: Literal["needs_review", "rejected"]
+    reasons: list[TranslatorNoteReason] = Field(min_length=1)
+    reason_ar: str = Field(min_length=1, max_length=300)
+    source_language: str = "en"
+    source_text: str = Field(min_length=1)
+    best_translation: str | None = None
+    best_translation_label_ar: str | None = None
+    best_translation_from: Literal["final", "earlier_draft"] | None = None
+    announcement_ar: str = Field(min_length=1, max_length=600)
+
+    @model_validator(mode="after")
+    def note_invariants(self) -> "TranslatorNote":
+        if not self.announcement_ar.startswith(TRANSLATOR_NOTE_LEAD_AR):
+            raise ValueError("a translator note is announced in the course voice")
+        for name in ("announcement_ar", "reason_ar"):
+            if _LATIN_LETTER.search(getattr(self, name)):
+                raise ValueError(f"{name} is for the learner: no Latin text or technical codes")
+        if len(set(self.reasons)) != len(self.reasons):
+            raise ValueError("reasons must be unique")
+        offered = (self.best_translation, self.best_translation_label_ar, self.best_translation_from)
+        if any(v is None for v in offered) and any(v is not None for v in offered):
+            raise ValueError("a best translation comes with its label and origin, or not at all")
+        if self.best_translation is not None and not self.best_translation.strip():
+            raise ValueError("best_translation must not be blank")
+        if (self.best_translation is None) != ("no_translation" in self.reasons):
+            raise ValueError("reason no_translation is used exactly when no translation is offered")
+        return self
+
+
+class TranslatorNotesDocument(Contract):
+    """Artifact of stage ``translator-notes``: accounts for every unit of the book.
+
+    accepted + dropped + annotated + pending == total_units; ``pending`` units have no final result
+    yet and are listed by id, so nothing is lost silently.
+    """
+    format: Literal["b2c.translator-notes/1"] = "b2c.translator-notes/1"
+    book_id: str = Field(min_length=1)
+    run_id: str | None = None
+    builder_version: str = Field(min_length=1)
+    units_ref: ArtifactRef | None = None
+    results_digest: str | None = None
+    total_units: int = Field(ge=0)
+    accepted: int = Field(ge=0)
+    dropped: int = Field(ge=0)
+    annotated: int = Field(ge=0)
+    pending: int = Field(ge=0)
+    notes: list[TranslatorNote] = []
+    unannotated_unit_ids: list[str] = []
+
+    @model_validator(mode="after")
+    def accounts_for_every_unit(self) -> "TranslatorNotesDocument":
+        ids = [n.unit_id for n in self.notes]
+        if len(set(ids)) != len(ids):
+            raise ValueError("one note per unit")
+        if any(n.book_id != self.book_id for n in self.notes):
+            raise ValueError("every note belongs to the document's book")
+        if len(set(self.unannotated_unit_ids)) != len(self.unannotated_unit_ids):
+            raise ValueError("unannotated unit ids must be unique")
+        if set(ids) & set(self.unannotated_unit_ids):
+            raise ValueError("a unit is either annotated or pending, not both")
+        if self.annotated != len(self.notes) or self.pending != len(self.unannotated_unit_ids):
+            raise ValueError("annotated/pending counts must match the listed notes and ids")
+        if self.accepted + self.dropped + self.annotated + self.pending != self.total_units:
+            raise ValueError("every unit must be accepted, dropped, annotated or pending")
         return self
 
 

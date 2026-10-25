@@ -19,7 +19,7 @@ from b2c_orchestration.translate_book import (AssembleBookTranslationWorkflow, A
                                               BatchOutcome, BuildTermbaseInput, CheckTermbaseInput, PreparedUnits,
                                               PrepareUnitsInput, TermbaseApproval, TermbaseBuild, TermbaseGate,
                                               TranslateBookInput, TranslateBookWorkflow, TranslateUnitBatchInput,
-                                              translation_run_id)
+                                              TranslatorNotesResult, translation_run_id)
 from b2c_orchestration.translation import TranslateContentWorkflow
 
 REF = {"stage": "ingest-parse-pdf", "key": "b" * 64, "uri": f"s3://artifacts/c1/ingest-parse-pdf/{'b' * 64}/",
@@ -100,7 +100,13 @@ class Recorder:
             self.calls.append(("assemble", inp))
             return AssemblyResult(artifact={"stage": "translate-book"}, counts={"needs_review": 7}, total_blocks=3,
                                   complete_blocks=0, results_digest="e" * 64, cache_hit=False)
-        return [prepare, build, check, batch, assemble]
+
+        @activity.defn(name="build_translator_notes")
+        async def notes(inp: AssembleTranslationInput) -> TranslatorNotesResult:
+            self.calls.append(("notes", inp))
+            return TranslatorNotesResult(artifact={"stage": "translator-notes"}, counts={"annotated": 7},
+                                         results_digest="e" * 64, cache_hit=False, status="accepted")
+        return [prepare, build, check, batch, assemble, notes]
 
 
 async def run_workflow(env, recorder, inp):
@@ -116,7 +122,7 @@ async def test_workflow_prepares_translates_bounded_batches_then_assembles(env):
     inp = book_input()
     result = await run_workflow(env, recorder, inp)
     kinds = [k for k, _ in recorder.calls]
-    assert kinds == ["prepare", "build_termbase", "check_termbase", "batch", "batch", "batch", "assemble"]
+    assert kinds == ["prepare", "build_termbase", "check_termbase", "batch", "batch", "batch", "assemble", "notes"]
     batches = [c for k, c in recorder.calls if k == "batch"]
     assert [b.unit_ids for b in batches] == [IDS[0:3], IDS[3:6], IDS[6:7]]
     run_id = translation_run_id(inp)
@@ -126,6 +132,11 @@ async def test_workflow_prepares_translates_bounded_batches_then_assembles(env):
     assert recorder.calls[0][1].run_id == run_id and recorder.calls[0][1].inp == inp
     assert result["run_id"] == run_id and result["translated"] == 7 and result["unit_count"] == 7
     assert result["assembly"]["counts"] == {"needs_review": 7}
+    # D-040: the notes step follows the assembly with the same run and units
+    notes = recorder.calls[-1][1]
+    assert notes.run_id == run_id and notes.units_ref == UNITS_REF and notes.course_id == "c1"
+    assert result["translator_notes"]["counts"] == {"annotated": 7}
+    assert result["translator_notes"]["status"] == "accepted"
 
 
 async def test_transient_batch_failure_is_retried_with_the_same_batch(env):
@@ -151,7 +162,8 @@ async def test_reassembly_workflow_runs_only_the_assembly_activity(env):
                       activities=recorder.activities()):
         result = await env.client.execute_workflow(AssembleBookTranslationWorkflow.run, inp,
                                                    id=f"wf-{uuid.uuid4().hex}", task_queue=queue)
-    assert [k for k, _ in recorder.calls] == ["assemble"] and result["run_id"] == "f" * 64
+    assert [k for k, _ in recorder.calls] == ["assemble", "notes"] and result["run_id"] == "f" * 64
+    assert result["translator_notes"]["status"] == "accepted"
 
 
 def test_activity_options_are_bounded_and_heartbeat():
@@ -211,7 +223,7 @@ async def test_translation_waits_for_the_signal_until_nothing_is_pending(env):
         state = await handle.query(tb.TERMBASE_QUERY)
     kinds = [k for k, _ in recorder.calls]
     assert kinds == ["prepare", "build_termbase", "check_termbase", "check_termbase", "check_termbase",
-                     "batch", "batch", "batch", "assemble"]
+                     "batch", "batch", "batch", "assemble", "notes"]
     check = recorder.calls[2][1]
     assert check.min_frequency == 2 and check.require_approved and check.book_id == "bk"
     assert state["phase"] == "approved" and state["digest"] == DIGEST and state["approved_ref"] == APPROVED_REF
@@ -222,7 +234,7 @@ async def test_without_the_requirement_translation_starts_with_approved_entries_
     recorder = Recorder(gates=[5])
     result = await run_workflow(env, recorder, book_input(require_approved_termbase=False))
     kinds = [k for k, _ in recorder.calls]
-    assert kinds[:3] == ["prepare", "build_termbase", "check_termbase"] and kinds[-1] == "assemble"
+    assert kinds[:3] == ["prepare", "build_termbase", "check_termbase"] and kinds[-2:] == ["assemble", "notes"]
     assert recorder.calls[2][1].require_approved is False
     batches = [c for k, c in recorder.calls if k == "batch"]
     assert batches and all(b.termbase_digest == DIGEST for b in batches)

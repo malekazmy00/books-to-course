@@ -106,8 +106,8 @@ def test_translate_book_worker_registers_new_names_on_its_own_queue(monkeypatch)
     assert captured["task_queue"] == TRANSLATE_BOOK
     assert captured["workflows"] == [TranslateBookWorkflow, AssembleBookTranslationWorkflow]
     names = sorted(fn.__temporal_activity_definition.name for fn in captured["activities"])
-    assert names == ["assemble_translation", "build_book_termbase", "check_book_termbase",
-                     "prepare_translation_units", "translate_unit_batch"]
+    assert names == ["assemble_translation", "build_book_termbase", "build_translator_notes",
+                     "check_book_termbase", "prepare_translation_units", "translate_unit_batch"]
     assert captured["activities"][0].__self__.termbase_store is not None
     promotion = captured["activities"][0].__self__.promotion  # R1: assemblies go through the registry
     assert promotion is not None and promotion.registry.dsn == "postgresql://x"

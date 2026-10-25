@@ -1,6 +1,6 @@
 # 02 — العقود بين الطبقات (Layer Contracts)
 
-المصدر الوحيد للحقيقة هو `packages/contracts/src/b2c_contracts/models.py` (SCHEMA_VERSION 1.15.0). سجل الإصدارات: 1.3.0 أضاف قبول المخرجات (R1، §7)، و1.4.0 أضاف ParsedBook v2 (R3، §8) بعد دمج العملين، و1.5.0 أضاف CourseOutline v2 (R4، §9)، و1.5.1 غيّر دلالة قبوله: بوابات نظامية لا قرار بشري (قرار المالك 2026-10-25، لا يوجد مراجع بشري في المنتج).، و1.6.0 دمج ذلك مع عقود الفهرسة v2 (R5، §10): provenance الـ chunk وتقرير بوابة الفهرسة وحكم الربط المساند.، و1.7.0 أضاف نص الكلام v2 (R7، §11): `SpeechSegment` و`SpeechExclusion` و`SpeechTextDocument` (كان 1.5.0 في فرعه).. وفي فرع المخطط بالتوازي (D-036): أوصاف الأشكال داخل الدروس `LessonV2.extra_spans`/`block_roles`، والمقدمة دروسًا `front_matter`/`audio_adaptations`، وكل درس حلقة `episode`/`episode_title` (§9؛ كانت 1.7.0–1.9.0 في فرعه)؛ و1.10.0 دمج ذلك مع نص الكلام v2، و1.11.0 (D-037) أضاف `CourseOutlineV2.course_intro_episode`: الحلقة 1 مقدمة الكورس المولَّدة، فتبدأ حلقات الكتاب من 2، و1.12.0 (D-038) جعل مقدمة الكورس الحلقة 00، فتعود حلقات الكتاب 1..n، و1.13.0 أضاف بحث المعرفة وطبقة المفاهيم (D-032..D-035، §12): `KnowledgeDossier` و`ConceptLayer` (كان 1.7.0 في فرعه)، و1.14.0 أضاف خطة الحدود الإيقاعية إلى `SpeechSegment` ‏(§11): `boundary_after` و`break_after` و`unvoiced_glosses`، و1.15.0 (D-039؛ 1.14.0 استُعمل في فرع hardening لخطة الحدود الإيقاعية في `SpeechSegment`) أضاف `TermbaseEntry.tier` ‏(`locked`/`hint`، §13).
+المصدر الوحيد للحقيقة هو `packages/contracts/src/b2c_contracts/models.py` (SCHEMA_VERSION 1.16.0). سجل الإصدارات: 1.3.0 أضاف قبول المخرجات (R1، §7)، و1.4.0 أضاف ParsedBook v2 (R3، §8) بعد دمج العملين، و1.5.0 أضاف CourseOutline v2 (R4، §9)، و1.5.1 غيّر دلالة قبوله: بوابات نظامية لا قرار بشري (قرار المالك 2026-10-25، لا يوجد مراجع بشري في المنتج).، و1.6.0 دمج ذلك مع عقود الفهرسة v2 (R5، §10): provenance الـ chunk وتقرير بوابة الفهرسة وحكم الربط المساند.، و1.7.0 أضاف نص الكلام v2 (R7، §11): `SpeechSegment` و`SpeechExclusion` و`SpeechTextDocument` (كان 1.5.0 في فرعه).. وفي فرع المخطط بالتوازي (D-036): أوصاف الأشكال داخل الدروس `LessonV2.extra_spans`/`block_roles`، والمقدمة دروسًا `front_matter`/`audio_adaptations`، وكل درس حلقة `episode`/`episode_title` (§9؛ كانت 1.7.0–1.9.0 في فرعه)؛ و1.10.0 دمج ذلك مع نص الكلام v2، و1.11.0 (D-037) أضاف `CourseOutlineV2.course_intro_episode`: الحلقة 1 مقدمة الكورس المولَّدة، فتبدأ حلقات الكتاب من 2، و1.12.0 (D-038) جعل مقدمة الكورس الحلقة 00، فتعود حلقات الكتاب 1..n، و1.13.0 أضاف بحث المعرفة وطبقة المفاهيم (D-032..D-035، §12): `KnowledgeDossier` و`ConceptLayer` (كان 1.7.0 في فرعه)، و1.14.0 أضاف خطة الحدود الإيقاعية إلى `SpeechSegment` ‏(§11): `boundary_after` و`break_after` و`unvoiced_glosses`، و1.15.0 (D-039؛ 1.14.0 استُعمل في فرع hardening لخطة الحدود الإيقاعية في `SpeechSegment`) أضاف `TermbaseEntry.tier` ‏(`locked`/`hint`، §13)، و1.16.0 (D-040) أضاف حواشي المترجم `TranslatorNote` و`TranslatorNotesDocument` (§14): كل وحدة لم تُقبل تصير ملاحظة في موضعها بصوت الكورس.
 الوثيقة دي بتشرح **إزاي** كل طبقة بتسلّم للطبقة اللي بعدها. والتعريفات نفسها موجودة في الكود.
 
 > الكود ده اتشغّل واتختبر: `tests/contract/test_contracts_invariants.py` ونتيجته 8 passed. الاختبارات دي بتتأكد من القيود الأساسية (negative controls).
@@ -55,6 +55,7 @@ s3://artifacts/{course_id}/{stage}/{key}/<files>
 | L6 ← L7 | `LessonSummary`، `GlossaryTerm[]`، `Question[]` | الأسئلة عدّت الـ solver والـ linter | إعادة توليد ← G2 |
 | Termbase ← L7 | `TermbaseEntry[]` | كل entry ليها `approved_by`؛ و`tier` ‏(`locked` افتراضيًا، أو `hint`؛ §13) | Gate G3 |
 | L7 ← L8 | `UnitTranslation[]` (لكل `TranslationUnit`) | `decision == accepted`: بلا issue major/critical، ومخرج المحرك مقبول آليًا فقط بعد QE دلالي؛ وإلا `needs_review` (D-028) | G4 |
+| L7 ← الحواشي (1.16.0، D-040) | `TranslatorNotesDocument` (artifact ‏`translator-notes`) | يُبنى من نتائج الوحدات المخزنة بعد التجميع؛ كل وحدة `needs_review`/`rejected` لها `TranslatorNote` واحدة. بوابة `translator-notes.coverage` (§14) تُحسب من النتائج المخزنة لا من الوثيقة: كل وحدة مقبولة أو مُسقطة أو لها ملاحظة، و0 وحدات بلا نتيجة، و0 ملاحظات على وحدة مقبولة | المخرج `rejected` ما دامت وحدة بلا نتيجة؛ لا يوقف الترجمة |
 | L7 ← L8 (1.5.0، R7) | `SpeechTextDocument` (artifact ‏`speech-text`) | يُبنى فقط من وحدات `decision == accepted` لتجميعة `translate-book` مقبولة في سجل المخرجات؛ أي وحدة `needs_review`/`rejected`/بلا نتيجة ترفض البناء كله. بوابة `speech.text-frontend` (§9) | non-retryable (`NotSpeechReady`) |
 | L8 ← Release | `AudioAsset` | `acx_pass` و`asr_cer ≤` العتبة؛ والصوت المستنسخ ليه consent ساري | إعادة توليد المقطع ← G5 |
 | Release | `CourseRelease` | كل الكتب `cleared`؛ والنسخ مجمّدة | non-retryable |
@@ -280,3 +281,27 @@ class GraphRetriever(Protocol):
 - `approved_digest` يضيف المفتاح `hints` **فقط** إذا وُجد مدخل hint؛ بصمة أي قاموس معتمد قبل v3 لا تتغير.
 - عمود `book_termbase_entries.tier` (nullable، `CHECK (tier IN ('hint'))`) يُضاف بـ `ADD COLUMN IF NOT EXISTS`؛ الصفوف القديمة `NULL` = locked.
 - عدّادات البوابة تضيف `pending_dropped` (معلّق اقترح المصنّف إسقاطه؛ لا يحجب البوابة لأن المعلّق لا يصل إلى الترجمة أصلًا) و`approved_hint`.
+
+## 14. حواشي المترجم: `TranslatorNote` و`TranslatorNotesDocument` (SCHEMA 1.16.0؛ D-040)
+المرجع: docs/proposals/2026-10-25-learning-companion.md §2 (الأصوات الثلاثة) و§4 (مرحلة الحواشي)، وD-033. لا مراجعة بشرية في المنتج، والمتعلم قد لا يستطيع المراجعة؛ فالوحدة التي لم تُقبل **لا تُحجب ولا توقف الإنتاج**، بل تصير ملاحظة مترجم في موضعها.
+
+| الحقل | المعنى |
+|---|---|
+| `note_id` | ‏`{unit_id}:note` |
+| `unit_id`، `book_id`، `block_ids`، `pages`، `section_path`، `unit_kind` | موضع الملاحظة: هي مثبتة في مكان الوحدة نفسها |
+| `voice` | ‏`course` دائمًا: صوت الكورس لا صوت المؤلف |
+| `unit_decision` | ‏`needs_review` أو `rejected` (المقبول والمُسقط لا يأخذ ملاحظة) |
+| `reasons` | أسباب مفهومة للمتعلم، الأول هو الأساسي: ‏`no_translation`، `meaning`، `completeness`، `untranslated`، `numbers`، `names`، `terminology`، `wording`، `unverified`. تُشتق من فئات `QAIssue` الحاجبة (major/critical) في الترجمة المعروضة |
+| `reason_ar` | جملة عربية قصيرة، مثل «تعذّر التحقق من دقة ترجمة هذه الفقرة.»؛ العقد يرفض أي حرف لاتيني (لا MQM ولا أسماء فحوص) |
+| `source_language`، `source_text` | النص الأصلي كاملًا (للنسخة المكتوبة والمسرد) |
+| `best_translation`، `best_translation_label_ar`، `best_translation_from` | أفضل ترجمة متاحة بين الترجمة النهائية والمسودات السابقة (`final`/`earlier_draft`) موسومة «ترجمة تقريبية»؛ الثلاثة معًا أو لا شيء. غيابها يساوي وجود `no_translation` في `reasons` |
+| `announcement_ar` | ما يُنطق أولًا، ويبدأ إلزامًا بـ«ملاحظة من الكورس:»، بلا حروف لاتينية |
+
+`TranslatorNotesDocument` ‏(`format = b2c.translator-notes/1`): ‏`book_id`، و`run_id`، و`builder_version`، و`units_ref`، و`results_digest`، والأعداد `total_units`/`accepted`/`dropped`/`annotated`/`pending`، و`notes[]` بترتيب الكتاب، و`unannotated_unit_ids` (وحدات بلا نتيجة نهائية بعد). الثوابت: ملاحظة واحدة لكل وحدة، وكل الملاحظات من الكتاب نفسه، ولا وحدة ملاحظة ومعلّقة معًا، و`annotated == len(notes)` و`pending == len(unannotated_unit_ids)`، و`accepted + dropped + annotated + pending == total_units`: لا تضيع وحدة بصمت.
+
+**الاستهلاك:**
+- **نص الكلام (packages/speech):** يُنطق المقطع بصوت الكورس: `announcement_ar` ثم `best_translation` إن وُجدت، في موضع الوحدة (`unit_ids=[unit_id]`). النص الإنجليزي **لا يُقرأ كاملًا** لمستمع لا يعرف الإنجليزية (§4 من الاقتراح). لم تُربط مرحلة الكلام بعد: ما زالت تشترط تجميعة `translate-book` مقبولة.
+- **نص الحلقة المكتوب:** الملاحظة كاملة: السبب، والترجمة التقريبية بوسمها، والأصل الإنجليزي.
+
+**القبول (§7):** بوابة حتمية `translator-notes.coverage` (`GateResult` بقرار `system`) تُعيد الحساب من `translation_unit_results`: ‏`unannotated` (وحدة غير مقبولة بلا ملاحظة) = 0، و`pending` = 0، و`spurious_notes` (ملاحظة على وحدة مقبولة أو غير معروفة) = 0، و`total_units ≥ 1`. بوابة التجميعة `translate-book.unit-decisions` الصارمة لم تتغير.
+

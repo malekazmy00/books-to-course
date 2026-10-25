@@ -63,7 +63,7 @@ from functools import lru_cache
 
 from b2c_contracts import TranslationUnit
 
-from .model import TermCandidate
+from .model import source_key, TermCandidate
 
 EXTRACTOR_VERSION = "termbase-extract-v2"
 
@@ -871,7 +871,34 @@ def _finalise(aggs, occ: _Occurrences, trans, ctx: _Ctx, min_freq, min_sections)
         if not acronym and key[-1].endswith("s") and singular in out \
                 and out[singular].kind == out[(key, acronym)].kind:
             del out[(key, acronym)]
-    return sorted(out.values(), key=lambda c: (c.kind, -c.frequency, c.source.casefold(), c.source))
+    return _merge_same_source(sorted(out.values(), key=lambda c: (c.kind, -c.frequency, c.source.casefold(),
+                                                                  c.source)))
+
+
+def _merge_same_source(candidates: Sequence[TermCandidate]) -> list[TermCandidate]:
+    """One candidate per source string (BookTermbase keys entries by ``source_key``).
+
+    The same surface can come out both as an acronym and as a named entity ("USSR"), or in two
+    letter cases. Keep the acronym reading (it carries the expansion), otherwise the more frequent
+    one; merge signals and keep the highest frequency. Order of first appearance is preserved."""
+    merged: dict[str, TermCandidate] = {}
+    for cand in candidates:
+        key = source_key(cand.source)
+        kept = merged.get(key)
+        if kept is None:
+            merged[key] = cand
+            continue
+        winner, other = ((cand, kept) if (cand.kind == "acronym") != (kept.kind == "acronym")
+                         and cand.kind == "acronym" else
+                         (kept, cand) if kept.kind == "acronym" or kept.frequency >= cand.frequency
+                         else (cand, kept))
+        merged[key] = winner.model_copy(update={
+            "frequency": max(winner.frequency, other.frequency),
+            "sections": max(winner.sections, other.sections),
+            "signals": tuple(sorted({*winner.signals, *other.signals})),
+            "expansion": winner.expansion or other.expansion,
+            "definition_context": winner.definition_context or other.definition_context})
+    return list(merged.values())
 
 
 def _candidate(surface: str, kind: str, a: _Agg, hits: list[int], trans, acronym: bool) -> TermCandidate:

@@ -46,6 +46,8 @@ _DDL = (
         updated_at timestamptz NOT NULL,
         PRIMARY KEY (run_id, unit_id)
     )""",
+    # Added with the termbase gate; ALTER keeps databases created before it in step.
+    """ALTER TABLE translation_unit_results ADD COLUMN IF NOT EXISTS termbase_digest text NOT NULL DEFAULT ''""",
     """CREATE INDEX IF NOT EXISTS translation_unit_results_decision
         ON translation_unit_results (run_id, decision, seq)""",
     """CREATE TABLE IF NOT EXISTS translation_runs (

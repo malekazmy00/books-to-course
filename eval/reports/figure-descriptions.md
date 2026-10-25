@@ -295,15 +295,15 @@
 
 | الملف | اختبارات |
 |---|---:|
-| `tests/contract/test_figure_descriptions.py` | 10 |
-| `tests/unit/episodes/test_figure_descriptions.py` | 17 |
+| `tests/contract/test_figure_descriptions.py` | 9 |
+| `tests/unit/episodes/test_figure_descriptions.py` | 16 |
 | `tests/unit/episodes/test_episode_figures.py` | 3 |
 | `tests/unit/speech/test_speech_figures.py` | 6 |
 | `tests/unit/speech/test_episode_stream.py` | 12 |
 | `tests/unit/llm_gateway/test_complete_vision.py` | 4 |
 | `tests/unit/orchestration/test_episode_mp3.py` | 3 |
 | `tests/unit/orchestration/test_figure_activities.py` | 2 |
-| **المجموع الجديد** | **57** |
+| **المجموع الجديد** | **55** |
 
 **`make check` (بعد آخر تعديل):**
 - ruff: «All checks passed!».

@@ -1,0 +1,149 @@
+{
+ "run_id": "66f03cab4026",
+ "book_id": "book-main",
+ "accepted_units": 1483,
+ "spoken_units": 1187,
+ "spoken_by_kind": {
+  "heading": 180,
+  "prose": 1001,
+  "list_item": 6
+ },
+ "excluded": {
+  "wrong_language": 3,
+  "not_spoken_kind:toc": 214,
+  "not_spoken_kind:caption": 42,
+  "not_spoken_kind:footnote": 24,
+  "not_spoken_kind:reference": 16
+ },
+ "source_problems_units": {
+  "quotes": 106,
+  "prose_without_final_punctuation": 87,
+  "dash": 48,
+  "unbalanced_brackets": 3,
+  "repeated_punctuation": 2,
+  "space_before_punctuation": 2,
+  "heading_with_final_punctuation": 1
+ },
+ "source_problem_examples": {
+  "dash": [
+   "والإطار سهولة الاستخدام والعملية الشديدة—لا سيما تجميع التقنيات في \"عائلات\". كما ",
+   "—جيليان ويلسون، المفتشة المتقاعدة في شرطة",
+   "—سكوت ليب، رئيس قسم المعرفة في فراغومين L"
+  ],
+  "quotes": [
+   "عملية الشديدة—لا سيما تجميع التقنيات في \"عائلات\". كما أن إمكانية تطبيق التقنيات م",
+   "صدار الثالث من كتاب فيرسون وهوير بعنوان \"تقنيات التحليل الهيكلي\" مكانته كمصدر أسا",
+   "تركز الانتباه في البداية على الحاجة إلى \"التحليل البديل\"—وهي تقنيات للتشكيك في ال"
+  ],
+  "repeated_punctuation": [
+   "الظروف) التي من شأنها أن تساعد في تفسير . . .؟\"",
+   "ال مفتوح مثل \"ما العوامل التي ستؤثر على . . . ؟\" \"كيف يمكننا معرفة ما إذا كان . . ."
+  ],
+  "space_before_punctuation": [
+   "/ الظروف) التي من شأنها أن تساعد في تفسير . . .؟\"",
+   "سؤال مفتوح مثل \"ما العوامل التي ستؤثر على . . . ؟\" \"كيف يمكننا معرفة ما إذا كان . ."
+  ]
+ },
+ "latin_glosses": {
+  "acronym": 15,
+  "title_or_phrase": 3,
+  "term": 15
+ },
+ "latin_gloss_examples": [
+  "ي مجال تقنيات التحليل الهيكلي (SATs).",
+  "سيج للنشر الهند المحدودة (SAGE Publications India Pvt. Ltd.)",
+  "سيج للنشر (SAGE Publications Asia-Pacific Pte. Ltd.)",
+  " حلزوني) | ISBN 9781506368917 (epub) | IS",
+  "7 (epub) | ISBN 9781506368924 (epub) | IS",
+  "4 (epub) | ISBN 9781506368948 (pdf) المو",
+  " مثل تحليل الفرضيات المتنافسة (ACH)، وال",
+  "منصب مسؤول الاستخبارات الوطني (NIO) لأمر",
+  "في وكالة الاستخبارات المركزية (CIA)، حيث",
+  "في وكالة الاستخبارات المركزية (CIA) ومسا",
+  "ردّ مدربو مدرسة شيرمان كنت (Kent School) بأن ",
+  "كان مكتب التحقيقات الفيدرالي (FBI)، ووك"
+ ],
+ "gloss_rules_units": {
+  "latin_parenthetical_removed": 22,
+  "numeric_parenthetical_removed": 7
+ },
+ "rules_units": {
+  "quotes_removed": 105,
+  "symbol": 77,
+  "footnote_marker_removed": 74,
+  "cardinal": 51,
+  "section_number_removed": 48,
+  "reference_number": 38,
+  "acronym_spelled": 37,
+  "ordinal": 34,
+  "year": 27,
+  "symbol_removed": 25,
+  "latin_parenthetical_removed": 22,
+  "latin_fallback": 16,
+  "url_removed": 8,
+  "numeric_parenthetical_removed": 7,
+  "decimal": 4,
+  "date": 3,
+  "lexicon": 2,
+  "bracket_reference_removed": 2,
+  "digits_unified": 2,
+  "thousands_separator": 2,
+  "range": 1,
+  "digits_spelled": 1,
+  "list_marker_removed": 1,
+  "abbreviation": 1
+ },
+ "gloss_spoken_examples": [],
+ "reading_quality_gate": null,
+ "spoken_sentence_words": {
+  "n": 1906,
+  "p50": 16.0,
+  "p90": 30.0,
+  "p95": 35.0,
+  "max": 101.0
+ },
+ "sentences_over_25_words": 356,
+ "sentences_over_35_words": 81,
+ "sentences_over_50_words": 14,
+ "segments": 1642,
+ "segment_chars": {
+  "n": 1642,
+  "p50": 125.5,
+  "p90": 195.0,
+  "p95": 214.0,
+  "max": 300.0
+ },
+ "segment_words": {
+  "n": 1642,
+  "p50": 20.0,
+  "p90": 32.0,
+  "p95": 35.0,
+  "max": 52.0
+ },
+ "fasih_requests_rechunked": 1146,
+ "fasih_internal_chunks": 4405,
+ "fasih_hardwrap_segments": 505,
+ "segments_unterminated_at_sentence_or_more": 235,
+ "boundaries": {
+  "unset": 1642
+ },
+ "pause_plan": {
+  "unset:250": 458,
+  "unset:400": 6,
+  "unset:500": 998,
+  "unset:700": 180
+ },
+ "headings": 180,
+ "pause_before_heading_ms": {
+  "500": 140,
+  "400": 1
+ },
+ "pause_after_heading_ms": {
+  "700": 180
+ },
+ "unspeakable_chars": {
+  ",": 8,
+  "×": 1
+ },
+ "frontend_version": "speech-text-ar-tn-1-seg1"
+}

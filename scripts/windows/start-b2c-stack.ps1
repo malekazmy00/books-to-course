@@ -2,7 +2,10 @@
 param(
     [string]$Distro = "B2C-On-D",
     # Heavy-service profiles to start (Makefile PROFILES); must fit the rule-8 budget.
-    [string]$Profiles = "local-llm"
+    # gemma4 = the translation engine of the running book runs (D-028); Hy was stopped by the owner 2026-10-25.
+    [string]$Profiles = "gemma4",
+    # "1" keeps the opt-in OpenRouter QE overlay (D-029) that the running runs' QE profile needs.
+    [string]$ExternalQE = "1"
 )
 $ErrorActionPreference = "Stop"
 $distro = $Distro
@@ -20,7 +23,7 @@ while ((Get-Date) -lt $deadline) {
             Write-Log "Verified B2C data mount and Docker daemon; starting only Compose project b2c."
             $savedPreference = $ErrorActionPreference
             $ErrorActionPreference = "Continue"
-            $output = & wsl.exe -d $distro -- bash -lc "cd /root/projects/book2course && make start PROFILES='$Profiles' && PROFILES='$Profiles' bash scripts/restore-model-services.sh && bash scripts/recover-lost-b2c-activities.sh && docker restart b2c-cadvisor-1" 2>&1
+            $output = & wsl.exe -d $distro -- bash -lc "cd /root/projects/book2course && make start PROFILES='$Profiles' EXTERNAL_QE='$ExternalQE' && PROFILES='$Profiles' bash scripts/restore-model-services.sh && bash scripts/recover-lost-b2c-activities.sh && docker restart b2c-cadvisor-1" 2>&1
             $result = $LASTEXITCODE
             $ErrorActionPreference = $savedPreference
             foreach ($line in $output) { Write-Log ([string]$line) }

@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -11,12 +13,30 @@ val learnerOpenApi = rootProject.file("../../docs/api/learner-v3.openapi.json")
 
 // Robolectric downloads its Android framework jar at test time with its own HTTP client, which
 // cannot reach Maven from this build host. Resolve it through Gradle instead (cached like any
-// dependency; ~200 MB, test-only) and run Robolectric offline against that directory.
-val robolectricAndroidAll: Configuration by configurations.creating
+// dependency; test-only) and run Robolectric offline against that directory. One configuration per
+// SDK, because inside a single configuration Gradle would resolve the android-all versions to one.
+// Versions: Robolectric 4.14.1 DefaultSdkProvider, preinstrumented "i7".
+val robolectricAndroidAll = mapOf(
+    "Sdk24" to "org.robolectric:android-all-instrumented:7.0.0_r1-robolectric-r1-i7", // Android 7.0 (minSdk)
+    "Sdk25" to "org.robolectric:android-all-instrumented:7.1.0_r7-robolectric-r1-i7", // Android 7.1
+    "Sdk35" to "org.robolectric:android-all-instrumented:15-robolectric-12650502-i7", // default SDK
+).map { (sdk, coordinate) ->
+    configurations.create("robolectricAndroidAll$sdk").also { dependencies.add(it.name, coordinate) }
+}
 val robolectricDepsDir = layout.buildDirectory.dir("robolectric-deps")
 val prepareRobolectricDeps by tasks.registering(Copy::class) {
-    from(robolectricAndroidAll)
+    robolectricAndroidAll.forEach { from(it) }
     into(robolectricDepsDir)
+}
+
+// Release signing stays outside the repository (audit 09 §5.5): a properties file with storeFile,
+// storePassword, keyAlias and keyPassword. Without it the release APK is built unsigned.
+val signingPropertiesFile = file(
+    System.getenv("B2C_SIGNING_PROPERTIES")
+        ?: "${System.getProperty("user.home")}/.config/book2course/learner-signing.properties",
+)
+val signingProperties = Properties().apply {
+    if (signingPropertiesFile.isFile) signingPropertiesFile.inputStream().use { load(it) }
 }
 
 android {
@@ -35,6 +55,28 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        if (signingProperties.isNotEmpty()) {
+            create("release") {
+                storeFile = file(signingProperties.getProperty("storeFile"))
+                storePassword = signingProperties.getProperty("storePassword")
+                keyAlias = signingProperties.getProperty("keyAlias")
+                keyPassword = signingProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
+    // One APK per CPU family plus a universal one. Old 32-bit phones (Android 7, armeabi-v7a) take
+    // the armeabi-v7a split; the only native code is Compose's libandroidx.graphics.path.so.
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a")
+            isUniversalApk = true
+        }
+    }
+
     buildTypes {
         debug {
             applicationIdSuffix = ".debug"
@@ -45,7 +87,7 @@ android {
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             buildConfigField("boolean", "ALLOW_CLEARTEXT_LOCAL", "false")
-            // Signing is configured outside the repository (audit 09 §5.5); unsigned otherwise.
+            signingConfigs.findByName("release")?.let { signingConfig = it }
         }
     }
 
@@ -110,6 +152,5 @@ dependencies {
     testImplementation(libs.androidx.test.ext.junit)
     testImplementation(platform(libs.compose.bom))
     testImplementation(libs.compose.ui.test.junit4)
-    // Framework jar for the default SDK 35 with Robolectric 4.14.1 (DefaultSdkProvider: V, preinstrumented i7).
-    robolectricAndroidAll("org.robolectric:android-all-instrumented:15-robolectric-12650502-i7")
+    testImplementation(libs.work.testing)
 }

@@ -37,7 +37,7 @@ import org.robolectric.annotation.Config
 
 /** Compose UI under Robolectric: what TalkBack reads and what is (not) revealed. */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [35])
+@Config(sdk = [24, 25, 35]) // Android 7.0 / 7.1 (minSdk) and current
 class AccessibleScreensTest {
     @get:Rule
     val rule = createComposeRule()

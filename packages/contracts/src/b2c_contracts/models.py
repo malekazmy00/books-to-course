@@ -9,12 +9,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION = "1.4.0"
+SCHEMA_VERSION = "1.5.1"
 
 
 class Contract(BaseModel):
@@ -492,6 +493,257 @@ class CourseOutline(Contract):
         if inferred and not self.requires_review:
             raise ValueError("llm_inferred outline must set requires_review=True")
         return self
+
+
+# ---------------------------------------------------------------- L2 outline v2 (1.5.0)
+# R4 / docs/audits/2026-10-24/02-outline.md §5-6. Built from ParsedBook v2: the blocks of the book
+# are partitioned into lesson spans and explicitly excluded ranges (zone + reason), so
+# included + excluded = 100% of the book by construction. Every node records the evidence it
+# came from and keeps the source title next to the cleaned display title. Ids are derived from
+# the book's structure (titles), not from block ids, so a re-parse keeps them. A v2 outline is
+# never accepted by a flag in itself: acceptance is decided in the stage-output registry (§7) by
+# system GateResults (structure gate + independent cross-check; 1.5.1: no human reviewer).
+COURSE_OUTLINE_V2_FORMAT = "course-outline/2"
+OutlineSource = Literal["pdf_outline", "printed_toc", "heading", "llm_inferred"]
+ExclusionReason = Literal[
+    "cover", "title_page", "copyright", "dedication", "epigraph", "toc", "list_of_figures",
+    "acknowledgments", "foreword", "preface", "about_author", "front_matter",
+    "endnotes", "bibliography", "index", "glossary", "appendix", "figure_descriptions", "back_matter",
+]
+LessonKind = Literal["section", "chapter_intro", "chapter"]
+SizeStatus = Literal["ok", "below_min", "above_max"]
+_OUTLINE_ID = r"^[a-z0-9][a-z0-9._-]{0,119}$"
+_V2_BLOCK_ID = re.compile(r"^(?P<book>.+):b(?P<seq>\d{5,})$")
+
+
+def v2_block_seq(block_id: str) -> int:
+    """Reading-order position of a ParsedBook v2 block id (f"{book_id}:b{seq:05d}")."""
+    m = _V2_BLOCK_ID.match(block_id)
+    if m is None:
+        raise ValueError(f"not a ParsedBook v2 block id: {block_id!r}")
+    return int(m.group("seq"))
+
+
+def _v2_block_book(block_id: str) -> str:
+    m = _V2_BLOCK_ID.match(block_id)
+    if m is None:
+        raise ValueError(f"not a ParsedBook v2 block id: {block_id!r}")
+    return m.group("book")
+
+
+class OutlineSpanV2(Contract):
+    """Inclusive range of ParsedBook v2 blocks (reading order) and the physical pages it touches."""
+    start_block: str
+    end_block: str
+    pages: tuple[int, int]
+
+    @model_validator(mode="after")
+    def _span(self) -> "OutlineSpanV2":
+        if _v2_block_book(self.start_block) != _v2_block_book(self.end_block):
+            raise ValueError("span endpoints belong to different books")
+        if v2_block_seq(self.end_block) < v2_block_seq(self.start_block):
+            raise ValueError("span is reversed")
+        if not 1 <= self.pages[0] <= self.pages[1]:
+            raise ValueError("span pages must be 1 <= first <= last")
+        return self
+
+    @property
+    def seqs(self) -> tuple[int, int]:
+        return v2_block_seq(self.start_block), v2_block_seq(self.end_block)
+
+
+class ExcludedRange(OutlineSpanV2):
+    """Blocks that are deliberately not course content, and why (EPUB SSV-like reason)."""
+    zone: Literal["front_matter", "body", "back_matter"]
+    reason: ExclusionReason
+    title: str | None = None  # heading that opened the range, if any
+    rule: str = Field(min_length=1, max_length=120)  # the deterministic rule that excluded it
+
+
+def _check_title(value: str) -> str:
+    if not value.strip():
+        raise ValueError("title must not be blank")
+    if "\n" in value or "\r" in value:
+        raise ValueError("a title is a single line")
+    return value
+
+
+class _OutlineNode(Contract):
+    order: int = Field(ge=1)
+    level: int = Field(ge=1)  # structural depth in the book (1 = part/chapter)
+    source: OutlineSource  # evidence for this boundary
+    source_title: str  # the title as found in the source (bookmark text or heading block)
+    display_title: str  # cleaned single-line title shown to learners and reviewers
+    title_source: OutlineSource  # where the display title was taken from
+    anchor_block: str  # the heading block that opens the node
+
+    @field_validator("display_title")
+    @classmethod
+    def _display(cls, v: str) -> str:
+        return _check_title(v)
+
+
+class LessonV2(_OutlineNode):
+    lesson_id: str = Field(pattern=_OUTLINE_ID)
+    kind: LessonKind = "section"
+    spine_span: OutlineSpanV2
+    word_count: int = Field(ge=0)  # words of instructional blocks in the span
+    size_status: SizeStatus
+    size_exception: str | None = None  # documented reason a lesson is outside the size policy
+    subheadings: list[str] = []  # heading blocks inside the lesson that are not lesson boundaries
+    prior_lessons: list[str] = []  # empty unless there is evidence (audit 02 P12)
+
+    @model_validator(mode="after")
+    def _lesson(self) -> "LessonV2":
+        if self.size_status != "ok" and not (self.size_exception or "").strip():
+            raise ValueError("a lesson outside the size policy needs a size_exception")
+        a, b = self.spine_span.seqs
+        if not a <= v2_block_seq(self.anchor_block) <= b:
+            raise ValueError("lesson anchor must lie inside its span")
+        return self
+
+
+class ModuleV2(_OutlineNode):
+    module_id: str = Field(pattern=_OUTLINE_ID)
+    lessons: list[LessonV2] = Field(min_length=1)
+
+
+class LessonSizePolicy(Contract):
+    """Lesson size bounds in words (owner decision Q9; defaults are a proposal)."""
+    policy_id: str = Field(min_length=1)
+    min_words: int = Field(ge=0)
+    max_words: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def _bounds(self) -> "LessonSizePolicy":
+        if self.min_words >= self.max_words:
+            raise ValueError("min_words must be below max_words")
+        return self
+
+
+class CourseOutlineV2(Contract):
+    format: Literal["course-outline/2"] = COURSE_OUTLINE_V2_FORMAT
+    course_id: str
+    spine_book_id: str
+    supplementary_book_ids: list[str] = []
+    parsed_sha256: str | None = None  # sha256 of the parsed-book-v2.json it was built from
+    block_count: int = Field(ge=1)  # blocks in that ParsedBook v2 (ids are consecutive in reading order)
+    builder: dict[str, str]  # {"name": ..., "version": ...}
+    structure_source: OutlineSource  # main evidence for the tree
+    size_policy: LessonSizePolicy
+    modules: list[ModuleV2] = Field(min_length=1)
+    excluded_ranges: list[ExcludedRange] = []
+    requires_review: Literal[True] = True  # always a draft; acceptance lives in the registry (§7)
+
+    @property
+    def lessons(self) -> list[LessonV2]:
+        return [lesson for module in self.modules for lesson in module.lessons]
+
+    @property
+    def lesson_count(self) -> int:
+        return len(self.lessons)
+
+    @model_validator(mode="after")
+    def _outline(self) -> "CourseOutlineV2":
+        if [m.order for m in self.modules] != list(range(1, len(self.modules) + 1)):
+            raise ValueError("module order must be 1..n")
+        ids: list[str] = [m.module_id for m in self.modules]
+        for m in self.modules:
+            if [lesson.order for lesson in m.lessons] != list(range(1, len(m.lessons) + 1)):
+                raise ValueError(f"lesson order in {m.module_id} must be 1..n")
+            ids.extend(lesson.lesson_id for lesson in m.lessons)
+        if len(set(ids)) != len(ids):
+            raise ValueError("module and lesson ids must be unique")
+        spans: list[tuple[int, int, str]] = []
+        previous_end = -1
+        seen: set[str] = set()
+        for m in self.modules:
+            for lesson in m.lessons:
+                a, b = lesson.spine_span.seqs
+                if a <= previous_end:
+                    raise ValueError("lessons must follow the book's reading order")
+                previous_end = b
+                if any(p not in seen for p in lesson.prior_lessons):
+                    raise ValueError(f"prior_lessons of {lesson.lesson_id} must refer to earlier lessons")
+                seen.add(lesson.lesson_id)
+                spans.append((a, b, lesson.lesson_id))
+            first, last = m.lessons[0].spine_span.seqs[0], m.lessons[-1].spine_span.seqs[1]
+            if not first <= v2_block_seq(m.anchor_block) <= last:
+                raise ValueError(f"module {m.module_id} anchor lies outside its lessons")
+        spans.extend((*r.seqs, f"excluded:{r.reason}") for r in self.excluded_ranges)
+        for item in [*(l.spine_span for l in self.lessons), *self.excluded_ranges]:
+            for block_id in (item.start_block, item.end_block):
+                if _v2_block_book(block_id) != self.spine_book_id:
+                    raise ValueError(f"span block {block_id} is not in the spine book")
+        ordered = sorted(spans)
+        first = expected = ordered[0][0]
+        for a, b, name in ordered:
+            if a < expected:
+                raise ValueError(f"{name} overlaps the previous range at block {a}")
+            if a > expected:
+                raise ValueError(f"gap: blocks {expected}..{a - 1} are neither included nor excluded")
+            expected = b + 1
+        if expected - first != self.block_count:
+            raise ValueError(f"lessons + excluded ranges cover {expected - first} blocks, block_count is "
+                             f"{self.block_count}")
+        return self
+
+
+class OutlineQualityReport(Contract):
+    """The deterministic outline gate (stored next to every CourseOutlineV2)."""
+    book_id: str
+    report_version: str
+    outline_sha256: str | None = None
+    reference: str | None = None  # reference the tree was compared with (e.g. "pdf_outline"), None = none
+    metrics: dict[str, Any]
+    checks: list[QualityCheck]
+    accepted: bool  # this gate's verdict; acceptance also needs the cross-check gate (registry)
+
+    @property
+    def failed(self) -> list[str]:
+        return [ch.name for ch in self.checks if ch.passed is False]
+
+    @model_validator(mode="after")
+    def check_acceptance(self) -> "OutlineQualityReport":
+        if self.accepted and (self.failed or not any(ch.passed for ch in self.checks)):
+            raise ValueError("a report with failed (or no passing) checks cannot be accepted")
+        return self
+
+
+_V1_PROVENANCE = {"pdf_outline": "pdf_outline", "printed_toc": "headings", "heading": "headings",
+                  "llm_inferred": "llm_inferred"}
+
+
+def course_outline_v1_from_v2(outline: CourseOutlineV2, book: ParsedBookV2) -> CourseOutline:
+    """Project a v2 outline onto the v1 contract for consumers that have not migrated.
+
+    Block ids become those of ``parsed_book_v1_from_v2(book)`` (same blocks, same order), titles
+    are the display titles, ``prior_lessons`` stay empty. Excluded ranges before the first lesson
+    become ``excluded_prefix_block_ids``; later excluded ranges are gaps between v1 lessons (the
+    v1 contract has no field for them; the v2 outline remains the source of truth).
+    """
+    if book.book_id != outline.spine_book_id or len(book.blocks) != outline.block_count:
+        raise ValueError("outline block_count / spine book does not match the ParsedBook v2")
+    v1_ids = [b.block_id for b in parsed_book_v1_from_v2(book).blocks]
+    position = {b.block_id: i for i, b in enumerate(book.blocks)}
+    modules = []
+    for m in outline.modules:
+        lessons = []
+        for lesson in m.lessons:
+            if lesson.spine_span.start_block not in position or lesson.spine_span.end_block not in position:
+                raise ValueError(f"lesson {lesson.lesson_id} refers to blocks outside the ParsedBook v2")
+            a, b = position[lesson.spine_span.start_block], position[lesson.spine_span.end_block]
+            lessons.append(Lesson(
+                lesson_id=lesson.lesson_id, title=lesson.display_title, order=lesson.order,
+                spine_span=LessonSpan(start_block=v1_ids[a], end_block=v1_ids[b], pages=lesson.spine_span.pages),
+                provenance=_V1_PROVENANCE[lesson.source], prior_lessons=[]))  # type: ignore[arg-type]
+        modules.append(Module(module_id=m.module_id, title=m.display_title, order=m.order, lessons=lessons))
+    first = min(position[lesson.spine_span.start_block] for lesson in outline.lessons)
+    prefix = v1_ids[:first]
+    return CourseOutline(course_id=outline.course_id, spine_book_id=outline.spine_book_id,
+                         supplementary_book_ids=list(outline.supplementary_book_ids), modules=modules,
+                         requires_review=True, excluded_prefix_block_ids=prefix,
+                         excluded_prefix_policy="publisher-front-matter-v1" if prefix else None)
 
 
 # ---------------------------------------------------------------- L3 chunks

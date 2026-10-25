@@ -18,6 +18,8 @@ from b2c_contracts import (
 from b2c_core.source_identity import artifact_source_identity
 from b2c_core.processing_plan import plan_parsed_book
 from b2c_orchestration.indexing import IndexApprovedBookInput, IndexApprovedBookWorkflow
+from b2c_orchestration.outline_v2 import outline_v2_summary
+from b2c_orchestration.promotion import OUTLINE_CROSS_CHECK_POLICY, OUTLINE_STRUCTURE_POLICY
 
 from b2c_outline.review import (
     POLICY_ID,
@@ -55,6 +57,25 @@ SYSTEM_OUTLINE_APPROVAL_DISABLED = {
                    "through /outline/approve with review_type=human and a reviewer_id"),
     "setting": "B2C_ALLOW_SYSTEM_OUTLINE_APPROVAL",
 }
+
+
+OUTLINE_V2_FORMAT = "course-outline/2"
+# R4, owner decision 2026-10-25 (no human reviewer): an outline v2 is accepted by the promotion
+# service when its structure gate and independent cross-check pass. The approve routes do not decide
+# anything for v2: they only hand an *accepted* outline to indexing (approved-outline.json).
+OUTLINE_V2_SYSTEM_ID = "b2c-outline-v2-promotion"
+
+
+def _is_outline_v2(outline_result: Any) -> bool:
+    return isinstance(outline_result, dict) and outline_result.get("format") == OUTLINE_V2_FORMAT
+
+
+def _stage_output(record: Any) -> dict[str, Any]:
+    latest = record.latest_gate_results()
+    return {"stage": record.stage, "key": record.stage_key, "status": record.status,
+            "status_reason": record.status_reason, "required_gates": list(record.required_gates),
+            "gates": {g: {"passed": latest[g].passed, "kind": latest[g].kind, "decided_by": latest[g].decided_by}
+                      for g in sorted(latest)}}
 
 
 def _validate_course_supplementary_identity(parsed: ParsedBook, expected_book_id: str) -> None:
@@ -254,12 +275,26 @@ def ingestion_router(ctx: ApiContext, router: Any = None) -> Any:
             store = get_store()
             outline = CourseOutline.model_validate_json(
                 await run_in_threadpool(store.read, ref, "course-outline.json"))
-            return {"outline": outline.model_dump(mode="json"), "artifact": ref.model_dump(mode="json")}
+            response = {"outline": outline.model_dump(mode="json"), "artifact": ref.model_dump(mode="json")}
+            if _is_outline_v2(outline_result):
+                # R4 review screen: the v2 tree (zones, exclusions with reasons, sizes), its gate,
+                # and where the candidate stands in the registry
+                response.update(await run_in_threadpool(outline_v2_summary, store, ref))
+                response["stage_output"] = await stage_output_of(outline.course_id, ref)
+            return response
         except HTTPException:
             raise
         except Exception as exc:
             log.exception("failed to read draft outline")
             raise HTTPException(status_code=503, detail="outline artifact is unavailable") from exc
+
+    async def stage_output_of(course_id: str, ref: ArtifactRef) -> dict[str, Any] | None:
+        try:
+            record = await run_in_threadpool(ctx.get_stage_registry().get, course_id, ref.stage, ref.key)
+        except Exception:
+            log.exception("stage-output registry is unavailable")
+            return None
+        return None if record is None else _stage_output(record)
 
     def require_system_outline_approval_enabled() -> None:
         if not settings.allow_system_outline_approval:
@@ -269,8 +304,9 @@ def ingestion_router(ctx: ApiContext, router: Any = None) -> Any:
     async def approve_system_outline(
         workflow_id: str, request: SystemOutlineApprovalRequest,
     ) -> dict[str, Any]:
-        require_system_outline_approval_enabled()
         draft = await ingestion_outline(workflow_id)
+        if "outline_v2" not in draft:  # v1 drafts: the legacy structural review stays opt-in (R0)
+            require_system_outline_approval_enabled()
         options = request
         draft_outline = CourseOutline.model_validate(draft["outline"])
         # The selection is a set; keep the draft's order for the books it lists.
@@ -292,8 +328,6 @@ def ingestion_router(ctx: ApiContext, router: Any = None) -> Any:
     @router.post("/v1/ingestions/{workflow_id}/outline/approve", status_code=201)
     async def approve_outline(workflow_id: str, review: OutlineReview) -> dict[str, Any]:
         require_workflow_id("ingest", workflow_id, "ingestion not found")
-        if review.review_type == "system":
-            require_system_outline_approval_enabled()
         try:
             status_response = await ingestion_status(workflow_id)
             if status_response["status"] != "COMPLETED":
@@ -312,6 +346,9 @@ def ingestion_router(ctx: ApiContext, router: Any = None) -> Any:
             raise HTTPException(status_code=409, detail="this ingestion has no spine outline to review")
         draft_ref = ArtifactRef.model_validate(outline_result["ref"])
         parsed_ref = ArtifactRef.model_validate(parsed_result["ref"])
+        outline_v2 = _is_outline_v2(outline_result)
+        if review.review_type == "system" and not outline_v2:
+            require_system_outline_approval_enabled()
         expected_prefix = f"s3://{settings.s3_bucket}/{review.outline.course_id}/"
         if not parsed_ref.uri.startswith(expected_prefix):
             raise HTTPException(status_code=422, detail="spine ParsedBook artifact is outside the approved course")
@@ -335,8 +372,29 @@ def ingestion_router(ctx: ApiContext, router: Any = None) -> Any:
             or set(outline.supplementary_book_ids) != set(draft.supplementary_book_ids)
         ):
             raise HTTPException(status_code=422, detail="reviewed outline identity does not match the draft")
+        stage_output = None
+        quality_sha = None
+        if outline_v2:
+            # Hand-over only: the outline must be exactly the accepted candidate (approved == built).
+            if (outline.modules != draft.modules
+                    or outline.excluded_prefix_block_ids != draft.excluded_prefix_block_ids):
+                raise HTTPException(status_code=422, detail="an outline v2 is used exactly as built and accepted")
+            stage_output = await stage_output_of(draft.course_id, draft_ref)
+            if stage_output is None or stage_output["status"] != "accepted":
+                raise HTTPException(status_code=409, detail={
+                    "message": "the outline v2 candidate is not accepted by its gates",
+                    "status": stage_output["status"] if stage_output else None,
+                    "status_reason": stage_output["status_reason"] if stage_output else None,
+                    "stage_output": stage_output})
+            try:
+                quality_sha = sha256(await run_in_threadpool(store.read, draft_ref, "outline-quality.json")).hexdigest()
+            except Exception as exc:
+                log.exception("failed to read the outline gate report")
+                raise HTTPException(status_code=503, detail="outline artifacts are unavailable") from exc
+            outline = CourseOutline.model_validate({**outline.model_dump(mode="python"), "requires_review": False,
+                                                    "schema_version": SCHEMA_VERSION})
         system_review = None
-        if review.review_type == "system":
+        if review.review_type == "system" and not outline_v2:
             try:
                 outline = merge_bodyless_lessons(parsed, outline)
                 outline = include_leading_blocks_in_first_lesson(parsed, outline)
@@ -397,6 +455,10 @@ def ingestion_router(ctx: ApiContext, router: Any = None) -> Any:
             supplementary_parsed_refs[book_id] = supplement_ref.model_dump(mode="json")
 
         provenance = (OutlineApprovalProvenance(
+            review_type="system", system_id=OUTLINE_V2_SYSTEM_ID,
+            policy_version=f"{OUTLINE_STRUCTURE_POLICY.version}+{OUTLINE_CROSS_CHECK_POLICY.version}",
+            evidence_sha256=quality_sha,
+        ) if outline_v2 else OutlineApprovalProvenance(
             review_type="system", system_id=POLICY_ID, policy_version=POLICY_VERSION,
             evidence_sha256=system_review.evidence_sha256,
         ) if system_review else OutlineApprovalProvenance(
@@ -413,14 +475,28 @@ def ingestion_router(ctx: ApiContext, router: Any = None) -> Any:
             "source_identity": await run_in_threadpool(artifact_source_identity, store, parsed_ref),
             "supplementary_parsed_refs": supplementary_parsed_refs,
         }
+        if outline_v2:
+            payload.update({"outline_v2_ref": draft_ref.model_dump(mode="json"),
+                            "stage_output_status": stage_output["status"] if stage_output else None})
         payload_bytes = json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
-        key = stage_key("approve-outline", "2", [draft_ref.sha256, sha256(payload_bytes).hexdigest()],
-                        {"approval_provenance": provenance.model_dump(mode="json")})
         try:
-            approved_ref = await run_in_threadpool(
-                store.put, outline.course_id, "approve-outline", key,
-                {"approved-outline.json": payload_bytes},
-            )
+            if outline_v2:
+                # content-addressed (P15): the same accepted candidate is one artifact
+                key = stage_key("approve-outline", "3", [draft_ref.sha256, parsed_ref.sha256],
+                                {"approval_provenance": provenance.model_dump(mode="json"),
+                                 "supplementary_parsed_refs": supplementary_parsed_refs})
+                approved_ref, _ = await run_in_threadpool(
+                    store.get_or_compute, outline.course_id, "approve-outline", key,
+                    lambda: {"approved-outline.json": payload_bytes})
+                payload["approved_at"] = json.loads(await run_in_threadpool(
+                    store.read, approved_ref, "approved-outline.json"))["approved_at"]
+            else:
+                key = stage_key("approve-outline", "2", [draft_ref.sha256, sha256(payload_bytes).hexdigest()],
+                                {"approval_provenance": provenance.model_dump(mode="json")})
+                approved_ref = await run_in_threadpool(
+                    store.put, outline.course_id, "approve-outline", key,
+                    {"approved-outline.json": payload_bytes},
+                )
         except Exception as exc:
             log.exception("failed to store approved outline")
             raise HTTPException(status_code=503, detail="could not store approved outline") from exc
@@ -471,6 +547,7 @@ def ingestion_router(ctx: ApiContext, router: Any = None) -> Any:
                                          "overlap_ratio": review.overlap_ratio, "embedding_model": index_input.embedding_model}}) or progress_warning
         return with_progress_warning({"approved_outline": approved_ref.model_dump(mode="json"),
                 "reviewer_id": review.reviewer_id, "review_type": review.review_type,
+                "stage_output": stage_output,
                 "approval_provenance": provenance.model_dump(mode="json"),
                 "approved_at": payload["approved_at"], "index_workflow_id": index_workflow_id}, progress_warning)
 

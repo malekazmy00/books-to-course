@@ -20,6 +20,7 @@ from temporalio.worker import Worker
 from b2c_contracts import BookUpload, IngestQualityReport, ParsedBook, ParsedBookV2, stage_key
 from b2c_core import ArtifactStore
 from b2c_orchestration import ingest_v2 as iv2
+from b2c_orchestration.outline_v2 import BuildOutlineV2Input
 from b2c_orchestration.ingest_v2 import (
     IngestPDFV2Workflow, IngestV2Activities, IngestV2Input, LayoutBatchInput, NormalizeV2Input,
 )
@@ -176,10 +177,17 @@ def fakes(accepted: bool, calls: list):
 
     @activity.defn(name="outline_from_parsed_book")
     def outline(inp) -> dict:
-        calls.append("outline")
+        calls.append("outline-v1")
         return {"ref": REF, "module_count": 1, "lesson_count": 1}
 
-    return [text_layer, layout_batch, normalize, outline]
+    @activity.defn(name="outline_v2_from_parsed_book")
+    def outline_v2(inp: BuildOutlineV2Input) -> dict:
+        calls.append("outline")
+        assert inp.parsed_ref == REF and inp.course_id == "c1"
+        return {"ref": REF, "format": "course-outline/2", "module_count": 1, "lesson_count": 1,
+                "stage_output_status": "candidate"}
+
+    return [text_layer, layout_batch, normalize, outline, outline_v2]
 
 
 @pytest.mark.parametrize("accepted", [True, False])
@@ -197,6 +205,8 @@ async def test_workflow_batches_pages_and_stops_on_a_failed_gate(env, accepted):
     assert calls[:4] == ["text", ("layout", 1, 2), ("layout", 3, 4), ("layout", 5, 5)]
     assert calls[4] == ("normalize", 3)
     if accepted:
-        assert result["status"] == "accepted" and calls[-1] == "outline"
+        # R4: new histories build the outline v2 candidate, never the v1 outline
+        assert result["status"] == "accepted" and calls[-1] == "outline" and "outline-v1" not in calls
+        assert result["outline"]["format"] == "course-outline/2"
     else:
         assert result["status"] == "needs_review" and result["outline"] is None and "outline" not in calls

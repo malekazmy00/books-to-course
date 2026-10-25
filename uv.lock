@@ -306,6 +306,7 @@ dependencies = [
     { name = "b2c-contracts" },
     { name = "b2c-core" },
     { name = "b2c-llm-gateway" },
+    { name = "wordfreq" },
 ]
 
 [package.metadata]
@@ -313,6 +314,7 @@ requires-dist = [
     { name = "b2c-contracts", editable = "packages/contracts" },
     { name = "b2c-core", editable = "packages/core" },
     { name = "b2c-llm-gateway", editable = "packages/llm_gateway" },
+    { name = "wordfreq", specifier = "==3.1.1" },
 ]
 
 [[package]]

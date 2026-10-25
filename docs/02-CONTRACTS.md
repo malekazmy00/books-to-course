@@ -1,6 +1,6 @@
 # 02 — العقود بين الطبقات (Layer Contracts)
 
-المصدر الوحيد للحقيقة هو `packages/contracts/src/b2c_contracts/models.py` (SCHEMA_VERSION 1.4.0). سجل الإصدارات: 1.3.0 أضاف قبول المخرجات (R1، §7)، و1.4.0 أضاف ParsedBook v2 (R3، §8) بعد دمج العملين.
+المصدر الوحيد للحقيقة هو `packages/contracts/src/b2c_contracts/models.py` (SCHEMA_VERSION 1.5.1). سجل الإصدارات: 1.3.0 أضاف قبول المخرجات (R1، §7)، و1.4.0 أضاف ParsedBook v2 (R3، §8) بعد دمج العملين، و1.5.0 أضاف CourseOutline v2 (R4، §9)، و1.5.1 غيّر دلالة قبوله: بوابات نظامية لا قرار بشري (قرار المالك 2026-10-25، لا يوجد مراجع بشري في المنتج).
 الوثيقة دي بتشرح **إزاي** كل طبقة بتسلّم للطبقة اللي بعدها. والتعريفات نفسها موجودة في الكود.
 
 > الكود ده اتشغّل واتختبر: `tests/contract/test_contracts_invariants.py` ونتيجته 8 passed. الاختبارات دي بتتأكد من القيود الأساسية (negative controls).
@@ -47,6 +47,7 @@ s3://artifacts/{course_id}/{stage}/{key}/<files>
 | Upload ← L1 | `BookUpload` | `rights_status` موجود، والـ mime مدعوم | non-retryable |
 | L1 ← L2/L3 | `ParsedBook` | كل block ليه `refs` ≥ 1، و`page_count` صحيح | retry على دفعات صفحات |
 | L1 v2 ← L2/L3 (1.3.0، R3) | `ParsedBookV2` + `IngestQualityReport` | عقد v2 صالح، و`IngestQualityReport.accepted` (البوابات الحتمية في §7). التقرير غير المقبول لا يمر للمخطط | `accepted=false` يُحفظ ويُوقف المسار (مراجعة) |
+| L2 v2 ← L5 (1.5.1، R4) | `CourseOutlineV2` + `OutlineQualityReport` | العقد يفرض تقسيم كل الكتل إلى دروس ونطاقات مستبعدة بسبب (§9)، وحالته `accepted` في سجل المخرجات: بوابة البنية الحتمية **و**الفحص المتقاطع المستقل ناجحان (كلاهما `GateResult` بقرار `system`). لا مراجع بشري في المنتج | مخرج مرفوض بسبب مسجل؛ لا فهرسة |
 | L2 ← L5 | `CourseOutline` | الـ spans متتالية ومتداخلتش؛ لو `llm_inferred` ⇒ `requires_review` | Gate G0 |
 | L3 ← L4 | `StructuredChunk[]` | مفيش chunk بيعدي حدود `section_path`، و`embedding_model` ثابت | retry |
 | L4 ← L5 | LightRAG doc_ids + `ConceptEdge[]` | `doc_status=processed` لكل كتاب؛ كل edge ليه evidence | retry / G1 |
@@ -178,3 +179,23 @@ class GraphRetriever(Protocol):
 **التوافق مع v1:** `parsed_book_v1_from_v2(book)` إسقاط بلا استنتاج. يحوّل الأنواع الجديدة إلى أقرب نوع v1، ويعيد علامات الحواشي ملتصقة بموضعها، ويعيد رقم الحاشية في أول نصها، ويجعل المعرّف `f"{book_id}:{first_page}:{seq}"`. نشاط الاستخراج v2 يحفظ `parsed-book.json` (v1) بجانب `parsed-book-v2.json` حتى تنتقل المراحل اللاحقة.
 
 **تقرير الجودة:** `IngestQualityReport(metrics, checks[QualityCheck], accepted)`. كل `QualityCheck` يحمل القيمة والعتبة والحكم، والعقد يرفض حكمًا لا يطابق القيمة، ويرفض `accepted=true` إن فشل أي فحص أو لم ينجح أي فحص. الفحص غير القابل للقياس (مثل ربط الحواشي في كتاب بلا حواشٍ) قيمته `null` وحكمه `null`.
+
+## 9. CourseOutline v2 (SCHEMA 1.5.0، R4)
+المرجع: `docs/audits/2026-10-24/02-outline.md` §5–7، و`00-RESTRUCTURE-PLAN.md` §R4. يُبنى من `ParsedBookV2` حتميًا (`b2c_outline.v2`)، ولا يقبل نفسه: `requires_review` ثابتة `true` في المسودة، والقبول يُقرَّر في سجل المخرجات (§7) ببوابتين نظاميتين (1.5.1، قرار المالك 2026-10-25: لا مراجع بشري): بوابة البنية الحتمية (`outline-v2.structure`) والفحص المتقاطع المستقل (`outline-v2.cross-check`: الفهرس المطبوع وعناوين التخطيط مقابل البنية المختارة). عند اختلاف المصادر تُعتمد الأسبقية bookmarks > الفهرس المطبوع > عناوين التخطيط، ويُقبل المخطط مع علامة وسبب مسجلين في `GateResult.metrics` ما دامت التغطية 100%، وإلا يُرفض بسبب.
+
+| الحقل | المعنى |
+|---|---|
+| `block_count` + الـ spans | الدروس (`LessonV2.spine_span`) والنطاقات المستبعدة (`excluded_ranges`) **تقسّم** كتل الكتاب `0..block_count-1` بلا فجوة ولا تداخل: المدرج + المستبعد صراحةً = 100% بالبناء. الـ span نطاق شامل من معرّفات v2 (`{book_id}:bNNNNN`)، فترتيب القراءة مقروء من المعرّف |
+| `ExcludedRange` | `zone` (`front_matter` أو `body` أو `back_matter`)، و`reason` بمفردات قريبة من EPUB SSV (`copyright`، `toc`، `acknowledgments`، `preface`، `endnotes`، `bibliography`، `index`، `figure_descriptions`…)، و`title` (العنوان الذي فتح النطاق)، و`rule` (القاعدة الحتمية التي استبعدته) |
+| `ModuleV2` / `LessonV2` | `level` (العمق في بنية الكتاب)، و`source` (دليل الحد: `pdf_outline` أو `printed_toc` أو `heading` أو `llm_inferred`)، و`source_title` (كما في المصدر) و`display_title` (سطر واحد منظَّف)، و`title_source`، و`anchor_block` (كتلة العنوان التي تفتح العقدة) |
+| `LessonV2.kind` | `section`، أو `chapter_intro` (نص الفصل قبل أول قسم، درس مستقل بعنوان الفصل وليس مخفيًا تحت عنوان القسم الأول)، أو `chapter` (فصل بلا أقسام) |
+| `word_count` / `size_status` / `size_exception` | الحجم بالكلمات مقابل `size_policy` (حدود Q9 يقرها المالك). الدرس خارج الحدود يحتاج `size_exception` موثقًا |
+| `subheadings` | عناوين داخل الدرس ليست حدود دروس (مثل «When to Use It») |
+| `prior_lessons` | فارغة ما لم يوجد دليل (P12) |
+| المعرّفات | مشتقة من بنية الكتاب (العنوان المطبَّع ومساره، مع بصمة قصيرة)، لا من معرّفات الكتل ولا من ترتيب الوحدة، فإعادة التحليل تحفظها |
+
+الثوابت التي يفرضها العقد: التقسيم الكامل أعلاه، وترتيب الشجرة = ترتيب القراءة، و`order` كثيف 1..n، وتفرّد المعرّفات، وكل span من كتاب الـ spine، والمرساة داخل الـ span، والعنوان المعروض سطر واحد، و`prior_lessons` تشير إلى دروس سابقة.
+
+**`OutlineQualityReport`:** نفس شكل تقرير الاستخراج (`QualityCheck`): `metrics` و`checks` و`accepted` (البوابة الآلية فقط) و`reference` (المرجع الداخلي المقارن به، مثل `pdf_outline`). العقد يرفض `accepted=true` مع فحص فاشل.
+
+**التوافق مع v1:** `course_outline_v1_from_v2(outline, book)` إسقاط بلا استنتاج: معرّفات الكتل تصبح معرّفات `parsed_book_v1_from_v2(book)` (نفس الكتل بنفس الترتيب)، والعنوان = `display_title`، و`prior_lessons` فارغة. النطاقات المستبعدة قبل أول درس تصبح `excluded_prefix_block_ids`، وما بعدها فجوات بين دروس v1 (لا حقل لها في v1، والمرجع يبقى v2). نشاط المخطط v2 يحفظ `course-outline.json` (v1) بجانب `course-outline-v2.json` حتى تنتقل الفهرسة والأسئلة.

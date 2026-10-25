@@ -1,0 +1,669 @@
+{
+ "format": "outline-reference/1",
+ "name": "sat",
+ "source_file_sha256": "aaea5c4b55e6a7519bdea580fcab7075b0778da690bbe3534e97279a5c447e01",
+ "source": "PDF document outline (bookmarks) read with pypdf; zones proposed by title",
+ "zones_reviewed_by": "claude-agent 2026-10-25 (zones checked against the bookmark list; owner review pending)",
+ "entries": [
+  {
+   "title": "Figures",
+   "level": 1,
+   "page": 19,
+   "zone": "front_matter"
+  },
+  {
+   "title": "Foreword by John McLaughlin",
+   "level": 1,
+   "page": 25,
+   "zone": "front_matter"
+  },
+  {
+   "title": "Preface",
+   "level": 1,
+   "page": 29,
+   "zone": "front_matter"
+  },
+  {
+   "title": "Chapter 1 • Introduction and Overview",
+   "level": 1,
+   "page": 42,
+   "zone": "body"
+  },
+  {
+   "title": "1.1 Our Vision",
+   "level": 2,
+   "page": 45,
+   "zone": "body"
+  },
+  {
+   "title": "1.2 Role of Structured Analytic Techniques",
+   "level": 2,
+   "page": 47,
+   "zone": "body"
+  },
+  {
+   "title": "1.3 History of Structured Analytic Techniques",
+   "level": 2,
+   "page": 49,
+   "zone": "body"
+  },
+  {
+   "title": "1.4 The Expanding Use of Structured Analytic Techniques",
+   "level": 2,
+   "page": 52,
+   "zone": "body"
+  },
+  {
+   "title": "1.5 Selection of Techniques for This Book",
+   "level": 2,
+   "page": 54,
+   "zone": "body"
+  },
+  {
+   "title": "1.6 Quick Overview of Chapters",
+   "level": 2,
+   "page": 57,
+   "zone": "body"
+  },
+  {
+   "title": "Chapter 2 • The Role of Structured Techniques",
+   "level": 1,
+   "page": 62,
+   "zone": "body"
+  },
+  {
+   "title": "2.1 Two Types of Thinking",
+   "level": 2,
+   "page": 63,
+   "zone": "body"
+  },
+  {
+   "title": "2.2 Developing a Taxonomy of Structured Analytic Techniques",
+   "level": 2,
+   "page": 66,
+   "zone": "body"
+  },
+  {
+   "title": "2.3 Dealing with Cognitive Limitations",
+   "level": 2,
+   "page": 71,
+   "zone": "body"
+  },
+  {
+   "title": "2.4 Matching Cognitive Limitations to Structured Techniques",
+   "level": 2,
+   "page": 74,
+   "zone": "body"
+  },
+  {
+   "title": "2.5 Combating Digital Disinformation",
+   "level": 2,
+   "page": 75,
+   "zone": "body"
+  },
+  {
+   "title": "Chapter 3 • Choosing the Right Technique",
+   "level": 1,
+   "page": 84,
+   "zone": "body"
+  },
+  {
+   "title": "3.1 The Six Families",
+   "level": 2,
+   "page": 87,
+   "zone": "body"
+  },
+  {
+   "title": "3.2 Core Techniques",
+   "level": 2,
+   "page": 88,
+   "zone": "body"
+  },
+  {
+   "title": "3.3 Selecting the Right Technique",
+   "level": 2,
+   "page": 92,
+   "zone": "body"
+  },
+  {
+   "title": "3.4 Projects Using Multiple Techniques",
+   "level": 2,
+   "page": 94,
+   "zone": "body"
+  },
+  {
+   "title": "3.5 Common Errors in Selecting Techniques",
+   "level": 2,
+   "page": 96,
+   "zone": "body"
+  },
+  {
+   "title": "3.6 Making a Habit of Using Structured Techniques",
+   "level": 2,
+   "page": 97,
+   "zone": "body"
+  },
+  {
+   "title": "Chapter 4 • Practitioner’s Guide to Collaboration",
+   "level": 1,
+   "page": 101,
+   "zone": "body"
+  },
+  {
+   "title": "4.1 Social Networks and Analytic Teams",
+   "level": 2,
+   "page": 104,
+   "zone": "body"
+  },
+  {
+   "title": "4.2 Dividing the Work",
+   "level": 2,
+   "page": 107,
+   "zone": "body"
+  },
+  {
+   "title": "4.3 Value of Collaborative Processes",
+   "level": 2,
+   "page": 109,
+   "zone": "body"
+  },
+  {
+   "title": "4.4 Common Pitfalls with Small Groups",
+   "level": 2,
+   "page": 111,
+   "zone": "body"
+  },
+  {
+   "title": "4.5 Benefiting from Diversity",
+   "level": 2,
+   "page": 113,
+   "zone": "body"
+  },
+  {
+   "title": "4.6 Advocacy versus Objective Inquiry",
+   "level": 2,
+   "page": 115,
+   "zone": "body"
+  },
+  {
+   "title": "4.7 Leadership and Training",
+   "level": 2,
+   "page": 117,
+   "zone": "body"
+  },
+  {
+   "title": "Chapter 5 • Getting Organized",
+   "level": 1,
+   "page": 124,
+   "zone": "body"
+  },
+  {
+   "title": "5.1 Sorting",
+   "level": 2,
+   "page": 129,
+   "zone": "body"
+  },
+  {
+   "title": "5.2 Ranking, Scoring, and Prioritizing",
+   "level": 2,
+   "page": 138,
+   "zone": "body"
+  },
+  {
+   "title": "5.2.1 The Method: Ranked Voting",
+   "level": 3,
+   "page": 142,
+   "zone": "body"
+  },
+  {
+   "title": "5.2.2 The Method: Paired Comparison",
+   "level": 3,
+   "page": 142,
+   "zone": "body"
+  },
+  {
+   "title": "5.2.3 The Method: Weighted Ranking",
+   "level": 3,
+   "page": 144,
+   "zone": "body"
+  },
+  {
+   "title": "5.3 Matrices",
+   "level": 2,
+   "page": 149,
+   "zone": "body"
+  },
+  {
+   "title": "5.4 Process Maps",
+   "level": 2,
+   "page": 156,
+   "zone": "body"
+  },
+  {
+   "title": "5.5 Gantt Charts",
+   "level": 2,
+   "page": 162,
+   "zone": "body"
+  },
+  {
+   "title": "Chapter 6 • Exploration Techniques",
+   "level": 1,
+   "page": 174,
+   "zone": "body"
+  },
+  {
+   "title": "6.1 Simple Brainstorming",
+   "level": 2,
+   "page": 181,
+   "zone": "body"
+  },
+  {
+   "title": "6.2 Cluster Brainstorming",
+   "level": 2,
+   "page": 188,
+   "zone": "body"
+  },
+  {
+   "title": "6.3 Nominal Group Technique",
+   "level": 2,
+   "page": 195,
+   "zone": "body"
+  },
+  {
+   "title": "6.4 Circleboarding™",
+   "level": 2,
+   "page": 202,
+   "zone": "body"
+  },
+  {
+   "title": "6.5 Starbursting",
+   "level": 2,
+   "page": 207,
+   "zone": "body"
+  },
+  {
+   "title": "6.6 Mind Maps and Concept Maps",
+   "level": 2,
+   "page": 214,
+   "zone": "body"
+  },
+  {
+   "title": "6.7 Venn Analysis",
+   "level": 2,
+   "page": 223,
+   "zone": "body"
+  },
+  {
+   "title": "6.8 Network Analysis",
+   "level": 2,
+   "page": 230,
+   "zone": "body"
+  },
+  {
+   "title": "Chapter 7 • Diagnostic Techniques",
+   "level": 1,
+   "page": 245,
+   "zone": "body"
+  },
+  {
+   "title": "7.1 Key Assumptions Check",
+   "level": 2,
+   "page": 253,
+   "zone": "body"
+  },
+  {
+   "title": "7.2 Chronologies and Timelines",
+   "level": 2,
+   "page": 264,
+   "zone": "body"
+  },
+  {
+   "title": "7.3 Cross-Impact Matrix",
+   "level": 2,
+   "page": 272,
+   "zone": "body"
+  },
+  {
+   "title": "7.4 Multiple Hypothesis Generation",
+   "level": 2,
+   "page": 279,
+   "zone": "body"
+  },
+  {
+   "title": "7.4.1 The Method: Simple Hypotheses",
+   "level": 3,
+   "page": 285,
+   "zone": "body"
+  },
+  {
+   "title": "7.4.2 The Method: Quadrant Hypothesis Generation",
+   "level": 3,
+   "page": 287,
+   "zone": "body"
+  },
+  {
+   "title": "7.4.3 The Method: Multiple Hypotheses Generator®",
+   "level": 3,
+   "page": 289,
+   "zone": "body"
+  },
+  {
+   "title": "7.5 Diagnostic Reasoning",
+   "level": 2,
+   "page": 293,
+   "zone": "body"
+  },
+  {
+   "title": "7.6 Analysis of Competing Hypotheses",
+   "level": 2,
+   "page": 303,
+   "zone": "body"
+  },
+  {
+   "title": "7.7 Inconsistencies Finder™",
+   "level": 2,
+   "page": 321,
+   "zone": "body"
+  },
+  {
+   "title": "7.8 Deception Detection",
+   "level": 2,
+   "page": 327,
+   "zone": "body"
+  },
+  {
+   "title": "7.9 Argument Mapping",
+   "level": 2,
+   "page": 339,
+   "zone": "body"
+  },
+  {
+   "title": "Chapter 8 • Reframing Techniques",
+   "level": 1,
+   "page": 351,
+   "zone": "body"
+  },
+  {
+   "title": "8.1 Cause and Effect Techniques",
+   "level": 2,
+   "page": 360,
+   "zone": "body"
+  },
+  {
+   "title": "8.1.1 Outside-In Thinking",
+   "level": 3,
+   "page": 363,
+   "zone": "body"
+  },
+  {
+   "title": "8.1.2 Structured Analogies",
+   "level": 3,
+   "page": 369,
+   "zone": "body"
+  },
+  {
+   "title": "8.1.3 Red Hat Analysis",
+   "level": 3,
+   "page": 376,
+   "zone": "body"
+  },
+  {
+   "title": "8.2 Challenge Analysis Techniques",
+   "level": 2,
+   "page": 385,
+   "zone": "body"
+  },
+  {
+   "title": "8.2.1 Quadrant Crunching™",
+   "level": 3,
+   "page": 388,
+   "zone": "body"
+  },
+  {
+   "title": "8.2.2 Premortem Analysis",
+   "level": 3,
+   "page": 397,
+   "zone": "body"
+  },
+  {
+   "title": "8.2.3 Structured Self-Critique",
+   "level": 3,
+   "page": 406,
+   "zone": "body"
+  },
+  {
+   "title": "8.2.4 What If? Analysis",
+   "level": 3,
+   "page": 416,
+   "zone": "body"
+  },
+  {
+   "title": "8.2.5 High Impact/Low Probability Analysis",
+   "level": 3,
+   "page": 425,
+   "zone": "body"
+  },
+  {
+   "title": "8.2.6 Delphi Method",
+   "level": 3,
+   "page": 435,
+   "zone": "body"
+  },
+  {
+   "title": "8.3 Conflict Management Techniques",
+   "level": 2,
+   "page": 444,
+   "zone": "body"
+  },
+  {
+   "title": "8.3.1 Adversarial Collaboration",
+   "level": 3,
+   "page": 448,
+   "zone": "body"
+  },
+  {
+   "title": "8.3.2 Structured Debate",
+   "level": 3,
+   "page": 458,
+   "zone": "body"
+  },
+  {
+   "title": "Chapter 9 • Foresight Techniques",
+   "level": 1,
+   "page": 472,
+   "zone": "body"
+  },
+  {
+   "title": "9.1 Key Drivers Generation™",
+   "level": 2,
+   "page": 482,
+   "zone": "body"
+  },
+  {
+   "title": "9.2 Key Uncertainties Finder™",
+   "level": 2,
+   "page": 488,
+   "zone": "body"
+  },
+  {
+   "title": "9.3 Reversing Assumptions",
+   "level": 2,
+   "page": 493,
+   "zone": "body"
+  },
+  {
+   "title": "9.4 Simple Scenarios",
+   "level": 2,
+   "page": 496,
+   "zone": "body"
+  },
+  {
+   "title": "9.5 Cone of Plausibility",
+   "level": 2,
+   "page": 501,
+   "zone": "body"
+  },
+  {
+   "title": "9.6 Alternative Futures Analysis",
+   "level": 2,
+   "page": 506,
+   "zone": "body"
+  },
+  {
+   "title": "9.7 Multiple Scenarios Generation",
+   "level": 2,
+   "page": 511,
+   "zone": "body"
+  },
+  {
+   "title": "9.8 Morphological Analysis",
+   "level": 2,
+   "page": 518,
+   "zone": "body"
+  },
+  {
+   "title": "9.9 Counterfactual Reasoning",
+   "level": 2,
+   "page": 524,
+   "zone": "body"
+  },
+  {
+   "title": "9.10 Analysis by Contrasting Narratives",
+   "level": 2,
+   "page": 535,
+   "zone": "body"
+  },
+  {
+   "title": "9.11 Indicators Generation, Validation, and Evaluation",
+   "level": 2,
+   "page": 545,
+   "zone": "body"
+  },
+  {
+   "title": "9.11.1 The Method: Indicators Generation",
+   "level": 3,
+   "page": 549,
+   "zone": "body"
+  },
+  {
+   "title": "9.11.2 The Method: Indicators Validation",
+   "level": 3,
+   "page": 550,
+   "zone": "body"
+  },
+  {
+   "title": "9.11.3 The Method: Indicators Evaluation",
+   "level": 3,
+   "page": 553,
+   "zone": "body"
+  },
+  {
+   "title": "Chapter 10 • Decision Support Techniques",
+   "level": 1,
+   "page": 568,
+   "zone": "body"
+  },
+  {
+   "title": "10.1 Opportunities Incubator™",
+   "level": 2,
+   "page": 577,
+   "zone": "body"
+  },
+  {
+   "title": "10.2 Bowtie Analysis",
+   "level": 2,
+   "page": 583,
+   "zone": "body"
+  },
+  {
+   "title": "10.3 Impact Matrix",
+   "level": 2,
+   "page": 591,
+   "zone": "body"
+  },
+  {
+   "title": "10.4 SWOT Analysis",
+   "level": 2,
+   "page": 597,
+   "zone": "body"
+  },
+  {
+   "title": "10.5 Critical Path Analysis",
+   "level": 2,
+   "page": 604,
+   "zone": "body"
+  },
+  {
+   "title": "10.6 Decision Trees",
+   "level": 2,
+   "page": 608,
+   "zone": "body"
+  },
+  {
+   "title": "10.7 Decision Matrix",
+   "level": 2,
+   "page": 616,
+   "zone": "body"
+  },
+  {
+   "title": "10.8 Force Field Analysis",
+   "level": 2,
+   "page": 622,
+   "zone": "body"
+  },
+  {
+   "title": "10.9 Pros-Cons-Faults-and-Fixes",
+   "level": 2,
+   "page": 628,
+   "zone": "body"
+  },
+  {
+   "title": "10.10 Complexity Manager",
+   "level": 2,
+   "page": 637,
+   "zone": "body"
+  },
+  {
+   "title": "Chapter 11 • The Future of Structured Analytic Techniques",
+   "level": 1,
+   "page": 651,
+   "zone": "body"
+  },
+  {
+   "title": "11.1 Limits of Empirical Analysis",
+   "level": 2,
+   "page": 653,
+   "zone": "body"
+  },
+  {
+   "title": "11.2 Purpose of Structured Techniques",
+   "level": 2,
+   "page": 657,
+   "zone": "body"
+  },
+  {
+   "title": "11.3 Projecting the Trajectory of Structured Techniques",
+   "level": 2,
+   "page": 661,
+   "zone": "body"
+  },
+  {
+   "title": "11.3.1 Structuring the Data",
+   "level": 3,
+   "page": 663,
+   "zone": "body"
+  },
+  {
+   "title": "11.3.2 Identifying Key Drivers",
+   "level": 3,
+   "page": 665,
+   "zone": "body"
+  },
+  {
+   "title": "11.4 Role of Structured Techniques in 2030",
+   "level": 2,
+   "page": 667,
+   "zone": "body"
+  }
+ ]
+}

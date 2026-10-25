@@ -100,7 +100,7 @@ def test_same_family_validator_is_refused():
 def test_failure_without_enough_validated_questions():
     from tests.unit.episodes import fixtures as f
     gen, judge = roles()
-    gen.llm.script = lambda pv, msg: {**f.lesson_reply(), "questions": []} if pv == "ep-lesson-v1" else f.recap_reply()
+    gen.llm.script = lambda pv, msg: {**f.lesson_reply(), "questions": []} if pv == "ep-lesson-v2" else f.recap_reply()
     with pytest.raises(EpisodeGenerationFailed) as err:
         generate_lesson_episode(plan(), generator=gen, judge=judge, clock=lambda: NOW)
     assert err.value.report["used"]["questions"] == 0
@@ -121,6 +121,17 @@ def test_course_introduction_episode_00():
     g = check_grounding(script, block_text=BLOCK_TEXT, lesson_of=LESSON_OF, episode_of_lesson=EPISODE_OF,
                         allowed_lessons={PREFACE.lesson_id}, dossier=intro_plan().dossier)
     assert g["grounding_rate"] == 1.0
+
+
+def test_a_multi_sentence_item_becomes_separately_checked_lines():
+    from tests.unit.episodes import fixtures as f
+    gen, judge = roles()
+    reply = f.lesson_reply()
+    reply["summary"] = [{"text": "Hegemony combines force and consent. Hegemony was invented in 1920.",
+                         "evidence": f.ev_b("B2", "the combination of force and consent")}]
+    gen.llm.script = lambda pv, msg: reply if pv == "ep-lesson-v2" else f.recap_reply()
+    script, report = generate_lesson_episode(plan(), generator=gen, judge=judge, clock=lambda: NOW)
+    assert [x.text for x in script.sections[2].lines] == ["Hegemony combines force and consent."]
 
 
 def tr(unit, text, decision="accepted"):

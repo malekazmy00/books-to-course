@@ -121,7 +121,7 @@ def intro_reply():
 
 
 def generator_script(pv, msg):
-    return {"ep-lesson-v1": lesson_reply, "ep-recap-v1": recap_reply, "ep-intro-v1": intro_reply}[pv]()
+    return {"ep-lesson-v2": lesson_reply, "ep-recap-v1": recap_reply, "ep-intro-v1": intro_reply}[pv]()
 
 
 def judge_script(pv, msg):

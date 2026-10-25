@@ -150,3 +150,13 @@ def gramsci_like() -> c.ParsedBookV2:
         para(11, 10, zone="back_matter", kind="index_entry", text="leadership (direzione), 65-69, 134, 306-7"),
     ]
     return book(rows, labels={4: "1", 5: "2", 6: "5", 7: "6", 8: "7", 9: "9", 10: "10", 11: "11"})
+
+
+def gramsci_like_with_acknowledgments() -> c.ParsedBookV2:
+    """Gramsci's front matter: a bookmarked 'Acknowledgments' entry (one long thank-you paragraph)
+    between the contents and the Introduction."""
+    rows = rows_of(gramsci_like())
+    ack = [head("Acknowledgments", 3, level=1, zone="front_matter", bm=(1, "Acknowledgments")),
+           para(3, 300, zone="front_matter", text="This book owes much to the insight, support, and care of "
+                "colleagues, friends, the press, and my partner. " + prose(280))]
+    return book(rows[:8] + ack + rows[8:], labels={4: "1", 5: "2", 6: "5", 7: "6", 8: "7", 9: "9", 10: "10", 11: "11"})

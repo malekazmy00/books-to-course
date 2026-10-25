@@ -137,4 +137,4 @@ def test_a_book_without_structure_cannot_be_outlined(store):
 
 def test_without_a_registry_the_activity_still_builds(store):
     out = run(OutlineV2Activities(store=store), put_parsed(store, sat_like()))
-    assert out["stage_output_status"] is None and out["lesson_count"] == 5
+    assert out["stage_output_status"] is None and out["lesson_count"] == 6  # + the preface (D-036)

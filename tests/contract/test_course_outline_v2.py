@@ -197,3 +197,17 @@ def test_extra_spans_and_block_roles_are_checked():
                 [excluded(0, 1), excluded(7, 8, "endnotes", "body")])
     with pytest.raises(ValidationError, match="reading order"):  # the next lesson starts after it
         outline([module("m", [lesson("m.a", 0, 2, extra_spans=[extra]), lesson("m.b", 3, 7, order=2)])])
+
+
+def test_front_matter_lessons_carry_audio_adaptation_flags_inside_the_lesson():  # D-036 (2), 1.8.0
+    assert tuple(int(x) for x in c.SCHEMA_VERSION.split(".")) >= (1, 8, 0)
+    flag = c.AudioAdaptation(start_block=bid(3), end_block=bid(4), reason="acknowledgements",
+                             note="summarise who is thanked; keep every name in the source text")
+    pre = lesson("m.preface", 2, 4, kind="front_matter", audio_adaptations=[flag])
+    assert pre.kind == "front_matter" and pre.audio_adaptations[0].reason == "acknowledgements"
+    with pytest.raises(ValidationError, match="audio"):  # flags mark blocks of the lesson only
+        lesson("m.preface", 2, 3, kind="front_matter", audio_adaptations=[flag])
+    with pytest.raises(ValidationError):  # a flag says why
+        c.AudioAdaptation(start_block=bid(3), end_block=bid(4), reason="acknowledgements", note="")
+    with pytest.raises(ValidationError):
+        c.AudioAdaptation(start_block=bid(3), end_block=bid(4), reason="boring", note="x")

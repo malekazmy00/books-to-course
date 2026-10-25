@@ -15,7 +15,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION = "1.7.0"
+SCHEMA_VERSION = "1.8.0"
 
 
 class Contract(BaseModel):
@@ -510,7 +510,7 @@ ExclusionReason = Literal[
     "acknowledgments", "foreword", "preface", "about_author", "front_matter",
     "endnotes", "bibliography", "index", "glossary", "appendix", "figure_descriptions", "back_matter",
 ]
-LessonKind = Literal["section", "chapter_intro", "chapter"]
+LessonKind = Literal["section", "chapter_intro", "chapter", "front_matter"]  # front_matter: 1.8.0
 SizeStatus = Literal["ok", "below_min", "above_max"]
 _OUTLINE_ID = r"^[a-z0-9][a-z0-9._-]{0,119}$"
 _V2_BLOCK_ID = re.compile(r"^(?P<book>.+):b(?P<seq>\d{5,})$")
@@ -607,6 +607,25 @@ class BlockRoleRun(Contract):
         return v2_block_seq(self.start_block), v2_block_seq(self.end_block)
 
 
+# 1.8.0 (D-036 (2)): the preface, foreword and acknowledgments are lessons. Blocks that do not suit
+# listening as they are (a thank-you list of names, a table, a long list of credits, a legal note)
+# are flagged so the speech/derived stage adapts them (e.g. summarises the thanks) without dropping
+# information: the original text stays in the lesson.
+AudioAdaptationReason = Literal["acknowledgements", "table", "long_list", "legal_notice", "reference_note"]
+
+
+class AudioAdaptation(Contract):
+    """Inclusive run of a lesson's blocks to adapt for listening, and why."""
+    start_block: str
+    end_block: str
+    reason: AudioAdaptationReason
+    note: str = Field(min_length=1, max_length=300)  # what the adaptation must keep
+
+    @property
+    def seqs(self) -> tuple[int, int]:
+        return v2_block_seq(self.start_block), v2_block_seq(self.end_block)
+
+
 class LessonV2(_OutlineNode):
     lesson_id: str = Field(pattern=_OUTLINE_ID)
     kind: LessonKind = "section"
@@ -618,6 +637,7 @@ class LessonV2(_OutlineNode):
     subheadings: list[str] = []  # heading blocks inside the lesson that are not lesson boundaries
     prior_lessons: list[str] = []  # empty unless there is evidence (audit 02 P12)
     block_roles: list[BlockRoleRun] = []  # 1.7.0: e.g. figure descriptions, in reading order
+    audio_adaptations: list[AudioAdaptation] = []  # 1.8.0: blocks to adapt for listening, kept in place
 
     @property
     def spans(self) -> list[OutlineSpanV2]:
@@ -649,6 +669,12 @@ class LessonV2(_OutlineNode):
             x, y = run.seqs
             if y < x or x <= previous or not any(p <= x and y <= q for p, q in ranges):
                 raise ValueError("block role runs must be ordered and lie inside the lesson's spans")
+            previous = y
+        previous = -1
+        for flag in self.audio_adaptations:
+            x, y = flag.seqs
+            if y < x or x <= previous or not any(p <= x and y <= q for p, q in ranges):
+                raise ValueError("audio adaptation runs must be ordered and lie inside the lesson's spans")
             previous = y
         return self
 

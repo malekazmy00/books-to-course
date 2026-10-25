@@ -10,7 +10,10 @@
    sections (chapter-end notes, bibliographies) are excluded too. Figure and table descriptions
    are not (D-036 (1)): they stay in their lesson in reading order, marked with block roles; a
    chapter's description section printed after its excluded notes is an extra span of the
-   chapter's last lesson.
+   chapter's last lesson. The preface, foreword and acknowledgments before the first chapter are
+   lessons of an opening module (D-036 (2)); blocks in them that do not suit listening as they are
+   (thank-you lists, tables, long lists, legal notes) carry an audio_adaptation flag and stay in
+   the lesson. Copyright page, contents, lists of figures, index and bibliography stay excluded.
 3. Tree: body top-level entries are modules; their children (next level of the same source, or the
    chapter's own headings when the source has no deeper level) bound lessons. Text before the
    first section is a chapter-introduction lesson, not hidden under the first section's title.
@@ -31,7 +34,7 @@ import unicodedata
 from dataclasses import dataclass, field
 
 from b2c_contracts import (
-    BlockRoleRun, CourseOutlineV2, ExcludedRange, LessonExtraSpan, LessonSizePolicy, LessonV2, ModuleV2,
+    AudioAdaptation, BlockRoleRun, CourseOutlineV2, ExcludedRange, LessonExtraSpan, LessonSizePolicy, LessonV2, ModuleV2,
     OutlineSpanV2, ParsedBookV2, v2_block_seq,
 )
 
@@ -39,7 +42,21 @@ from .reference import FURNITURE, bookmark_entries, find_heading, printed_toc_en
 from .titles import TitleVocab, clean_title, english_zipf
 
 BUILDER_NAME = "b2c-outline-v2"
-BUILDER_VERSION = "2"  # 2: figure descriptions in lessons (D-036)
+BUILDER_VERSION = "3"  # 2: figure descriptions in lessons; 3: front-matter lessons (D-036)
+# D-036 (2): front matter taught as lessons of the opening module, before chapter 1
+DEFAULT_FRONT_LESSONS = frozenset({"foreword", "preface", "acknowledgments"})
+FRONT_MODULE_TITLE = "Introduction to the Book"  # "مقدمة الكتاب" once translated (D-035)
+_LEGAL_HEADINGS = frozenset({"disclaimer", "legalnotice", "copyright", "permissions", "rightsandpermissions"})
+_NOTE_HEADINGS = frozenset({"note", "notes", "references", "sources"})
+LONG_LIST_ITEMS = 8  # a run of this many list items is flagged for listening
+_ADAPTATION_NOTES = {
+    "acknowledgements": "thanks and names: adapt for listening (e.g. say in summary who is thanked and why); "
+                        "drop no one - the original text stays in the lesson",
+    "table": "table: read it as sentences or summarise it row by row; the original table stays in the lesson",
+    "long_list": "long list: group or summarise it for listening; the original list stays in the lesson",
+    "legal_notice": "legal or copyright notice: mention it briefly; the original text stays in the lesson",
+    "reference_note": "bibliographic note: mention the source briefly; the original text stays in the lesson",
+}
 # Owner decision Q9 is pending: 600-4,000 words is the audit's proposal (02 §5.2.4), not a decision.
 DEFAULT_SIZE_POLICY = LessonSizePolicy(policy_id="words-600-4000-proposal", min_words=600, max_words=4000)
 INSTRUCTIONAL = frozenset({"paragraph", "list_item", "table", "figure", "caption", "equation", "code", "footnote"})
@@ -86,10 +103,13 @@ class OutlineConfig:
     size_policy: LessonSizePolicy = DEFAULT_SIZE_POLICY
     include_front: frozenset[str] = frozenset()  # front-matter reasons taught as modules (e.g. {"preface"})
     include_back: frozenset[str] = frozenset()  # back-matter reasons taught as modules (e.g. {"appendix"})
+    # front-matter reasons taught as lessons of the opening module (D-036 (2))
+    front_lessons: frozenset[str] = DEFAULT_FRONT_LESSONS
 
     def as_dict(self) -> dict:
         return {"size_policy": self.size_policy.model_dump(mode="json"),
-                "include_front": sorted(self.include_front), "include_back": sorted(self.include_back)}
+                "include_front": sorted(self.include_front), "include_back": sorted(self.include_back),
+                "front_lessons": sorted(self.front_lessons)}
 
 
 @dataclass
@@ -220,11 +240,28 @@ def build_outline_v2(book: ParsedBookV2, *, course_id: str, supplementary_book_i
     excluded: list[ExcludedRange] = []
     modules: list[ModuleV2] = []
 
+    front: list[_Piece] = []  # front-matter lessons (D-036 (2))
+
     def exclude(a: int, b: int, zone: str, reason: str, title: str | None, rule: str) -> None:
         if b < a:
             return
         excluded.append(ExcludedRange(start_block=bk.blocks[a].block_id, end_block=bk.blocks[b].block_id,
                                       pages=bk.pages(a, b), zone=zone, reason=reason, title=title, rule=rule))
+
+    def front_matter(a: int, b: int, node: _Node | None) -> None:
+        """Front matter before the first chapter: taught reasons become lessons, the rest is excluded."""
+        for start, stop, reason, title, rule in _matter_cuts(bk, a, b, "front_matter", node, nodes):
+            if reason not in config.front_lessons:
+                exclude(start, stop, "front_matter", reason, title, rule)
+                continue
+            prev = front[-1] if front else None
+            if prev is not None and prev.end + 1 == start and not rule.endswith(":entry"):
+                prev.end = stop  # a heading inside a taught entry (e.g. ACKNOWLEDGMENTS in the Preface)
+                continue
+            entry = next((x for x in nodes if x.index == start), None)
+            front.append(_Piece(start, stop, start, entry.level if entry else (bk.blocks[start].level or 1),
+                                title or reason, entry.source if entry else "heading", kind="front_matter",
+                                exception=reason))
 
     top_level = min(n_.level for n_ in nodes)
     tops = [n_ for n_ in nodes if n_.level == top_level]
@@ -260,11 +297,10 @@ def build_outline_v2(book: ParsedBookV2, *, course_id: str, supplementary_book_i
         if body_words >= 100 and first_body == segments[0][1]:
             segments[0] = (segments[0][0], 0, segments[0][2])  # body text before the first chapter
         else:
-            _split_matter(bk, 0, prefix_end - 1, "front_matter", None, exclude, nodes)
+            front_matter(0, prefix_end - 1, None)
     for node, a, b in segments:
         if a < first_body:
-            side = classify(node.title)
-            _split_matter(bk, a, b, "front_matter", node, exclude, nodes)
+            front_matter(a, b, node)
             continue
         if not _taught(node, config):
             side = classify(node.title)
@@ -280,6 +316,9 @@ def build_outline_v2(book: ParsedBookV2, *, course_id: str, supplementary_book_i
             _split_matter(bk, end + 1, b, "back_matter", None, exclude, nodes, by_entries_only=True)
     if not modules:
         raise OutlineUnavailable("the book structure has no body modules")
+    if front:
+        modules = [_front_module(bk, front, book.book_id, config.size_policy, top_level)] + [
+            m.model_copy(update={"order": m.order + 1}) for m in modules]
     _unique_ids(modules)
     excluded = _merge_adjacent(sorted(excluded, key=lambda r: r.seqs))
     return CourseOutlineV2(
@@ -323,6 +362,14 @@ def _within(child: _Node, top: _Node, tops: list[_Node], n: int) -> bool:
 def _split_matter(bk: _Book, a: int, b: int, zone: str, node: _Node | None, exclude, nodes: list[_Node],
                   *, by_entries_only: bool = False) -> None:
     """Exclude [a, b] as front/back matter, one range per titled section (reason from the title)."""
+    for start, stop, reason, title, rule in _matter_cuts(bk, a, b, zone, node, nodes,
+                                                         by_entries_only=by_entries_only):
+        exclude(start, stop, zone, reason, title, rule)
+
+
+def _matter_cuts(bk: _Book, a: int, b: int, zone: str, node: _Node | None, nodes: list[_Node],
+                 *, by_entries_only: bool = False) -> list[tuple[int, int, str, str | None, str]]:
+    """Front/back matter [a, b] split into titled sections: (start, stop, reason, title, rule)."""
     cuts: list[tuple[int, str | None, str | None]] = []  # (start, reason, title)
     entry_titles = {x.index: x.title for x in nodes}
     if node is not None:
@@ -344,6 +391,7 @@ def _split_matter(bk: _Book, a: int, b: int, zone: str, node: _Node | None, excl
             cuts.append((i, side[1], title))
     if not cuts:
         cuts.append((a, None, None))
+    out = []
     for k, (start, reason, title) in enumerate(cuts):
         stop = cuts[k + 1][0] - 1 if k + 1 < len(cuts) else b
         if reason is None:
@@ -352,7 +400,8 @@ def _split_matter(bk: _Book, a: int, b: int, zone: str, node: _Node | None, excl
                 "title_page" if start == 0 and zone == "front_matter" else
                 ("front_matter" if zone == "front_matter" else "back_matter"))
         rule = f"{zone}:{'entry' if title and title == (node.title if node else None) else 'heading' if title else 'unlabelled'}"
-        exclude(start, stop, zone, reason, title, rule)
+        out.append((start, stop, reason, title, rule))
+    return out
 
 
 def _apparatus_runs(bk: _Book, a: int, b: int, boundaries: set[int]) -> list[tuple[int, int, str, str]]:
@@ -428,6 +477,89 @@ def _module(bk: _Book, node: _Node, a: int, b: int, nodes: list[_Node], source: 
     return ModuleV2(module_id=module_id, order=order, level=node.level, source=node.source,  # type: ignore[arg-type]
                     source_title=node.title, display_title=module_title, title_source=node.source,  # type: ignore[arg-type]
                     anchor_block=bk.blocks[node.index].block_id, lessons=lessons)
+
+
+def _front_module(bk: _Book, pieces: list[_Piece], book_id: str, policy: LessonSizePolicy,
+                  level: int) -> ModuleV2:
+    """The opening module: preface, foreword, acknowledgments ... in book order (D-036 (2))."""
+    module_id = f"{_slug(FRONT_MODULE_TITLE)}-{_digest(book_id, 'module', 'frontmatter')}"
+    lessons = []
+    for k, p in enumerate(pieces, start=1):
+        p.subheadings = [i for i in range(p.start, p.end + 1) if bk.blocks[i].type == "heading" and i != p.anchor]
+        display = clean_title(p.title, bk.vocab)
+        words = bk.words(p.start, p.end)
+        status, exception = "ok", None
+        if words < policy.min_words:
+            status, exception = "below_min", "front matter of the book (D-036), kept whole"
+        elif words > policy.max_words:
+            status, exception = "above_max", "front matter of the book (D-036), kept whole"
+        lessons.append(LessonV2(
+            lesson_id=f"{module_id}.{_slug(display)}-{_digest(book_id, module_id, title_key(p.title))}", order=k,
+            level=p.level, kind="front_matter", source=p.source, source_title=p.title,  # type: ignore[arg-type]
+            display_title=display, title_source=p.source,  # type: ignore[arg-type]
+            anchor_block=bk.blocks[p.anchor].block_id,
+            spine_span=OutlineSpanV2(start_block=bk.blocks[p.start].block_id, end_block=bk.blocks[p.end].block_id,
+                                     pages=bk.pages(p.start, p.end)),
+            word_count=words, size_status=status, size_exception=exception,  # type: ignore[arg-type]
+            subheadings=[bk.blocks[i].block_id for i in p.subheadings],
+            block_roles=_role_runs(bk, [(p.start, p.end)]),
+            audio_adaptations=_audio_adaptations(bk, p.start, p.end, p.exception or "")))
+    first = pieces[0]
+    return ModuleV2(module_id=module_id, order=1, level=level, source=first.source,  # type: ignore[arg-type]
+                    source_title=FRONT_MODULE_TITLE, display_title=FRONT_MODULE_TITLE,
+                    title_source=first.source, anchor_block=bk.blocks[first.anchor].block_id,  # type: ignore[arg-type]
+                    lessons=lessons)
+
+
+def _audio_adaptations(bk: _Book, a: int, b: int, reason: str) -> list[AudioAdaptation]:
+    """Blocks of a front-matter lesson that do not suit listening as they are (D-036 (2))."""
+    mode = "acknowledgements" if reason == "acknowledgments" else None
+    flags: dict[int, str] = {}
+    content = []
+    for i in range(a, b + 1):
+        blk = bk.blocks[i]
+        if blk.type in FURNITURE:
+            continue
+        content.append(i)
+        if blk.type == "heading":
+            if i != a:
+                key, side = title_key(blk.text), classify(blk.text)
+                mode = ("acknowledgements" if side and side[1] == "acknowledgments" else
+                        "legal_notice" if key in _LEGAL_HEADINGS else
+                        "reference_note" if key in _NOTE_HEADINGS else None)
+            continue
+        if blk.type == "table":
+            flags[i] = "table"
+        elif mode is not None:
+            flags[i] = mode
+        elif _COPYRIGHT.search(blk.text):
+            flags[i] = "legal_notice"
+    run: list[int] = []  # long lists: runs of list items (page furniture does not break a run)
+    for i in [*content, None]:
+        if i is not None and bk.blocks[i].type == "list_item" and i not in flags:
+            run.append(i)
+            continue
+        if len(run) >= LONG_LIST_ITEMS:
+            flags.update({j: "long_list" for j in run})
+        run = []
+    out: list[AudioAdaptation] = []
+    current: list | None = None
+    for i in content:
+        flag = flags.get(i)
+        if flag is not None and current is not None and current[2] == flag:
+            current[1] = i
+            continue
+        if current is not None:
+            out.append(_adaptation(bk, *current))
+        current = [i, i, flag] if flag is not None else None
+    if current is not None:
+        out.append(_adaptation(bk, *current))
+    return out
+
+
+def _adaptation(bk: _Book, a: int, b: int, reason: str) -> AudioAdaptation:
+    return AudioAdaptation(start_block=bk.blocks[a].block_id, end_block=bk.blocks[b].block_id,
+                           reason=reason, note=_ADAPTATION_NOTES[reason])  # type: ignore[arg-type]
 
 
 def _heading_children(bk: _Book, a: int, b: int, node_idx: set[int]) -> list[_Node]:
@@ -578,4 +710,4 @@ def _unique_ids(modules: list[ModuleV2]) -> None:
 
 
 __all__ = ["BUILDER_NAME", "BUILDER_VERSION", "DEFAULT_SIZE_POLICY", "OutlineConfig", "OutlineUnavailable",
-           "apparatus_reason", "build_outline_v2", "classify", "find_heading"]
+           "DEFAULT_FRONT_LESSONS", "apparatus_reason", "build_outline_v2", "classify", "find_heading"]

@@ -79,7 +79,9 @@ async def test_the_outline_view_shows_the_v2_draft_its_gates_and_its_status(env)
     response = await call(app_for(store, reg, temporal), "GET", f"/v1/ingestions/{WORKFLOW}/outline")
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["outline"]["modules"][0]["title"] == "Chapter 1 • Getting Organized"
+    # D-036: the preface is the opening module, chapter 1 follows
+    assert [m["title"] for m in body["outline"]["modules"]][:2] == ["Introduction to the Book",
+                                                                  "Chapter 1 • Getting Organized"]
     assert body["outline_v2"]["format"] == "course-outline/2" and body["outline_v2"]["excluded_ranges"]
     assert body["quality"]["accepted"] is True
     gates = body["stage_output"]["gates"]
@@ -108,7 +110,7 @@ async def test_approve_system_hands_an_accepted_outline_to_indexing_without_any_
 async def test_an_edited_outline_is_not_the_accepted_one(env):
     store, reg, temporal, outline = env
     edited = draft_v1(store, outline).model_dump(mode="python")
-    edited["modules"][0]["lessons"][1]["title"] = "Something else"
+    edited["modules"][1]["lessons"][1]["title"] = "Something else"
     response = await call(app_for(store, reg, temporal), "POST", f"/v1/ingestions/{WORKFLOW}/outline/approve",
                           json={"review_type": "human", "reviewer_id": "operator", "outline": edited,
                                 "index_after_approval": False})

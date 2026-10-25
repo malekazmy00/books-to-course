@@ -47,6 +47,16 @@ def test_figure_descriptions_count_as_lesson_content_not_as_excluded():  # D-036
     assert m["figure_description_words_in_lessons"] == 30
 
 
+def test_front_matter_lessons_pass_the_gate_and_stay_out_of_the_body_tree():  # D-036 (2)
+    parsed = sat_like()
+    report = outline_quality(parsed, build(parsed))
+    assert report.accepted, report.failed
+    m = report.metrics
+    assert m["front_matter_lessons"] == 1 and m["reference_zone_accuracy"] == 1.0
+    assert m["reference_boundary_precision"] == 1.0  # the front module is not a body chapter
+    assert "preface" not in m["words_excluded_by_reason"]
+
+
 def test_a_malformed_title_fails_the_gate():
     parsed = sat_like()
     o = build(parsed)
@@ -71,7 +81,7 @@ def test_reference_f1_catches_a_lost_section_boundary_and_a_wrong_level():
     parsed = sat_like()
     o = build(parsed)
     data = o.model_dump(mode="python")
-    lessons = data["modules"][0]["lessons"]
+    lessons = data["modules"][1]["lessons"]  # [0] is the front-matter module (D-036)
     lessons[1]["spine_span"]["end_block"] = lessons[2]["spine_span"]["end_block"]  # 5.1 swallows 5.2
     lessons[1]["extra_spans"] = lessons[2]["extra_spans"]  # and its figure descriptions (D-036)
     del lessons[2]
@@ -79,7 +89,8 @@ def test_reference_f1_catches_a_lost_section_boundary_and_a_wrong_level():
     ref = outline_quality(parsed, merged)
     assert ref.metrics["reference_boundary_recall"] == pytest.approx(5 / 6, abs=1e-4)
     assert "reference_boundary_f1" in ref.failed
-    relevelled = edit_lesson(o, o.lessons[1].lesson_id, level=3)
+    sorting = next(lesson for lesson in o.lessons if lesson.display_title == "5.1 Sorting")
+    relevelled = edit_lesson(o, sorting.lesson_id, level=3)
     assert "reference_level_accuracy" in outline_quality(parsed, relevelled).failed
 
 

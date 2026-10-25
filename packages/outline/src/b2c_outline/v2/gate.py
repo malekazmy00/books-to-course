@@ -65,10 +65,15 @@ def _f1(tp: int, n_pred: int, n_ref: int) -> tuple[float, float, float]:
 
 def _nodes(outline: CourseOutlineV2, position: dict[str, int]) -> list[tuple[int, int, str, str]]:
     """(anchor position, level, display title, source title) of modules and non-intro lessons."""
-    out = [(position[m.anchor_block], m.level, m.display_title, m.source_title) for m in outline.modules]
+    out = [(position[m.anchor_block], m.level, m.display_title, m.source_title) for m in _body_modules(outline)]
     out += [(position[lesson.anchor_block], lesson.level, lesson.display_title, lesson.source_title)
             for lesson in outline.lessons if lesson.kind == "section"]
     return out
+
+
+def _body_modules(outline: CourseOutlineV2) -> list:
+    """Modules of the book's body tree: the front-matter module (D-036 (2)) is not a chapter."""
+    return [m for m in outline.modules if any(lesson.kind != "front_matter" for lesson in m.lessons)]
 
 
 def compare_to_reference(book: ParsedBookV2, outline: CourseOutlineV2, entries: list[RefEntry]) -> dict:
@@ -114,8 +119,10 @@ def compare_to_reference(book: ParsedBookV2, outline: CourseOutlineV2, entries: 
     bp, br, bf = _f1(tp, n_pred, len(refs))
     tp_, tr, tf = _f1(tp_title, n_pred, len(refs))
     level_ok = sum(1 for e, node in pairs if e.level == node[1])
-    taught = [False] * len(book.blocks)
+    taught = [False] * len(book.blocks)  # taught as body content (front-matter lessons are not body)
     for lesson in outline.lessons:
+        if lesson.kind == "front_matter":
+            continue
         for span in lesson.spans:
             for i in range(position[span.start_block], position[span.end_block] + 1):
                 taught[i] = True
@@ -167,6 +174,11 @@ def outline_metrics(book: ParsedBookV2, outline: CourseOutlineV2) -> dict:
     return {
         "modules": len(outline.modules), "lessons": outline.lesson_count,
         "chapter_intro_lessons": sum(1 for lesson in outline.lessons if lesson.kind == "chapter_intro"),
+        "front_matter_lessons": sum(1 for lesson in outline.lessons if lesson.kind == "front_matter"),
+        "front_matter_lesson_words": sum(lesson.word_count for lesson in outline.lessons
+                                         if lesson.kind == "front_matter"),
+        "audio_adaptation_runs": dict(sorted(Counter(flag.reason for lesson in outline.lessons
+                                                     for flag in lesson.audio_adaptations).items())),
         "excluded_ranges": len(outline.excluded_ranges),
         "content_blocks": len(content), "covered_content_blocks": covered, "overlapping_blocks": overlaps,
         "coverage_ratio": round(covered / len(content), 6) if content else 1.0,
@@ -281,7 +293,7 @@ def cross_check(book: ParsedBookV2, outline: CourseOutlineV2, report: OutlineQua
                     < CROSS_CHECK_MIN or (agreement["reference_zone_accuracy"] or 0.0) < CROSS_CHECK_MIN):
                 flags.append("printed_toc_disagrees")
     if outline.structure_source != "heading":
-        anchors = [m.anchor_block for m in outline.modules if m.source != "heading"]
+        anchors = [m.anchor_block for m in _body_modules(outline) if m.source != "heading"]
         anchors += [lesson.anchor_block for lesson in outline.lessons
                     if lesson.kind == "section" and lesson.source != "heading"]
         agree = sum(1 for a in anchors if book.blocks[position[a]].type == "heading")

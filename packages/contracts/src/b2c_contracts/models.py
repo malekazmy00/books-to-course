@@ -15,7 +15,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION = "1.6.0"
+SCHEMA_VERSION = "1.7.0"
 
 
 class Contract(BaseModel):
@@ -1160,3 +1160,319 @@ class CourseRelease(Contract):
         if bad:
             raise ValueError(f"books not cleared (D-002): {bad}")
         return self
+
+
+# ---------------------------------------------------------------- knowledge research + concept layer (1.7.0)
+# D-032..D-035, docs/proposals/2026-10-25-learning-companion.md §6, §10–§12. Both are produced in
+# ENGLISH from the English source book and translated later through the translation pipeline.
+# Three voices stay apart: the author's (book spans), the course's (glosses) and external sources
+# (dossier claims with URL + quote + tier + fetch date).
+SourceTier = Literal[1, 2, 3]  # 1 academic/encyclopedic/publisher, 2 published reviews/interviews, 3 blogs
+DossierSection = Literal["book_card", "author", "context", "reception", "concept_in_field", "further_reading"]
+_SOURCE_ID = r"^src_[0-9a-f]{16}$"
+_CLAIM_ID = r"^clm_[0-9a-f]{12}$"
+_CONCEPT_ID = r"^cpt_[0-9a-f]{12}$"
+_PROVIDER = r"^[a-z0-9][a-z0-9._:-]{0,59}$"
+_FAMILY = r"^[a-z0-9][a-z0-9._-]{0,59}$"
+
+
+class ResearchSource(Contract):
+    """One fetched external document. Its text is data, never instructions (stored beside the dossier)."""
+    source_id: str = Field(pattern=_SOURCE_ID)
+    url: str = Field(min_length=9, max_length=2000)
+    provider: str = Field(pattern=_PROVIDER)  # openalex | wikidata | wikipedia | openlibrary | web:<engine> ...
+    title: str | None = None
+    tier: SourceTier
+    fetched_at: datetime
+    content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")  # sha256 of the sanitized plain text
+    text_chars: int = Field(ge=0)
+    flags: list[str] = []  # e.g. "injection_removed:2", "truncated"
+
+    @field_validator("url")
+    @classmethod
+    def check_https(cls, v: str) -> str:
+        if not v.startswith("https://"):
+            raise ValueError("external source URLs must be https")
+        return v
+
+    @field_validator("fetched_at")
+    @classmethod
+    def check_fetched_utc(cls, v: datetime) -> datetime:
+        return _utc(v)
+
+
+class Evidence(Contract):
+    """A verbatim quote from a fetched source, with the citation validator's verdicts."""
+    source_id: str = Field(pattern=_SOURCE_ID)
+    url: str
+    quote: str = Field(min_length=1, max_length=800)
+    tier: SourceTier
+    fetched_at: datetime
+    quote_found: bool  # the quote occurs (whitespace/quote-normalized) in the sanitized source text
+    supports: bool | None = None  # independent judge: the quote supports the claim; None = not judged
+    judged_by: str | None = None
+
+    @field_validator("fetched_at")
+    @classmethod
+    def check_fetched_utc(cls, v: datetime) -> datetime:
+        return _utc(v)
+
+    @property
+    def valid(self) -> bool:
+        return self.quote_found and self.supports is True
+
+
+class DossierClaim(Contract):
+    """One external claim. ``verified`` = a fact backed by one tier-1 source or two distinct sources;
+    ``attributed`` = said in the name of its source (viewpoints, single lower-tier facts, conflicts);
+    ``rejected`` = kept for audit only, never shown."""
+    claim_id: str = Field(pattern=_CLAIM_ID)
+    section: DossierSection
+    statement: str = Field(min_length=1, max_length=1000)
+    kind: Literal["fact", "viewpoint"]
+    attributed_to: str | None = None
+    concept: str | None = None  # concept_in_field: the book's term this note is about
+    evidence: list[Evidence] = Field(min_length=1)
+    status: Literal["verified", "attributed", "rejected"]
+    status_reason: str | None = None
+    conflict_group: str | None = None  # claims that contradict each other share a group
+
+    @model_validator(mode="after")
+    def _claim_invariants(self) -> "DossierClaim":
+        if not self.statement.strip():
+            raise ValueError("a claim needs a statement")
+        if self.section == "concept_in_field" and not (self.concept or "").strip():
+            raise ValueError("a concept_in_field claim names its concept")
+        if self.status == "rejected":
+            if not (self.status_reason or "").strip():
+                raise ValueError("a rejected claim needs a status_reason")
+            return self
+        if not all(e.valid for e in self.evidence):
+            raise ValueError("published evidence must be found in its source and supported by the judge")
+        if self.status == "verified":
+            if self.kind != "fact":
+                raise ValueError("a viewpoint is never a verified fact; attribute it")
+            if self.conflict_group is not None:
+                raise ValueError("conflicting claims stay attributed viewpoints, never a fact")
+            if not (any(e.tier == 1 for e in self.evidence) or len({e.source_id for e in self.evidence}) >= 2):
+                raise ValueError("a verified fact needs one tier-1 source or two distinct sources")
+        elif not (self.attributed_to or "").strip():
+            raise ValueError("an attributed claim names who says it")
+        return self
+
+
+class FurtherReading(Contract):
+    title: str = Field(min_length=1)
+    authors: list[str] = []
+    year: int | None = None
+    url: str
+    source_id: str = Field(pattern=_SOURCE_ID)
+    tier: SourceTier
+    note: str | None = None
+
+
+class RejectedItem(Contract):
+    """Something research refused: a URL (policy/fetch), removed injected text, or a failed claim."""
+    url: str
+    stage: Literal["policy", "fetch", "extract", "injection", "validation"]
+    reason: str = Field(min_length=1)
+
+
+class KnowledgeDossier(Contract):
+    format: Literal["b2c.knowledge-dossier/1"] = "b2c.knowledge-dossier/1"
+    book_id: str = Field(min_length=1)
+    language: Literal["en"] = "en"
+    title: str = Field(min_length=1)
+    authors: list[str] = []
+    identifiers: dict[str, str] = {}  # isbn / doi / openalex / wikidata / openlibrary
+    created_at: datetime
+    queries: list[str] = []
+    sources: list[ResearchSource] = []
+    claims: list[DossierClaim] = []
+    further_reading: list[FurtherReading] = []
+    rejected: list[RejectedItem] = []
+    extractor: ProducerIdentity
+    judge: ProducerIdentity
+    extractor_family: str = Field(pattern=_FAMILY)
+    judge_family: str = Field(pattern=_FAMILY)
+    metrics: dict[str, Any] = {}
+
+    @field_validator("created_at")
+    @classmethod
+    def check_created_utc(cls, v: datetime) -> datetime:
+        return _utc(v)
+
+    def published(self) -> list[DossierClaim]:
+        return [x for x in self.claims if x.status != "rejected"]
+
+    @model_validator(mode="after")
+    def _dossier_invariants(self) -> "KnowledgeDossier":
+        if self.extractor_family == self.judge_family:
+            raise ValueError("the citation judge must come from a different model family than the extractor")
+        by_id = {s.source_id: s for s in self.sources}
+        if len(by_id) != len(self.sources):
+            raise ValueError("duplicate source_id")
+        if len({x.claim_id for x in self.claims}) != len(self.claims):
+            raise ValueError("duplicate claim_id")
+        for x in self.claims:
+            for e in x.evidence:
+                s = by_id.get(e.source_id)
+                if s is None:
+                    raise ValueError(f"{x.claim_id}: evidence from an unlisted source {e.source_id}")
+                if (s.url, s.tier, s.fetched_at) != (e.url, e.tier, e.fetched_at):
+                    raise ValueError(f"{x.claim_id}: evidence provenance differs from its source record")
+        for r in self.further_reading:
+            if r.source_id not in by_id:
+                raise ValueError(f"further reading from an unlisted source {r.source_id}")
+        return self
+
+
+class BookSpan(Contract):
+    """A verbatim passage of the source book: ``quote`` is a substring of the block's text."""
+    block_id: str = Field(min_length=1)
+    pages: list[int] = []
+    quote: str = Field(min_length=1, max_length=1200)
+
+    @model_validator(mode="after")
+    def _span(self) -> "BookSpan":
+        if not self.quote.strip():
+            raise ValueError("a book span quotes text")
+        if any(p < 1 for p in self.pages):
+            raise ValueError("pages are 1-based")
+        return self
+
+
+class AuthorDefinition(Contract):
+    """The author's own definition (author voice = the spans); ``gloss`` is the course's paraphrase."""
+    spans: list[BookSpan] = Field(min_length=1)
+    gloss: str | None = None
+
+
+ConceptRelationKind = Literal["prerequisite", "related", "part_of", "contrasts_with"]
+
+
+class ConceptRelation(Contract):
+    """``prerequisite``: the target must be understood first. Grounded in the book like any author statement."""
+    target_id: str = Field(pattern=_CONCEPT_ID)
+    relation: ConceptRelationKind
+    evidence: list[BookSpan] = Field(min_length=1)
+
+
+class ExternalConceptNote(Contract):
+    """External context from a published dossier claim: never presented in the author's voice."""
+    voice: Literal["external"] = "external"
+    claim_id: str = Field(pattern=_CLAIM_ID)
+    statement: str = Field(min_length=1)
+    urls: list[str] = Field(min_length=1)
+
+
+class ConceptEntry(Contract):
+    concept_id: str = Field(pattern=_CONCEPT_ID)
+    term: str = Field(min_length=1)
+    kind: Literal["term", "acronym"]
+    termbase_status: Literal["approved", "candidate"]
+    introduced_at: BookSpan  # first occurrence in the lesson text of the book
+    first_lesson_id: str | None = None
+    occurrences: int = Field(ge=1)
+    author_definition: AuthorDefinition | None = None
+    relations: list[ConceptRelation] = []
+    novelty: Literal["author_novel", "established", "unknown"] = "unknown"
+    external_notes: list[ExternalConceptNote] = []
+
+    @model_validator(mode="after")
+    def _novelty(self) -> "ConceptEntry":
+        if self.novelty != "unknown" and not self.external_notes:
+            raise ValueError("novelty is only stated when supported by the dossier (external notes)")
+        return self
+
+
+class LessonMention(Contract):
+    concept_id: str = Field(pattern=_CONCEPT_ID)
+    block_id: str = Field(min_length=1)
+
+
+class LessonConceptList(Contract):
+    """Concepts first mentioned in a lesson (first mention per lesson, in reading order)."""
+    lesson_id: str = Field(min_length=1)
+    title: str = ""
+    first_mentions: list[LessonMention] = []
+
+
+class RejectedStatement(Contract):
+    concept_id: str = Field(pattern=_CONCEPT_ID)
+    kind: Literal["definition", "relation", "novelty"]
+    reason: str = Field(min_length=1)
+
+
+class ConceptLayer(Contract):
+    format: Literal["b2c.concept-layer/1"] = "b2c.concept-layer/1"
+    book_id: str = Field(min_length=1)
+    language: Literal["en"] = "en"
+    created_at: datetime
+    termbase_basis: Literal["approved", "candidates"]
+    termbase_sha256: str | None = None
+    dossier_sha256: str | None = None
+    concepts: list[ConceptEntry] = []
+    lessons: list[LessonConceptList] = []
+    rejected: list[RejectedStatement] = []
+    extractor: ProducerIdentity | None = None
+    metrics: dict[str, Any] = {}
+
+    @field_validator("created_at")
+    @classmethod
+    def check_created_utc(cls, v: datetime) -> datetime:
+        return _utc(v)
+
+    def concept(self, concept_id: str) -> ConceptEntry:
+        for x in self.concepts:
+            if x.concept_id == concept_id:
+                return x
+        raise KeyError(concept_id)
+
+    @model_validator(mode="after")
+    def _layer_invariants(self) -> "ConceptLayer":
+        ids = [x.concept_id for x in self.concepts]
+        if len(set(ids)) != len(ids):
+            raise ValueError("duplicate concept_id")
+        terms = [x.term.casefold() for x in self.concepts]
+        if len(set(terms)) != len(terms):
+            raise ValueError("duplicate concept term")
+        known = set(ids)
+        prereq: dict[str, set[str]] = {i: set() for i in ids}
+        for x in self.concepts:
+            for r in x.relations:
+                if r.target_id not in known or r.target_id == x.concept_id:
+                    raise ValueError(f"{x.concept_id}: relation target {r.target_id} unknown or self")
+                if r.relation == "prerequisite":
+                    prereq[x.concept_id].add(r.target_id)
+        if prerequisite_cycle(prereq):
+            raise ValueError("the prerequisite graph has a cycle")
+        for lesson in self.lessons:
+            seen = [m.concept_id for m in lesson.first_mentions]
+            if len(set(seen)) != len(seen):
+                raise ValueError(f"{lesson.lesson_id}: a concept is first-mentioned once per lesson")
+            if not set(seen) <= known:
+                raise ValueError(f"{lesson.lesson_id}: mention of an unknown concept")
+        return self
+
+
+def prerequisite_cycle(graph: dict[str, set[str]]) -> bool:
+    """True if the directed graph (node -> targets) has a cycle (iterative DFS)."""
+    state: dict[str, int] = {}
+    for root in graph:
+        if root in state:
+            continue
+        stack = [(root, iter(sorted(graph.get(root, ()))))]
+        state[root] = 1
+        while stack:
+            node, children = stack[-1]
+            nxt = next(children, None)
+            if nxt is None:
+                state[node] = 2
+                stack.pop()
+            elif state.get(nxt) == 1:
+                return True
+            elif nxt not in state:
+                state[nxt] = 1
+                stack.append((nxt, iter(sorted(graph.get(nxt, ())))))
+    return False

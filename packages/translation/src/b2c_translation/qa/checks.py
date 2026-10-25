@@ -573,12 +573,16 @@ def contains_term_inflected(target: str, term: str) -> bool:
     return any(all(term_stems[k] & tokens[i + k] for k in range(n)) for i in range(len(tokens) - n + 1))
 
 
-def _source_has(source: str, term: str) -> bool:
+def _term_pattern(term: str, flags: int = re.I) -> re.Pattern[str] | None:
     words = [re.escape(w) for w in term.split()]
     if not words:
-        return False
-    pattern = r"(?<![\w])" + r"[\s-]+".join(words) + r"(?:s|es|'s|’s)?(?![\w])"
-    return re.search(pattern, source, re.I) is not None
+        return None
+    return re.compile(r"(?<![\w])" + r"[\s-]+".join(words) + r"(?:s|es|'s|’s)?(?![\w])", flags)
+
+
+def _source_has(source: str, term: str) -> bool:
+    pattern = _term_pattern(term)
+    return pattern is not None and pattern.search(source) is not None
 
 
 def _table_check(ctx: CheckContext, table: Mapping[str, str], check_id: str,
@@ -590,8 +594,16 @@ def _table_check(ctx: CheckContext, table: Mapping[str, str], check_id: str,
     return issues
 
 
+# Units whose target is the source copied by rule (D-028: a reference keeps its citation in the
+# original language, only connectives become Arabic; an index entry is kept verbatim). They are
+# not translations, so no Arabic rendering of a name or a term can be required in them (D-046).
+RULE_VERBATIM_KINDS = frozenset({"reference", "index"})
+
+
 def terminology(ctx: CheckContext) -> list[QAIssue]:
     # A locked term is required (major) but may inflect (v3); forbidden variants stay strict.
+    if ctx.unit.kind in RULE_VERBATIM_KINDS:
+        return []
     issues = _table_check(ctx, ctx.terms, "terminology", "terminology", contains_term_inflected)
     # A ruled-out rendering is wrong even next to the locked form (e.g. a gloss in brackets).
     for src_term, variants in ctx.forbidden.items():
@@ -607,6 +619,8 @@ def terminology(ctx: CheckContext) -> list[QAIssue]:
 def terminology_hint(ctx: CheckContext) -> list[QAIssue]:
     """Hint-tier entries (v3, D-039): a preferred rendering that is missing is only a minor
     signal (never blocks); a term that is also locked is left to ``terminology``."""
+    if ctx.unit.kind in RULE_VERBATIM_KINDS:
+        return []
     issues = []
     for src_term, tgt_term in ctx.hints.items():
         if src_term in ctx.terms or src_term in ctx.entities:
@@ -616,8 +630,127 @@ def terminology_hint(ctx: CheckContext) -> list[QAIssue]:
     return issues
 
 
+# ------------------------------------------------------------------ named entities (v2, D-046)
+# A name is checked against its approved Arabic form with the clitic and inflection handling of the
+# term matcher (D-039), plus what only varies in the spelling of a transliterated name:
+# * orthography: hamza seats (ؤ ئ ء), Persian letters (پ ڤ گ چ), on top of ``_ar_key``
+#   (alef forms, ة/ه, ى/ي, harakat, tatweel);
+# * one long vowel letter (ا و ي) written or omitted inside the word, with the same first and last
+#   letter and the same consonants in the same order (هربرت / هيربرت, كانمان / كانيمان);
+# * a hard g written with jeem where the approved form has ghain (كريغ / كريج);
+# * an initial written as the single Arabic letter (إتش. / هـ.) — only for the same Latin letter.
+# Anything else (a letter added, dropped or swapped, vowel letters in another order) still alarms.
+_NAME_FOLD = str.maketrans({"ؤ": "و", "ئ": "ي", "ء": None, "پ": "ب", "ڤ": "ف", "گ": "غ", "چ": "تش", "ڨ": "ق"})
+_VOWEL_LETTERS = frozenset("اوي")
+_MIN_VOWEL_TOLERANT = 4  # shorter names are compared exactly
+_INITIALS = {letter: frozenset(forms.split()) for letter, forms in {
+    "A": "ايه ا اي", "B": "بي ب", "C": "سي س", "D": "دي د", "E": "اي ا", "F": "اف ف", "G": "جي ج غ",
+    "H": "اتش ه ح", "I": "اي ا", "J": "جيه جي ج", "K": "كيه كي ك", "L": "ال ل", "M": "ام م", "N": "ان ن",
+    "O": "او و", "P": "بي ب", "Q": "كيو ك ق", "R": "ار ر", "S": "اس س", "T": "تي ت", "U": "يو ي",
+    "V": "في ف", "W": "دبليو و", "X": "اكس", "Y": "واي ي", "Z": "زد زي ز"}.items()}
+# Kinds a learner reads but never hears (footnotes, figure/table credits): a citation in them may
+# keep the source spelling of a name, as the academic practice for foreign references (D-046).
+CITATION_KINDS = frozenset({"footnote", "caption"})
+
+
+def _name_key(token: str) -> str:
+    return _ar_key(token).translate(_NAME_FOLD)
+
+
+def _split_vowels(token: str) -> tuple[str, str]:
+    inner = token[1:-1]
+    skeleton = token[:1] + "".join(c for c in inner if c not in _VOWEL_LETTERS) + token[-1:]
+    return skeleton, "".join(c for c in inner if c in _VOWEL_LETTERS)
+
+
+def _is_subsequence(short: str, long: str) -> bool:
+    letters = iter(long)
+    return all(c in letters for c in short)
+
+
+def _same_name_token(expected: str, got: str) -> bool:
+    for exp in {expected, expected.replace("غ", "ج")}:
+        if exp == got:
+            return True
+        if len(exp) < _MIN_VOWEL_TOLERANT or abs(len(exp) - len(got)) != 1:
+            continue
+        (s1, v1), (s2, v2) = _split_vowels(exp), _split_vowels(got)
+        short, long = sorted((v1, v2), key=len)
+        if s1 == s2 and _is_subsequence(short, long):
+            return True
+    return False
+
+
+def _target_name_forms(token: str) -> set[str]:
+    """Clitic-stripped forms of a target token and their stems (the D-039 machinery)."""
+    forms: set[str] = set()
+    for v in _variants(_name_key(token)):
+        forms |= {v, _strip_article(v)} | _stems(_strip_article(v))
+    return forms
+
+
+def _initial_positions(source_name: str, n_expected: int) -> dict[int, frozenset[str]]:
+    words = LATIN_WORD_RE.findall(source_name)
+    if len(words) != n_expected:
+        return {}
+    return {i: _INITIALS[w] for i, w in enumerate(words) if len(w) == 1 and w in _INITIALS}
+
+
+def contains_name(target: str, name: str, source_name: str = "") -> bool:
+    """True when the approved Arabic ``name`` occurs in ``target``, its words adjacent and in order,
+    allowing the clitics and inflections of ``contains_term_inflected`` and the spelling variants
+    listed above. ``source_name`` (the Latin form) tells which words are initials."""
+    if contains_term(target, name):
+        return True
+    expected = [_strip_article(_name_key(t)) for t in _WORD_RE.findall(normalize_arabic(name))]
+    if not expected:
+        return True
+    initials = _initial_positions(source_name, len(expected))
+    # harakat and tatweel go before tokenising: a tatweel would otherwise split the word
+    tokens = [_target_name_forms(t) for t in _WORD_RE.findall(normalize_arabic(target))]
+
+    def word_matches(k: int, forms: set[str]) -> bool:
+        if k in initials and forms & initials[k]:
+            return True
+        return any(_same_name_token(expected[k], f) for f in forms)
+
+    n = len(expected)
+    return any(all(word_matches(k, tokens[i + k]) for k in range(n)) for i in range(len(tokens) - n + 1))
+
+
+def _name_spans(source: str, name: str) -> list[tuple[int, int]]:
+    """Occurrences of a proper name: case-sensitive (``hall`` is not ``Hall``), or in capitals."""
+    spans = []
+    for form in {name, name.upper()}:
+        pattern = _term_pattern(form, flags=0)
+        if pattern is not None:
+            spans += [m.span() for m in pattern.finditer(source)]
+    return sorted(set(spans))
+
+
+def _kept_in_source_spelling(target: str, name: str) -> bool:
+    pattern = _term_pattern(name, flags=0)
+    return pattern is not None and pattern.search(target) is not None
+
+
 def named_entity(ctx: CheckContext) -> list[QAIssue]:
-    return _table_check(ctx, ctx.entities, "named_entity", "named_entity")
+    """Approved names must appear in their approved Arabic form (major), see D-046 for the rules."""
+    if ctx.unit.kind in RULE_VERBATIM_KINDS:
+        return []
+    source = ctx.unit.source_text
+    present = {name: spans for name in ctx.entities if (spans := _name_spans(source, name))}
+    issues = []
+    for name, spans in present.items():
+        # a mention inside a longer approved name is checked once, as part of that name
+        if all(any(o[0] <= s[0] and s[1] <= o[1] and o != s for other, os_ in present.items()
+                   if other != name for o in os_) for s in spans):
+            continue
+        if ctx.unit.kind in CITATION_KINDS and _kept_in_source_spelling(ctx.target, name):
+            continue
+        expected = ctx.entities[name]
+        if not contains_name(ctx.target, expected, name):
+            issues.append(_issue("named_entity", "named_entity", "major", term=name, expected=expected))
+    return issues
 
 
 # ------------------------------------------------------------------ brackets and quotes
@@ -677,12 +810,12 @@ AR_NEGATION_CUES = frozenset({
 
 
 _NEGATION_STEMS = ("بدون", "دون", "غير", "بغير", "ليس", "لولا", "عدم", "بعدم", "انعدام", "غياب", "بغياب")
-_PRONOUN_SUFFIXES = frozenset({"ه", "ها", "هم", "هما", "هن", "ي", "ك", "كم", "نا"})
+_NEGATION_PRONOUN_SUFFIXES = frozenset({"ه", "ها", "هم", "هما", "هن", "ي", "ك", "كم", "نا"})
 
 
 def _negation_stem(token: str) -> bool:
     """'بدونها', 'غيرهم', 'لولاها': a negation/privation stem with a pronoun suffix."""
-    return any(token.startswith(stem) and token[len(stem):] in _PRONOUN_SUFFIXES for stem in _NEGATION_STEMS)
+    return any(token.startswith(stem) and token[len(stem):] in _NEGATION_PRONOUN_SUFFIXES for stem in _NEGATION_STEMS)
 
 
 def _ar_negations(text: str) -> int:
@@ -766,7 +899,7 @@ def run_checks(ctx: CheckContext, checks: Iterable[RegisteredCheck] = DEFAULT_CH
 
 
 __all__ = ["AR_NEGATION_CUES", "DEFAULT_CHECKS", "LENGTH_RATIO_BOUNDS", "RegisteredCheck", "brackets",
-           "contains_term", "contains_term_inflected", "count_source_sentences", "count_target_sentences", "empty_target",
+           "CITATION_KINDS", "RULE_VERBATIM_KINDS", "contains_name", "contains_term", "contains_term_inflected", "count_source_sentences", "count_target_sentences", "empty_target",
            "footnote_markers", "foreign_script", "latin_not_in_source", "leakage", "length_ratio",
            "named_entity", "normalize_digits", "numbers", "polarity", "quotes", "repetition", "run_checks",
            "sentence_alignment", "strip_original_glosses", "terminology", "terminology_hint", "untranslated_english"]

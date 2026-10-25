@@ -17,6 +17,7 @@ dependencies = [
     "b2c-speech",
     "b2c-research",
     "b2c-concepts",
+    "b2c-episodes",
     "temporalio>=1.33,<2",
     "opentelemetry-api>=1.27,<2",
     "opentelemetry-sdk>=1.27,<2",
@@ -42,6 +43,7 @@ b2c-translation = { workspace = true }
 b2c-speech = { workspace = true }
 b2c-research = { workspace = true }
 b2c-concepts = { workspace = true }
+b2c-episodes = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

@@ -77,9 +77,15 @@ def test_audio_worker_registers_speech_v2_beside_the_old_audio_workflow(monkeypa
     test_audio_worker_store_records_artifact_provenance(monkeypatch)  # installs the other fakes
     monkeypatch.setattr(worker_mod, "Worker", FakeWorker)
     asyncio.run(worker_mod.run_audio_worker())
-    assert captured["workflows"] == [GenerateMP3Workflow, GenerateSpeechV2Workflow]
+    from b2c_orchestration.episode_mp3 import EncodeEpisodeMp3Workflow
+    # D-044: the episode MP3 workflow is registered on the audio queue (started only on request)
+    assert captured["workflows"] == [GenerateMP3Workflow, GenerateSpeechV2Workflow, EncodeEpisodeMp3Workflow]
     names = sorted(fn.__temporal_activity_definition.name for fn in captured["activities"])
-    assert names == ["generate_mp3", "speech_v2_assemble_track", "speech_v2_prepare", "speech_v2_synthesize_segments"]
+    assert names == ["generate_mp3", "speech_v2_assemble_track", "speech_v2_encode_episode", "speech_v2_prepare",
+                     "speech_v2_synthesize_segments"]
+    encode = next(fn.__self__ for fn in captured["activities"]
+                  if fn.__temporal_activity_definition.name == "speech_v2_encode_episode")
+    assert encode.promotion is not None
     speech = next(fn.__self__ for fn in captured["activities"]
                   if fn.__temporal_activity_definition.name == "speech_v2_prepare")
     assert speech.promotion is not None and speech.promotion.registry.dsn == "postgresql://x"

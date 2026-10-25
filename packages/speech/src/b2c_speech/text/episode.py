@@ -10,10 +10,14 @@ The three voices are announced (§2.2): each section opens with a short fixed an
 text with «نص الكتاب.», course sections with their name or «ملاحظة من الكورس:», external sections
 with «بحسب مصادر خارجية:». After each question the script's thinking pause is kept
 (``pause_after_ms``), then the answer follows.
+
+A ``figure_reading`` section (D-044) is read in the course voice like the book's figure descriptions:
+«وصف الشكل.» (or «وصف الجدول.»), its lines, then «انتهى وصف الشكل.».
 """
 from __future__ import annotations
 
-from b2c_contracts import ArtifactRef, EpisodeScript, SpeechSegment, SpeechTextDocument
+from b2c_contracts import (FIGURE_ANNOUNCEMENT_AR, FIGURE_END_AR, ArtifactRef, EpisodeScript, SpeechSegment,
+                           SpeechTextDocument)
 
 from .frontend import FRONTEND_VERSION, PAUSE_AFTER_MS, SENTENCE_PAUSE_MS, NotSpeechReady
 from .lexicon import PronunciationLexicon
@@ -41,7 +45,8 @@ def build_episode_speech_text(script: EpisodeScript, *, source: ArtifactRef, lex
         raise NotSpeechReady(f"{len(not_ready)} line(s) are not accepted (first: {not_ready[0]})")
     segments: list[SpeechSegment] = []
 
-    def add(text: str, *, unit_ids: list[str], structure: str, pause_ms: int, block_ids: list[str] | None = None) -> None:
+    def add(text: str, *, unit_ids: list[str], structure: str, pause_ms: int, block_ids: list[str] | None = None,
+            fields: dict | None = None) -> None:
         normalized = normalize_text(text, lexicon=lexicon, structure=structure)
         chunks = split_for_tts(normalized.text, target_chars=target_chars, max_chars=max_chars)
         for i, chunk in enumerate(chunks):
@@ -51,10 +56,21 @@ def build_episode_speech_text(script: EpisodeScript, *, source: ArtifactRef, lex
                 block_ids=block_ids or [], structure=structure, source_text=text, spoken_text=chunk,
                 rules_applied=list(dict.fromkeys(normalized.rules)), lexicon_hits=sorted(set(normalized.lexicon_hits)),
                 lexicon_misses=sorted(set(normalized.lexicon_misses)),
-                pause_after_ms=pause_ms if i == len(chunks) - 1 else SENTENCE_PAUSE_MS))
+                pause_after_ms=pause_ms if i == len(chunks) - 1 else SENTENCE_PAUSE_MS, **(fields or {})))
 
     for section in script.sections:
         if not section.lines:
+            continue
+        if section.kind == "figure_reading" and section.figure_kind:
+            fields = {"voice": "course", "figure_id": section.figure_id}
+            ids = [u for x in section.lines for u in x.unit_ids]
+            add(FIGURE_ANNOUNCEMENT_AR[section.figure_kind], unit_ids=ids[:1], structure="caption",
+                pause_ms=SENTENCE_PAUSE_MS, fields={**fields, "figure_part": "announcement"})
+            for line in section.lines:
+                add(line.text, unit_ids=list(line.unit_ids), structure="caption", pause_ms=SENTENCE_PAUSE_MS,
+                    fields={**fields, "figure_part": "description"})
+            add(FIGURE_END_AR[section.figure_kind], unit_ids=ids[-1:], structure="caption",
+                pause_ms=PAUSE_AFTER_MS["paragraph"], fields={**fields, "figure_part": "end"})
             continue
         announcement = ANNOUNCEMENTS.get(section.kind)
         if announcement:

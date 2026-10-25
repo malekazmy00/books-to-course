@@ -82,7 +82,9 @@ def tracks(tmp_path, seconds=(2.0, 1.5, 2.5)):
     paths = []
     for i, s in enumerate(seconds):
         p = tmp_path / f"t{i}.wav"
-        p.write_bytes(write_wav(PCM(samples=speechlike(s, seed=i + 1, amp=0.04 + 0.03 * i), sample_rate=SR)))
+        # tracks are edge-trimmed to a 40 ms guard when assembled (D-042)
+        x = speechlike(s, seed=i + 1, amp=0.04 + 0.03 * i, lead=0.04, trail=0.04)
+        p.write_bytes(write_wav(PCM(samples=x, sample_rate=SR)))
         paths.append(str(p))
     return paths
 

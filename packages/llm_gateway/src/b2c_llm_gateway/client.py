@@ -8,6 +8,8 @@
 """
 from __future__ import annotations
 
+import base64
+import hashlib
 import ipaddress
 import json
 import logging
@@ -97,6 +99,16 @@ def _validate_text_messages(messages: Any) -> list[dict[str, str]]:
             raise ValueError("each message needs role system/user/assistant and string content")
         clean.append({"role": role, "content": content})
     return clean
+
+
+def _image_mime(data: bytes) -> str:
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    raise ValueError("images must be PNG, JPEG or WebP")
 
 
 class LLMGateway:
@@ -448,6 +460,61 @@ class LLMGateway:
                     "finish_reason": res.finish_reason, "key_inputs": {
                         "provider": self.provider_name, "base_url": self.base_url,
                         "prompt_version": prompt_version}})
+            self._finish(span, res, cache_hit=False)
+            return TextCompletion(res.text, res.model, res.finish_reason, dict(res.usage), False)
+
+    def complete_vision(self, messages, *, images: list[bytes], prompt_version: str, max_tokens: int,
+                        temperature: float = 0.0) -> TextCompletion:
+        """Plain-text completion with image input (D-044: figure descriptions).
+
+        The images are attached to the LAST user message as OpenAI-compatible ``image_url`` parts
+        with base64 data URLs, before its text (Gemma 4 on Ollama: "place image content before
+        text", ollama.com/library/gemma4, read 2026-10-25). Same allow-list, spans and truncation
+        rule as ``complete_text``; cached at temperature 0 under a key that carries the images'
+        SHA-256 (never their bytes)."""
+        clean = _validate_text_messages(messages)
+        if clean[-1]["role"] != "user":
+            raise ValueError("the last message must be the user message the images belong to")
+        if not images:
+            raise ValueError("complete_vision needs at least one image")
+        parts = [{"type": "image_url", "image_url": {"url": f"data:{_image_mime(img)};base64,"
+                                                            + base64.b64encode(img).decode("ascii")}}
+                 for img in images]
+        if not isinstance(max_tokens, int) or isinstance(max_tokens, bool) or max_tokens < 1:
+            raise ValueError("max_tokens must be a positive integer")
+        wire = [*clean[:-1], {"role": "user", "content": [*parts, {"type": "text", "text": clean[-1]["content"]}]}]
+        params = self._params(temperature, max_tokens, self.reasoning_effort)
+        cacheable = self.cache is not None and params["temperature"] == 0.0
+        digests = [hashlib.sha256(img).hexdigest() for img in images]
+        key = text_cache_key(provider=self.provider_name, base_url=self.base_url, model_id=self.model_id,
+                             messages=[*clean, {"role": "images", "content": ",".join(digests)}], params=params,
+                             prompt_version=prompt_version)
+        with self._tracer.start_as_current_span(f"chat {self.model_id}", kind=SpanKind.CLIENT) as span:
+            span.set_attributes({"gen_ai.operation.name": "chat", "gen_ai.provider.name": self.provider_name,
+                                 "gen_ai.request.model": self.model_id, "gen_ai.request.temperature": params["temperature"],
+                                 "gen_ai.request.max_tokens": max_tokens, "gen_ai.output.type": "text",
+                                 "b2c.prompt_version": prompt_version, "b2c.cache_key": key,
+                                 "b2c.images": len(images)})
+            hit = self.cache.get(key) if cacheable else None
+            if hit is not None and isinstance(hit.get("text"), str):
+                res = ChatResult(text=hit["text"], model=hit.get("model", self.model_id), usage=hit.get("usage", {}),
+                                 cached=True, attempts=0, finish_reason=hit.get("finish_reason"), generation_attempts=1)
+                self._finish(span, res, cache_hit=True)
+                return TextCompletion(res.text, res.model, res.finish_reason, dict(res.usage), True)
+            try:
+                res = self._call(wire, params)
+                if res.finish_reason == "length":
+                    raise LLMOutputTruncated("LLM output reached its token limit", last_output=res.text,
+                                             usage=res.usage, model_id=res.model, finish_reason=res.finish_reason)
+            except (LLMOutputTruncated, OpenRouterQuotaExceeded, OpenRouterRateLimited,
+                    FreeTokenQuotaExceeded, LLMRequestRejected, LLMUnavailable) as exc:
+                span.set_status(Status(StatusCode.ERROR, type(exc).__name__))
+                raise
+            if cacheable:
+                self.cache.put(key, self.model_id, {
+                    "text": res.text, "model": res.model, "usage": res.usage, "finish_reason": res.finish_reason,
+                    "key_inputs": {"provider": self.provider_name, "base_url": self.base_url,
+                                   "prompt_version": prompt_version, "image_sha256": digests}})
             self._finish(span, res, cache_hit=False)
             return TextCompletion(res.text, res.model, res.finish_reason, dict(res.usage), False)
 

@@ -20,6 +20,10 @@ original term is then inserted at its first mention in the episode (D-032 princi
 text and script lines alike, for the approved locked terms the concept layer lists as first
 mentioned in the lesson; the QA checks are re-run with those glosses explicitly whitelisted.
 
+Figures (D-044): with ``figures_ref`` (accepted ``figure-descriptions`` artifact, English) each lesson's
+figure descriptions are inserted as ``figure_reading`` sections (course voice) after their anchor
+units; their lines are generated lines like the others and are translated with them.
+
 Resumable per episode: both activities are keyed by their inputs (``stage_key``) and an existing
 artifact is reused; within an episode, model calls are cached by the gateway (temperature 0) and,
 with a result store, finished units are not translated again.
@@ -39,8 +43,10 @@ from temporalio.common import RetryPolicy
 
 with workflow.unsafe.imports_passed_through():
     from b2c_concepts import BookIndex
-    from b2c_contracts import (ArtifactRef, ConceptLayer, CourseOutlineV2, EpisodeScript, KnowledgeDossier, ParsedBookV2,
-                               ProducerIdentity, TranslationUnit, UnitTranslation, stage_key)
+    from b2c_contracts import (ArtifactRef, ConceptLayer, CourseOutlineV2, EpisodeScript, FigureDescriptionsDocument,
+                               KnowledgeDossier, ParsedBookV2, ProducerIdentity, TranslationUnit, UnitTranslation,
+                               stage_key)
+    from b2c_episodes.figures import insert_figure_sections
     from b2c_episodes import (EPISODES_VERSION, BookLine, BookTextRef, CourseIntroPlan, EpisodeGenerationFailed,
                               EpisodePlan, LessonSource, ModelRole, SourceBlock, TermInfo, assemble_arabic,
                               check_grounding, coverage, evaluate_en_script, generate_course_intro,
@@ -90,6 +96,7 @@ class EpisodeRefs(BaseModel):
     units_ref: dict[str, Any]          # the book's translation-units artifact
     concept_ref: dict[str, Any]        # accepted concept-layer artifact
     dossier_ref: dict[str, Any] | None = None
+    figures_ref: dict[str, Any] | None = None  # D-044: accepted English figure-descriptions artifact
     translation_run_id: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
@@ -306,8 +313,14 @@ class EpisodeActivities:
         if not self._accepted(inp.course_id, concept_ref, inp.require_accepted_inputs):
             raise ValueError("the concept layer is not an accepted output")
         dossier, dossier_ref = self._dossier(inp, inp.require_accepted_inputs)
+        figures, figures_ref = None, None
+        if inp.figures_ref:
+            figures_ref = self._ref(inp.figures_ref)
+            if not self._accepted(inp.course_id, figures_ref, inp.require_accepted_inputs):
+                raise ValueError("the figure descriptions are not an accepted output")
+            figures = FigureDescriptionsDocument.model_validate_json(self.store.read(figures_ref, "figures.json"))
         inputs = [self._ref(inp.parsed_ref), self._ref(inp.outline_ref), self._ref(inp.units_ref), concept_ref] + (
-            [dossier_ref] if dossier_ref else [])
+            [dossier_ref] if dossier_ref else []) + ([figures_ref] if figures_ref else [])
         config = {"episodes_version": EPISODES_VERSION, "episode": inp.episode, "run_id": inp.translation_run_id,
                   "generator": self.generator.identity.model_id, "judge": self.judge.identity.model_id,
                   "dossier": dossier_ref is not None, "cache_bust": inp.cache_bust,
@@ -342,6 +355,10 @@ class EpisodeActivities:
                     script, report = generate_lesson_episode(plan, generator=self.generator, judge=self.judge,
                                                              clock=self.clock, workers=self.workers)
                     cov = coverage(plan, script)
+                    if figures is not None:
+                        script, placed = insert_figure_sections(
+                            script, figures, unit_blocks={u.unit_id: u.block_ids for u in view.units})
+                        report = {**report, "figures_placed": sorted(placed)}
                     allowed = None
             except EpisodeGenerationFailed as exc:
                 outcomes = [GateOutcome(g, "deterministic", False, {"error": str(exc)})

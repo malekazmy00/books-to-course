@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Arabic is the default language of this app (learners are Arabic speakers; RTL first). -->
+<resources>
+    <string name="app_name">كتاب إلى كورس</string>
+
+    <!-- setup -->
+    <string name="setup_title">الاتصال بالخادم</string>
+    <string name="setup_intro">أدخل عنوان خادم الكورسات ورمز الوصول. الخادم متاح داخل شبكتك الخاصة (Tailscale) فقط، ويُحفظ الرمز مشفرًا على هذا الجهاز.</string>
+    <string name="setup_url">عنوان الخادم</string>
+    <string name="setup_url_hint">مثال: https://server.tailnet.ts.net</string>
+    <string name="setup_token">رمز الوصول</string>
+    <string name="setup_show_token">إظهار الرمز</string>
+    <string name="setup_hide_token">إخفاء الرمز</string>
+    <string name="setup_connect">اختبار الاتصال والحفظ</string>
+    <string name="setup_checking">جارٍ اختبار الاتصال…</string>
+    <string name="setup_ok">تم الاتصال بنجاح</string>
+    <string name="setup_url_empty">اكتب عنوان الخادم.</string>
+    <string name="setup_url_not_https">يجب أن يبدأ العنوان بـ https.</string>
+    <string name="setup_url_invalid">العنوان غير صالح.</string>
+    <string name="setup_token_empty">اكتب رمز الوصول.</string>
+    <string name="setup_client_too_old">إصدار التطبيق أقدم مما يقبله الخادم. حدّث التطبيق.</string>
+
+    <!-- errors -->
+    <string name="error_not_configured">لم يُضبط الاتصال بالخادم بعد.</string>
+    <string name="error_unauthorized">رمز الوصول غير مقبول. افتح الإعدادات وأدخل رمزًا صحيحًا.</string>
+    <string name="error_not_found">هذا المحتوى غير موجود أو لم يُنشر بعد.</string>
+    <string name="error_server">الخادم غير متاح الآن. حاول لاحقًا.</string>
+    <string name="error_offline">لا يوجد اتصال بالخادم. تعرض الشاشة آخر نسخة محفوظة.</string>
+    <string name="error_offline_empty">لا يوجد اتصال بالخادم، ولا توجد نسخة محفوظة بعد.</string>
+    <string name="error_incompatible">استجابة الخادم لا تطابق هذا الإصدار من التطبيق.</string>
+    <string name="error_unexpected">حدث خطأ غير متوقع.</string>
+    <string name="retry">إعادة المحاولة</string>
+    <string name="refreshing">جارٍ التحديث</string>
+
+    <!-- library -->
+    <string name="library_title">مكتبتي</string>
+    <string name="library_empty">لا توجد كورسات منشورة بعد.</string>
+    <string name="library_continue">تابع الاستماع</string>
+    <string name="library_continue_desc">تابع الاستماع: %1$s، الحلقة %2$s، %3$s. بقي %4$s.</string>
+    <string name="course_card_desc">%1$s. %2$d حلقة. أنجزت %3$d٪.</string>
+    <string name="episodes_count">%1$d حلقة</string>
+    <string name="settings">الإعدادات</string>
+
+    <!-- course -->
+    <string name="course_progress">أنجزت %1$d٪ من الكورس</string>
+    <string name="course_concepts">المصطلحات والمفاهيم</string>
+    <string name="course_resume">تابع من الحلقة %1$s</string>
+    <string name="course_start">ابدأ من الحلقة %1$s</string>
+    <string name="episode_number">الحلقة %1$s</string>
+    <string name="episode_intro_kind">مقدمة الكورس</string>
+    <string name="episode_completed">مكتملة</string>
+    <string name="episode_listened">استمعت إلى %1$d٪</string>
+    <string name="episode_not_started">لم تبدأ</string>
+    <string name="episode_downloaded">منزّلة</string>
+    <string name="episode_downloading">جارٍ التنزيل</string>
+    <string name="episode_download_failed">فشل التنزيل</string>
+    <string name="episode_audio_pending">الصوت لم يُنشر بعد</string>
+    <string name="episode_script_pending">النص لم يُنشر بعد</string>
+    <string name="action_download">تنزيل الحلقة للاستماع دون اتصال</string>
+    <string name="action_cancel_download">إلغاء التنزيل</string>
+    <string name="action_delete_download">حذف الحلقة المنزّلة</string>
+    <string name="action_mark_done">وضع علامة: مكتملة</string>
+    <string name="action_mark_not_done">إزالة علامة الاكتمال</string>
+    <string name="action_open_episode">فتح الحلقة</string>
+
+    <!-- player -->
+    <string name="player_play">تشغيل</string>
+    <string name="player_pause">إيقاف مؤقت</string>
+    <string name="player_back">رجوع %1$d ثانية</string>
+    <string name="player_forward">تقدّم %1$d ثانية</string>
+    <string name="player_prev_section">القسم السابق</string>
+    <string name="player_next_section">القسم التالي</string>
+    <string name="player_speed">السرعة %1$s×</string>
+    <string name="player_speed_title">سرعة التشغيل</string>
+    <string name="player_sleep">مؤقت النوم</string>
+    <string name="player_sleep_on">مؤقت النوم: %1$s</string>
+    <string name="player_sleep_off">إيقاف المؤقت</string>
+    <string name="player_sleep_minutes">بعد %1$d دقيقة</string>
+    <string name="player_sleep_section">نهاية القسم</string>
+    <string name="player_sleep_episode">نهاية الحلقة</string>
+    <string name="player_position">الموضع %1$s من %2$s</string>
+    <string name="player_seek">شريط التقدم</string>
+    <string name="player_now_section">القسم: %1$s</string>
+    <string name="player_add_bookmark">إضافة علامة</string>
+    <string name="player_no_audio">صوت هذه الحلقة لم يُنشر بعد. يمكنك قراءة النص إن كان متاحًا.</string>
+    <string name="player_buffering">جارٍ التحميل</string>
+    <string name="player_gate">توقف التشغيل قبل الإجابة لتفكر فيها.</string>
+    <string name="player_gate_reveal">أظهر الإجابة</string>
+    <string name="player_gate_continue">تابع الاستماع</string>
+    <string name="player_open">فتح المشغل</string>
+    <string name="mini_player_desc">يُشغَّل الآن: %1$s</string>
+
+    <string name="tab_transcript">النص</string>
+    <string name="tab_sections">الأقسام</string>
+    <string name="tab_terms">المصطلحات</string>
+    <string name="tab_questions">الأسئلة</string>
+    <string name="tab_bookmarks">العلامات</string>
+
+    <string name="voice_author">صوت المؤلف</string>
+    <string name="voice_course">ملاحظة من الكورس</string>
+    <string name="voice_external">مصدر خارجي</string>
+    <string name="voice_external_named">مصدر خارجي: %1$s</string>
+    <string name="pages">صفحة %1$s</string>
+
+    <string name="section_intro">تقدمة الحلقة</string>
+    <string name="section_book_text">نص الكتاب</string>
+    <string name="section_summary">ملخص الدرس</string>
+    <string name="section_key_terms">أهم المصطلحات</string>
+    <string name="section_questions">أسئلة وإجابات</string>
+    <string name="section_go">انتقل إلى %1$s</string>
+
+    <string name="transcript_pending">نص هذه الحلقة لم يُنشر بعد.</string>
+    <string name="transcript_hidden_answer">الإجابة مخفية حتى تجيب أو تطلب إظهارها.</string>
+    <string name="transcript_follow">متابعة الصوت</string>
+    <string name="transcript_font_smaller">تصغير الخط</string>
+    <string name="transcript_font_larger">تكبير الخط</string>
+    <string name="transcript_play_here">تشغيل من هنا</string>
+
+    <string name="terms_empty">لا توجد مصطلحات لهذه الحلقة بعد.</string>
+    <string name="term_original">الأصل: %1$s</string>
+
+    <string name="questions_empty">لا توجد أسئلة لهذه الحلقة بعد.</string>
+    <string name="question_n">السؤال %1$d</string>
+    <string name="question_check">تحقق من إجابتي</string>
+    <string name="question_reveal">أظهر الإجابة</string>
+    <string name="question_answer">الإجابة: %1$s</string>
+    <string name="question_correct">إجابتك صحيحة</string>
+    <string name="question_wrong">إجابتك غير صحيحة</string>
+    <string name="question_listen_answer">استمع إلى الإجابة في الحلقة</string>
+    <string name="question_option">الخيار %1$d: %2$s</string>
+
+    <string name="bookmarks_empty">لا توجد علامات في هذه الحلقة. استخدم «إضافة علامة» أثناء الاستماع.</string>
+    <string name="bookmark_at">علامة عند %1$s</string>
+    <string name="bookmark_note">ملاحظتك</string>
+    <string name="bookmark_save">حفظ</string>
+    <string name="bookmark_delete">حذف العلامة</string>
+    <string name="bookmark_edit">تعديل الملاحظة</string>
+    <string name="cancel">إلغاء</string>
+
+    <!-- concepts -->
+    <string name="concepts_title">المصطلحات والمفاهيم</string>
+    <string name="concepts_search">ابحث عن مصطلح</string>
+    <string name="concepts_pending">بطاقات المصطلحات لم تُنشر بعد لهذا الكورس.</string>
+    <string name="concepts_language_note">البطاقات بلغة الكتاب الأصلية إلى أن تُنشر ترجمتها.</string>
+    <string name="concept_first_episode">أول ورود: الحلقة %1$d</string>
+    <string name="concept_related">مفاهيم مرتبطة</string>
+    <string name="relation_prerequisite">يسبقه فهم</string>
+    <string name="relation_related">مرتبط بـ</string>
+    <string name="relation_part_of">جزء من</string>
+    <string name="relation_contrasts_with">يقابله</string>
+
+    <!-- settings -->
+    <string name="settings_title">الإعدادات</string>
+    <string name="settings_listening">الاستماع</string>
+    <string name="settings_skip_back">مقدار الرجوع</string>
+    <string name="settings_skip_forward">مقدار التقدم</string>
+    <string name="settings_seconds">%1$d ثانية</string>
+    <string name="settings_pause_answers">التوقف قبل الإجابات (وضع الأسئلة)</string>
+    <string name="settings_follow">النص يتبع الصوت</string>
+    <string name="settings_display">العرض</string>
+    <string name="settings_font">حجم خط النص</string>
+    <string name="settings_theme">المظهر</string>
+    <string name="theme_system">حسب النظام</string>
+    <string name="theme_light">فاتح</string>
+    <string name="theme_dark">داكن</string>
+    <string name="theme_sepia">ورقي</string>
+    <string name="settings_storage">التنزيلات</string>
+    <string name="settings_storage_used">المساحة المستخدمة: %1$s</string>
+    <string name="settings_delete_downloads">حذف كل الحلقات المنزّلة</string>
+    <string name="settings_server">الخادم</string>
+    <string name="settings_change_server">تغيير الخادم أو رمز الوصول</string>
+    <string name="navigate_back">رجوع</string>
+    <string name="settings_font_sample">نص تجريبي بالحجم المختار</string>
+    <string name="state_expanded">مفتوحة</string>
+    <string name="state_collapsed">مطوية</string>
+</resources>

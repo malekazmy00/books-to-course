@@ -342,6 +342,8 @@ dependencies = [
     { name = "b2c-contracts" },
     { name = "b2c-core" },
     { name = "b2c-llm-gateway" },
+    { name = "numpy" },
+    { name = "scipy" },
 ]
 
 [package.metadata]
@@ -349,6 +351,8 @@ requires-dist = [
     { name = "b2c-contracts", editable = "packages/contracts" },
     { name = "b2c-core", editable = "packages/core" },
     { name = "b2c-llm-gateway", editable = "packages/llm_gateway" },
+    { name = "numpy", specifier = "==2.5.3" },
+    { name = "scipy", specifier = "==1.18.1" },
 ]
 
 [[package]]

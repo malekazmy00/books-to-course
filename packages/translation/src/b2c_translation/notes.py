@@ -12,17 +12,23 @@ Choosing the best translation: a candidate with a critical issue (leaked instruc
 truncated output, engine failure) or no text is never offered. The others are ranked by the
 number of blocking deterministic issues, then all blocking issues, then minor issues; a tie keeps
 the final translation (the policy's own last word), then the latest draft.
+
+Withheld translations (D-041): nothing is offered — only the announcement, and the original in the
+written text — when the unit has a critical meaning/polarity problem (``critical_meaning``), when the
+source has no words (``noise_source``), or when every remaining candidate is a long text for a short
+source (``fabrication_risk``: book-main:u00628 "NOT ES" came back as an invented paragraph).
 """
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, Literal
 
 from b2c_contracts import (BEST_TRANSLATION_LABEL_AR, TRANSLATOR_NOTE_LEAD_AR, ArtifactRef, QACategory, QAIssue,
-                           TranslationUnit, TranslatorNote, TranslatorNoteReason, TranslatorNotesDocument,
-                           UnitTranslation)
+                           TranslationUnit, TranslationWithheld, TranslatorNote, TranslatorNoteReason,
+                           TranslatorNotesDocument, UnitTranslation)
 
-NOTES_BUILDER_VERSION = "translator-notes-2026-10-25.1"
+NOTES_BUILDER_VERSION = "translator-notes-2026-10-25.2"
 PUBLISHABLE = frozenset({"accepted", "dropped"})
 ANNOTATED = frozenset({"needs_review", "rejected"})
 BLOCKING = frozenset({"major", "critical"})
@@ -62,6 +68,25 @@ WITH_TRANSLATION_AR = "وما يلي ترجمة تقريبية."
 WITHOUT_TRANSLATION_AR = "والنص الأصلي محفوظ في النسخة المكتوبة من الكورس."
 
 Candidate = tuple[str, Literal["final", "earlier_draft"], tuple[QAIssue, ...]]
+WITHHOLD_CATEGORIES = frozenset({"meaning_error", "polarity_error"})
+SHORT_SOURCE_CHARS = 40  # a source this short ...
+FABRICATION_FACTOR, FABRICATION_SLACK = 3, 40  # ... whose candidate exceeds 3x + 40 chars is not offered
+_WORD = re.compile(r"[^\W\d_]{3,}")
+
+
+def fabricated(source: str, text: str) -> bool:
+    """A short source that came back as a much longer text: likely invented, never offered."""
+    src, out = len(source.strip()), len(text.strip())
+    return src <= SHORT_SOURCE_CHARS and out > FABRICATION_FACTOR * src + FABRICATION_SLACK
+
+
+def withheld_for(unit: TranslationUnit, translation: UnitTranslation) -> TranslationWithheld | None:
+    """Reasons to offer no translation at all, whatever the drafts say."""
+    if any(i.severity == "critical" and i.category in WITHHOLD_CATEGORIES for i in translation.issues):
+        return "critical_meaning"
+    if not _WORD.search(unit.source_text):
+        return "noise_source"
+    return None
 
 
 def reasons_for(issues: Iterable[QAIssue]) -> list[TranslatorNoteReason]:
@@ -81,13 +106,15 @@ def _rank(candidate: Candidate) -> tuple[int, int, int]:
     return det, blocking, len(issues) - blocking
 
 
-def best_translation(translation: UnitTranslation,
-                     drafts: Sequence[Mapping[str, Any]] = ()) -> Candidate | None:
-    """The translation worth offering as approximate, or None when no candidate is fit."""
+def best_translation(translation: UnitTranslation, drafts: Sequence[Mapping[str, Any]] = (), *,
+                     source: str | None = None) -> Candidate | None:
+    """The translation worth offering as approximate, or None when no candidate is fit. With
+    ``source``, a candidate that is ``fabricated`` from it is not fit either."""
     candidates: list[Candidate] = [(translation.target_text, "final", tuple(translation.issues))]
     candidates += [(str(d.get("text") or ""), "earlier_draft", _draft_issues(d)) for d in reversed(drafts)]
     usable = [c for c in candidates
-              if c[0].strip() and not any(i.severity == "critical" for i in c[2])]
+              if c[0].strip() and not any(i.severity == "critical" for i in c[2])
+              and not (source is not None and fabricated(source, c[0]))]
     if not usable:
         return None
     # min() keeps the first of equal ranks: the final translation, then the latest draft.
@@ -103,7 +130,10 @@ def note_for_unit(unit: TranslationUnit, translation: UnitTranslation,
         raise ValueError("the translation belongs to another unit")
     if translation.decision not in ANNOTATED:
         raise ValueError(f"a {translation.decision} unit takes no translator note")
-    best = best_translation(translation, drafts)
+    withheld = withheld_for(unit, translation)
+    best = None if withheld else best_translation(translation, drafts, source=unit.source_text)
+    if best is None and withheld is None and best_translation(translation, drafts) is not None:
+        withheld = "fabrication_risk"
     if best is None:
         reasons: list[TranslatorNoteReason] = ["no_translation"] + [
             r for r in reasons_for(translation.issues) if r != "unverified"]
@@ -120,7 +150,7 @@ def note_for_unit(unit: TranslationUnit, translation: UnitTranslation,
         best_translation=None if best is None else best[0].strip(),
         best_translation_label_ar=None if best is None else BEST_TRANSLATION_LABEL_AR,
         best_translation_from=None if best is None else best[1],
-        announcement_ar=f"{TRANSLATOR_NOTE_LEAD_AR} {reason_ar} {tail}")
+        announcement_ar=f"{TRANSLATOR_NOTE_LEAD_AR} {reason_ar} {tail}", withheld=withheld)
 
 
 def build_translator_notes(units: Sequence[TranslationUnit], translations: Mapping[str, UnitTranslation],
@@ -155,5 +185,5 @@ def build_translator_notes(units: Sequence[TranslationUnit], translations: Mappi
         unannotated_unit_ids=pending)
 
 
-__all__ = ["ANNOTATED", "CATEGORY_REASON", "NOTES_BUILDER_VERSION", "PUBLISHABLE", "REASON_AR", "REASON_PRIORITY",
+__all__ = ["ANNOTATED", "CATEGORY_REASON", "NOTES_BUILDER_VERSION", "fabricated", "withheld_for", "PUBLISHABLE", "REASON_AR", "REASON_PRIORITY",
            "best_translation", "build_translator_notes", "note_for_unit", "reasons_for"]

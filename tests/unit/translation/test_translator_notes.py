@@ -160,3 +160,43 @@ def test_results_of_units_outside_the_book_are_ignored_and_order_is_stable():
 def test_an_empty_book_is_refused():
     with pytest.raises(ValueError):
         build_translator_notes([], {})
+
+
+# ------------------------------------------------------------------ withheld translations (D-041)
+def test_a_critical_meaning_or_polarity_problem_withholds_every_candidate():
+    for category in ("meaning_error", "polarity_error"):
+        final = tr(10, "rejected", "ترجمة تقلب المعنى.", [issue(category, "critical", origin="qe")])
+        n = note_for_unit(unit(10), final, [draft("مسودة سليمة الظاهر.", [])])
+        assert n.best_translation is None and n.withheld == "critical_meaning"
+        assert n.reasons[0] == "no_translation" and "meaning" in n.reasons
+        assert "النص الأصلي" in n.announcement_ar
+
+
+def test_a_long_text_for_a_short_broken_heading_is_not_offered():
+    # book-main:u00628: "NOT ES" (a broken "NOTES") came back as a whole invented paragraph
+    invented = ("تحليل ما قبل الوفاة والنقد الذاتي الممنهج. عملية منظمة تستخدم إجراءات العصف الذهني وقوائم "
+                "التحقق لتحديد نقاط الضعف الحرجة في الحجة وتقييم كيف يمكن لحكم تحليلي رئيسي أن يكون خاطئاً.")
+    final = tr(11, "needs_review", invented, [issue("polarity_error", "major", "polarity")])
+    n = note_for_unit(unit(11, kind="heading", text="NOT ES"), final, [draft(invented, [])])
+    assert n.best_translation is None and n.withheld == "fabrication_risk"
+    assert n.source_text == "NOT ES" and n.reasons[0] == "no_translation"
+
+
+def test_a_short_draft_of_a_short_heading_is_still_offered():
+    final = tr(12, "needs_review", "ملاحظات تحليلية مطولة جدًا لا علاقة لها بالعنوان الأصلي إطلاقًا في هذا الموضع "
+               "من الكتاب ولا في غيره من المواضع الأخرى.", [issue("polarity_error", "major", "polarity")])
+    n = note_for_unit(unit(12, kind="heading", text="NOT ES"), final,
+                      [draft("ملاحظات", [issue("named_entity")])])
+    assert n.best_translation == "ملاحظات" and n.best_translation_from == "earlier_draft" and n.withheld is None
+
+
+def test_a_source_without_words_is_noise_and_offers_nothing():
+    n = note_for_unit(unit(13, kind="heading", text="i . ii -- 4"), tr(13, "needs_review", "أولًا. ثانيًا 4", []))
+    assert n.best_translation is None and n.withheld == "noise_source"
+
+
+def test_ordinary_long_paragraphs_are_not_withheld():
+    text = "This is a perfectly ordinary paragraph of the book with several words in it."
+    n = note_for_unit(unit(14, text=text), tr(14, "needs_review", "هذه فقرة عادية تمامًا من الكتاب فيها كلمات عدة.",
+                                              [issue("terminology")]))
+    assert n.best_translation and n.withheld is None

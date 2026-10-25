@@ -72,6 +72,36 @@ def test_plan_is_deterministic_and_versioned():
     assert plan_tracks(document(50), PlanLimits(max_batch_segments=2)).digest != a.digest
 
 
+def phrase_document(n, *, chars=53):
+    """The new phrase segmentation (speech-readability 2026-10-25): median 53 characters per
+    segment, mostly phrase/sentence pauses."""
+    pauses = [250, 250, 450, 700]  # phrase, phrase, sentence, paragraph
+    segments = [SpeechSegment(segment_id=f"bk:s{i:05d}", seq=i, unit_ids=[f"bk:u{i:05d}"], structure="paragraph",
+                              source_text="ب" * (chars - 1) + ".", spoken_text="ب" * (chars - 1) + ".",
+                              pause_after_ms=pauses[i % 4]) for i in range(n)]
+    return SpeechTextDocument(book_id="bk", language="ar", frontend_version="v", source=SOURCE, segments=segments)
+
+
+def test_track_length_is_bounded_by_duration_not_by_segment_count():  # T-AUD-10
+    plan = plan_tracks(phrase_document(3708), PlanLimits())
+    assert PlanLimits().max_segments_per_track is None
+    full = plan.tracks[:-1]
+    assert len(full) >= 2
+    # every full track ends because the next segment would pass the duration bound, not at 400 segments
+    assert all(PlanLimits().max_track_seconds - 15 < t.estimated_seconds <= PlanLimits().max_track_seconds
+               for t in full)
+    assert max(len(t.segment_ids) for t in plan.tracks) > 400
+
+
+def test_an_explicit_segment_count_bound_is_still_honoured():
+    plan = plan_tracks(phrase_document(1000), PlanLimits(max_segments_per_track=400))
+    assert [len(t.segment_ids) for t in plan.tracks] == [400, 400, 200]
+
+
+def test_plan_version_records_the_duration_bound():
+    assert plan_tracks(document(5), PlanLimits()).plan_version == "speech-plan-2"
+
+
 def test_invalid_limits_refused():
     with pytest.raises(ValueError):
         PlanLimits(max_batch_segments=0)

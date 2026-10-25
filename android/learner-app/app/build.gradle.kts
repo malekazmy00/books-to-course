@@ -47,8 +47,8 @@ android {
         applicationId = "com.book2course.learner"
         minSdk = 24
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.1.1"
+        versionCode = 3
+        versionName = "0.1.2"
         buildConfigField("String", "DEFAULT_API_BASE_URL", "\"" + defaultApiBaseUrl.replace("\"", "") + "\"")
         // Must match LearnerApi.CLIENT_VERSION and the server's min_client_version contract.
         buildConfigField("int", "CLIENT_VERSION", "1")
@@ -62,6 +62,9 @@ android {
                 storePassword = signingProperties.getProperty("storePassword")
                 keyAlias = signingProperties.getProperty("keyAlias")
                 keyPassword = signingProperties.getProperty("keyPassword")
+                // Old/vendor Android 7 installers: sign with JAR (v1) as well as v2.
+                enableV1Signing = true
+                enableV2Signing = true
             }
         }
     }
@@ -116,6 +119,9 @@ android {
         }
     }
     packaging {
+        // Store native libs compressed and extract them at install time (extractNativeLibs=true):
+        // the most compatible layout for old vendor package installers.
+        jniLibs.useLegacyPackaging = true
         resources.excludes += setOf("/META-INF/{AL2.0,LGPL2.1}", "META-INF/versions/9/previous-compilation-data.bin")
     }
 }

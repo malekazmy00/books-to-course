@@ -29,6 +29,7 @@ from .hello import HelloActivities, HelloPipeline
 from .indexing import IndexActivities, IndexApprovedBookWorkflow
 from .audio import MP3Activities, GenerateMP3Workflow
 from .speech_v2 import FasihSynthesizer, GenerateSpeechV2Workflow, SpeechV2Activities, speech_v2_activities
+from .episode_mp3 import EncodeEpisodeMp3Workflow, EpisodeMp3Activities, episode_mp3_activities
 from .ingest import IngestPDFActivities, IngestPDFWorkflow, OutlineActivities
 from .ingest_v2 import IngestPDFV2Workflow, IngestV2Activities, ingest_v2_activities
 from .outline_v2 import OutlineV2Activities
@@ -239,14 +240,16 @@ async def run_audio_worker() -> None:
         artifact_store=store, result_store=TranslationResultStore(s.pg_dsn),
         promotion=PromotionService(StageOutputRegistry(s.pg_dsn), code_revision=code_revision()),
         synthesizer=FasihSynthesizer.from_env())
+    # D-044: episode MP3 after the audio (streamed, gated); started only on request, never chained.
+    episode_acts = EpisodeMp3Activities(artifact_store=store, promotion=speech_acts.promotion)
     client = await connect(s)
     queue = os.getenv("B2C_AUDIO_TASK_QUEUE", AUDIO)
     executor = ThreadPoolExecutor(max_workers=max_concurrent_activities(AUDIO))
     worker = Worker(
         client,
         task_queue=queue,
-        workflows=[GenerateMP3Workflow, GenerateSpeechV2Workflow],
-        activities=[mp3_acts.generate, *speech_v2_activities(speech_acts)],
+        workflows=[GenerateMP3Workflow, GenerateSpeechV2Workflow, EncodeEpisodeMp3Workflow],
+        activities=[mp3_acts.generate, *speech_v2_activities(speech_acts), *episode_mp3_activities(episode_acts)],
         activity_executor=executor,
         max_concurrent_activities=max_concurrent_activities(AUDIO),
     )

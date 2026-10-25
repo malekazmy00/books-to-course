@@ -149,6 +149,18 @@ T-TR-01 يخص مدخلات `locked` (والكيانات المقفولة)؛ م�
 | T-EP-07 | الأصل عند أول ذكر: حتمي، ويتكرر بلا أثر، ولا يضيف ملاحظات QA بفضل القائمة البيضاء (`episodes.first-mention`) — `tests/unit/translation/test_first_mention.py` | 100% |
 | T-EP-08 | النص العربي يستهلكه front end الكلام بلا حروف لاتينية، مع مهلة السؤال — `tests/unit/speech/test_episode_speech_text.py` | بوابة `speech.text-frontend` ناجحة |
 
+### أوصاف الأشكال والجداول للسماع (D-044؛ docs/02 §17)
+| ID | الاختبار | العتبة |
+|---|---|---|
+| T-FIG-01 | ثوابت العقد: الحكم = النتيجة، والإنجليزية لا تقبل وصفًا رسب، وأوضاع الجدول للجداول، والعربية تسمّي وحداتها وقراراتها، ومقطع الشكل بصوت الكورس، و`figures_ref`، وقسم `figure_reading` — `tests/contract/test_figure_descriptions.py` | 100% (negative controls) |
+| T-FIG-02 | الجرد: تجميع الشكل والتعليق، والفقرات المشيرة، ووصف الكتاب المطبوع بتطابق الكلمات، وتخطي المقدمة والزخرفة — `tests/unit/episodes/test_figure_descriptions.py` | 100% |
+| T-FIG-03 | بوابة الإسناد: كل رقم (أرقام أو كلمات) واسم خارج الدليل يُرفض؛ إعادة واحدة ثم رجوع لا يخترع | 0 رقم/اسم غير مسند في وثيقة مقبولة |
+| T-FIG-04 | الجدول الصغير (≤ 8 صفوف، ≤ 4 أعمدة، ≤ 24 خلية، ≤ 160 كلمة) يُقرأ صفًا صفًا بأسماء الأعمدة بلا نموذج؛ والكبير ملخص | 100% |
+| T-FIG-05 | الصورة تُرسل لنموذج يرى (`complete_vision`): الصورة قبل النص، ومفتاح cache ببصمة الصورة — `tests/unit/llm_gateway/test_complete_vision.py` | 100% |
+| T-FIG-06 | الكلام: الوصف المقبول يُقرأ بعد وحدته معلنًا ومختومًا بصوت الكورس، وغير المقبول لا يُقرأ — `tests/unit/speech/test_speech_figures.py` | بوابة `speech.text-frontend` ناجحة |
+| T-FIG-07 | الحلقة: قسم `figure_reading` يقسم نص الكتاب بعد وحدة الإشارة، ويُترجم مع الأسطر، ويُقرأ معلنًا — `tests/unit/episodes/test_episode_figures.py` | 100% |
+| T-FIG-08 | activities: الإنجليزية مرشح ببوابة `figures.grounding`، والعربية عبر `UnitTranslator` ببوابة `figures.translation`، والكلام يقرأ الوثيقة المقبولة — `tests/unit/orchestration/test_figure_activities.py` | 100% |
+
 ### L8 Speech
 | ID | الاختبار | معيار النجاح |
 |---|---|---|
@@ -172,6 +184,8 @@ T-TR-01 يخص مدخلات `locked` (والكيانات المقفولة)؛ م�
 | T-AUD-11 (D-042) | `scripts/copy-course-to-card.py`: ترتيب برقم الحلقة، و`--ascii-only`، ورفض اسم بلا رقم أو رقم مكرر أو مجلد فيه mp3، وfsync للملف والمجلد بعد كل ملف، وتحذير لغير FAT؛ وعلى صورة FAT عبر mtools: مدخلات المجلد بترتيب الحلقات، ونسخ معكوس يُكشف | 100%؛ اختبارات الصورة تُتخطى بلا mtools (`B2C_MTOOLS_BIN`) |
 | T-AUD-12 (D-042) | end-to-end بلا TTS: نغمة + صمت حواف ← قص ووقفات ← تطبيع ← MP3 بالوسوم ← قراءة الاسم والوسوم والتنسيق وتقرير الجهارة؛ وحلقة لا تبلغ الهدف تُرفض | ‎-16 ±1 LUFS، وtrue peak ≤ ‎-1 dBTP |
 | T-AUD-13 (D-042) | ذاكرة محدودة: BS.1770 (block loudness) وtrue peak على كتل = الصيغة الكاملة عند 16/22.05/24/44.1/48 kHz، أحادي وستيريو | فرق ≤ 1e-6 dB |
+| T-AUD-14 (D-044) | تجميع متدفق: ‏`StreamResampler` = `resample_blocks`، والمقاييس المتدفقة (BS.1770، true peak، الصمت، القص) = صيغة الإشارة الكاملة، والحلقة المتدفقة = الحلقة في الذاكرة (نفس الكسب والجهارة)، والذاكرة لا تكبر بطول الحلقة — `tests/unit/speech/test_episode_stream.py` | فرق ≤ 1e-9 dB؛ ذروة tracemalloc لـ60 ث < 1.5× ذروة 10 ث |
+| T-AUD-15 (D-044) | ‏`speech_v2_encode_episode`: مسارات مقبولة فقط من المقرر نفسه، وartifact ‏`episode-mp3` ببوابتي `speech.episode-loudness` و`speech.episode-format`، ووسوم ID3v2.3 واسم 00/01، ولا يتسلسل تلقائيًا من workflow الكلام — `tests/unit/orchestration/test_episode_mp3.py` | ‎-16 ±1 LUFS، وtrue peak ≤ ‎-1 dBTP، وCBR أحادي MPEG-1 |
 | T-TN-01 (R7) | golden للتطبيع العربي (`tests/unit/speech/test_speech_text_frontend.py`): حواشٍ، ومراجع `[n]` وصفحات، وأرقام أقسام، وسنوات، وعقود، وعشري، ونسب، وترتيبي، ونطاقات، واختصارات، وأسماء لاتينية من الـ lexicon | 100% من الحالات؛ ومجموعة الـ 300 حالة (audit 07 §5.5) ≥ 98% و0 حرج حين تُبنى |
 | T-TN-02 (neg, R7) | وحدة `needs_review` أو `rejected` أو بلا نتيجة في مدخل النص المنطوق | يُرفض البناء كله (`NotSpeechReady`) |
 | T-TN-03 (R7) | `spoken_text` في العينة: أرقام خام، و`[n]`، وحروف لاتينية، وروابط | 0؛ وكلمات لاتينية خارج الـ lexicon (`lexicon_misses`) = 0 لقبول البوابة |

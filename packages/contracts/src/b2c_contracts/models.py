@@ -15,7 +15,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION = "1.19.0"
+SCHEMA_VERSION = "1.20.0"
 
 
 class Contract(BaseModel):
@@ -1386,6 +1386,10 @@ class SpeechSegment(Contract):
     voice: Literal["author", "course"] = "author"
     note_id: str | None = None
     note_part: Literal["announcement", "approximate_translation"] | None = None
+    # 1.20.0 (D-044): a figure or table is read by its description, in the course voice: the
+    # announcement («وصف الشكل.»), the description, then the end («انتهى وصف الشكل.»).
+    figure_id: str | None = None
+    figure_part: Literal["announcement", "description", "end"] | None = None
 
     @field_validator("spoken_text", "source_text")
     @classmethod
@@ -1396,9 +1400,14 @@ class SpeechSegment(Contract):
 
     @model_validator(mode="after")
     def _note(self) -> "SpeechSegment":
-        flags = (self.voice == "course", self.note_id is not None, self.note_part is not None)
-        if any(flags) and not all(flags):
-            raise ValueError("a translator-note segment is the course voice and names its note and part")
+        note = (self.note_id is not None, self.note_part is not None)
+        figure = (self.figure_id is not None, self.figure_part is not None)
+        if (any(note) and not all(note)) or (any(figure) and not all(figure)):
+            raise ValueError("a course-voice segment names its note (or figure) and its part")
+        if all(note) and all(figure):
+            raise ValueError("a segment is a translator note or a figure description, not both")
+        if (self.voice == "course") != (all(note) or all(figure)):
+            raise ValueError("the course voice is a translator note or a figure description, and only they")
         return self
 
 
@@ -1416,11 +1425,16 @@ class SpeechTextDocument(Contract):
     segments: list[SpeechSegment] = Field(min_length=1)
     excluded: list[SpeechExclusion] = []
     notes_ref: ArtifactRef | None = None  # 1.18.0: accepted translator-notes artifact of the note segments
+    figures_ref: ArtifactRef | None = None  # 1.20.0: Arabic figure-descriptions artifact of the figure segments
 
     @model_validator(mode="after")
     def _segments_invariants(self) -> "SpeechTextDocument":
         if any(s.note_id for s in self.segments) and self.notes_ref is None:
             raise ValueError("note segments need the translator-notes artifact (notes_ref)")
+        # an episode script carries its figure readings itself (``figure_reading`` sections)
+        if any(s.figure_id for s in self.segments) and self.figures_ref is None \
+                and self.source.stage != EPISODE_SCRIPT_AR_STAGE:
+            raise ValueError("figure segments need the figure-descriptions artifact (figures_ref)")
         parts: dict[str, list[str]] = {}
         for s in self.segments:
             if s.note_id:
@@ -1792,6 +1806,8 @@ EpisodeSectionKind = Literal[
     # book episodes (D-036 (3), D-038 (2))
     "episode_intro", "book_text", "figure_description", "lesson_summary", "key_terms", "questions",
     "others_say", "debate",
+    # 1.20.0 (D-044): a figure or table of the lesson read by its generated description (course voice)
+    "figure_reading",
     # episode 00, the course introduction (D-037)
     "about_book", "about_author", "book_method", "course_guide", "acknowledgments",
 ]
@@ -1802,7 +1818,7 @@ SECTION_VOICES: dict[str, frozenset[str]] = {
     "others_say": frozenset({"external"}), "debate": frozenset({"external"}),
     "about_book": frozenset({"course", "external"}), "about_author": frozenset({"course", "external"}),
     "book_method": frozenset({"course"}), "course_guide": frozenset({"course"}),
-    "acknowledgments": frozenset({"course"}),
+    "acknowledgments": frozenset({"course"}), "figure_reading": frozenset({"course"}),
 }
 BOOK_TEXT_KINDS = frozenset({"book_text", "figure_description"})
 ScriptLineRole = Literal["text", "question", "answer", "term"]
@@ -1811,11 +1827,12 @@ _LINE_ID = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$"
 # lesson episode: intro, book text (with figure descriptions), summary, key terms, questions, then
 # optional "others say"/debate; course introduction: book, author, method, guide, optional external
 # sections, brief acknowledgments last.
-_LESSON_ORDER = re.compile(r"^I(?:B|F)*B(?:B|F)*SKQ(?:O|D)*$")
+_LESSON_ORDER = re.compile(r"^I(?:B|F|R)*B(?:B|F|R)*SKQ(?:O|D)*$")
 _INTRO_ORDER = re.compile(r"^AUMG(?:O|D)*C?$")
 _ORDER_CODE = {"episode_intro": "I", "book_text": "B", "figure_description": "F", "lesson_summary": "S",
                "key_terms": "K", "questions": "Q", "others_say": "O", "debate": "D", "about_book": "A",
-               "about_author": "U", "book_method": "M", "course_guide": "G", "acknowledgments": "C"}
+               "about_author": "U", "book_method": "M", "course_guide": "G", "acknowledgments": "C",
+               "figure_reading": "R"}
 
 
 class ScriptSource(Contract):
@@ -1877,9 +1894,14 @@ class EpisodeSection(Contract):
     lines: list[ScriptLine] = []
     block_ids: list[str] = []  # book text: the lesson's blocks in reading order
     unit_ids: list[str] = []   # book text: their translation units (the book's translation run)
+    figure_id: str | None = None  # 1.20.0: figure_reading — the FigureDescription it reads
+    figure_kind: Literal["figure", "table"] | None = None
 
     @model_validator(mode="after")
     def _section(self) -> "EpisodeSection":
+        named = (self.figure_id is not None, self.figure_kind is not None)
+        if (all(named) if self.kind == "figure_reading" else any(named)) != (self.kind == "figure_reading"):
+            raise ValueError("a figure reading (and only it) names its figure and whether it is a table")
         if self.voice not in SECTION_VOICES[self.kind]:
             raise ValueError(f"{self.kind} is spoken in the {sorted(SECTION_VOICES[self.kind])} voice, "
                              f"not {self.voice}")
@@ -1989,4 +2011,106 @@ class EpisodeScript(Contract):
                     raise ValueError(f"Arabic line {line.line_id} must name its translation unit(s) and decision")
                 if line.note_id and line.status == "accepted":
                     raise ValueError(f"Arabic line {line.line_id}: a translator note is for a unit that was not accepted")
+        return self
+
+
+# ---------------------------------------------------------------- figure descriptions for listening (1.20.0)
+# D-044 (owner decision 2026-10-25): figures and tables are READ by a description a blind listener can
+# follow, not skipped and not reduced to their caption. The description is written in ENGLISH in the
+# course voice (D-035: enrich in English, then translate), from the caption, the figure's own text
+# (labels/OCR), the paragraphs that refer to it, the book's printed description when there is one, and
+# the image when the model can see it. A deterministic grounding gate refuses any number or name that
+# the evidence does not contain. Small tables are read row by row with their column names, large ones
+# summarised. The Arabic document is the English one translated line by line through the book's
+# pipeline (UnitTranslator, approved termbase); speech reads accepted descriptions in place, after the
+# unit that first mentions the figure, announced and closed.
+FIGURE_DESCRIPTIONS_FORMAT = "b2c.figure-descriptions/1"
+EPISODE_SCRIPT_AR_STAGE = "episode-script-ar"
+FigureKind = Literal["figure", "table"]
+FigureReadingMode = Literal["description", "table_rows", "table_summary", "caption_only"]
+FigureSkipReason = Literal["decorative", "front_matter", "back_matter", "toc_table", "no_content"]
+FIGURE_ANNOUNCEMENT_AR = {"figure": "وصف الشكل.", "table": "وصف الجدول."}
+FIGURE_END_AR = {"figure": "انتهى وصف الشكل.", "table": "انتهى وصف الجدول."}
+
+
+class FigureGrounding(Contract):
+    """Deterministic gate: every number and name of the description occurs in its evidence."""
+    passed: bool
+    checked: int = Field(ge=0)  # numbers and names checked
+    ungrounded: list[str] = []
+
+    @model_validator(mode="after")
+    def _verdict(self) -> "FigureGrounding":
+        if self.passed == bool(self.ungrounded):
+            raise ValueError("the grounding verdict is its findings: passed exactly when nothing is ungrounded")
+        return self
+
+
+class FigureSkip(Contract):
+    block_ids: list[str] = Field(min_length=1)
+    pages: list[int] = Field(min_length=1)
+    reason: FigureSkipReason
+
+
+class FigureDescription(Contract):
+    figure_id: str = Field(pattern=_LINE_ID)
+    kind: FigureKind
+    label: str | None = None      # as printed: "Figure 2.1", "Table 3"
+    caption: str | None = Field(default=None, max_length=600)  # caption title without the label
+    pages: list[int] = Field(min_length=1)
+    block_ids: list[str] = Field(min_length=1)  # the figure/table block(s) and the caption block
+    referencing_block_ids: list[str] = []         # paragraphs that refer to it (evidence)
+    printed_description_block_ids: list[str] = []  # the book's own description, when one matches
+    after_unit_id: str | None = None  # read after this translation unit (None: not placed)
+    mode: FigureReadingMode
+    voice: Literal["course"] = "course"
+    lines: list[ScriptLine] = Field(min_length=1)  # first line: label and caption (deterministic)
+    image_used: bool = False
+    grounding: FigureGrounding | None = None  # English: the gate's verdict
+
+    @model_validator(mode="after")
+    def _figure(self) -> "FigureDescription":
+        if self.mode in ("table_rows", "table_summary") and self.kind != "table":
+            raise ValueError("table modes are for tables")
+        if any(p < 1 for p in self.pages):
+            raise ValueError("pages are 1-based")
+        return self
+
+
+class FigureDescriptionsDocument(Contract):
+    format: Literal["b2c.figure-descriptions/1"] = FIGURE_DESCRIPTIONS_FORMAT
+    book_id: str = Field(min_length=1)
+    language: Literal["en", "ar"]
+    parsed_ref: ArtifactRef | None = None   # the parsed book the figures were found in
+    units_ref: ArtifactRef | None = None    # the translation units the descriptions are placed among
+    descriptions: list[FigureDescription] = []
+    skipped: list[FigureSkip] = []
+    generator: ProducerIdentity | None = None
+    prompt_version: str | None = None
+    source_document_sha256: str | None = None  # Arabic: sha256 of the English document it translates
+    created_at: datetime
+    metrics: dict[str, Any] = {}
+
+    @field_validator("created_at")
+    @classmethod
+    def check_created_utc(cls, v: datetime) -> datetime:
+        return _utc(v)
+
+    @model_validator(mode="after")
+    def _document(self) -> "FigureDescriptionsDocument":
+        ids = [d.figure_id for d in self.descriptions]
+        line_ids = [x.line_id for d in self.descriptions for x in d.lines]
+        if len(set(ids)) != len(ids) or len(set(line_ids)) != len(line_ids):
+            raise ValueError("figure and line ids must be unique")
+        for d in self.descriptions:
+            if self.language == "en":
+                if d.grounding is None or not d.grounding.passed:
+                    raise ValueError(f"{d.figure_id}: an English description is published only after its "
+                                     "grounding gate passed")
+                if any(x.status is not None or x.unit_ids for x in d.lines):
+                    raise ValueError("translation status belongs to the Arabic document")
+            elif any(not x.unit_ids or x.status is None for x in d.lines):
+                raise ValueError(f"{d.figure_id}: an Arabic line names its translation unit(s) and decision")
+        if self.language == "ar" and not self.source_document_sha256:
+            raise ValueError("an Arabic document names the English document it translates")
         return self

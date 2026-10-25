@@ -36,6 +36,8 @@ VALIDATION_DEFINITION: dict[str, Any] = {"min_validator_pass_rate": 0.6, "valida
 COVERAGE_DEFINITION: dict[str, Any] = {"min_coverage": 0.7,
                                        "target": "lesson first-mention concepts named in summary or key terms"}
 EXTERNAL_LINE_EXTRA_WORDS = 12  # "According to <source>: " prefix of attributed lines
+# figure readings (D-044) passed their own gate (figure-descriptions: grounding, length) before insertion
+OWN_GATE_KINDS = frozenset({"figure_reading"})
 
 
 @dataclass(frozen=True)
@@ -53,7 +55,7 @@ def check_grounding(script: EpisodeScript, *, block_text: Mapping[str, str], les
     published = {c.claim_id for c in dossier.published()} if dossier is not None else set()
     total, invalid = 0, []
     for section in script.sections:
-        if section.kind in BOOK_TEXT_KINDS:
+        if section.kind in BOOK_TEXT_KINDS or section.kind in OWN_GATE_KINDS:
             continue
         for line in section.lines:
             code = line.line_id.split(".")[-1][:1]
@@ -85,7 +87,7 @@ def check_length(script: EpisodeScript) -> dict[str, Any]:
     over: list[str] = []
     per_section: dict[str, int] = {}
     for section in script.sections:
-        if section.kind in BOOK_TEXT_KINDS:
+        if section.kind in BOOK_TEXT_KINDS or section.kind in OWN_GATE_KINDS:
             continue
         n = sum(B.words(x.text) for x in section.lines)
         per_section[section.section_id] = n

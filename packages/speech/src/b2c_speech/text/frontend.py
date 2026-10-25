@@ -5,8 +5,9 @@ whose decision is ``accepted`` (by policy after semantic QE, or by a human revie
 ``dropped`` units are recorded as excluded; any unit still ``needs_review``/``rejected`` or
 without a result refuses the whole build (``NotSpeechReady``): audio never speaks a translation
 that was not accepted. Apparatus (footnotes, references, TOC, index, captions, tables, noise) is
-excluded by kind, and a unit whose accepted text is not in the target language is excluded as
-``wrong_language`` (audit 07: 2/15 tracks read English with an Arabic voice).
+excluded by kind (figures and tables are read by their DESCRIPTION instead, D-044, below), and a
+unit whose accepted text is not in the target language is excluded as ``wrong_language``
+(audit 07: 2/15 tracks read English with an Arabic voice).
 
 Output: ``SpeechTextDocument`` — deterministic spoken text in bounded TTS segments, each with
 the unit ids, block ids, normalization rules and lexicon hits/misses it came from, and (since
@@ -19,15 +20,24 @@ Translator notes (D-041): with ``notes`` (from an accepted ``translator-notes`` 
 ``notes_ref``), a unit that was not accepted but carries a note is spoken in the course voice: the
 note's announcement, then its approximate translation when one is offered. The English original is
 never spoken. A unit without a result, or not accepted and without a note, still refuses the build.
+
+Figures and tables (D-044, replacing their exclusion): with ``figures`` (the Arabic
+``FigureDescriptionsDocument``, named by ``figures_ref``) every description whose lines are all
+ACCEPTED is read in the course voice right after the unit it is placed after (if that unit is not
+spoken, still at its position): «وصف الشكل.» / «وصف الجدول.», the description, «انتهى وصف الشكل.».
+The book's own caption and table-cell units stay excluded by kind; a description that is not
+accepted is not read and is recorded as excluded (``figure_not_accepted``).
 """
 from __future__ import annotations
 
 import re
 from collections import Counter
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 
-from b2c_contracts import (ArtifactRef, SpeechExclusion, SpeechSegment, SpeechTextDocument, TranslationUnit,
-                           TranslatorNote, UnitTranslation)
+from b2c_contracts import (FIGURE_ANNOUNCEMENT_AR, FIGURE_END_AR, ArtifactRef, FigureDescription,
+                           FigureDescriptionsDocument, SpeechExclusion, SpeechSegment, SpeechTextDocument,
+                           TranslationUnit, TranslatorNote, UnitTranslation)
 
 from .lexicon import PronunciationLexicon
 from .normalize import NORMALIZER_VERSION, Normalized, normalize_text, speech_text_violations
@@ -80,7 +90,8 @@ def build_speech_text(units: Sequence[TranslationUnit], translations: Mapping[st
                       language: str = "ar", profile: str | EngineProfile = DEFAULT_ENGINE_PROFILE,
                       max_chars: int | None = None, max_words: int | None = None,
                       target_chars: int | None = None, notes: Mapping[str, TranslatorNote] | None = None,
-                      notes_ref: ArtifactRef | None = None) -> SpeechTextDocument:
+                      notes_ref: ArtifactRef | None = None, figures: FigureDescriptionsDocument | None = None,
+                      figures_ref: ArtifactRef | None = None) -> SpeechTextDocument:
     """``max_chars``/``max_words`` override the profile's phrase limits; ``target_chars`` is kept
     for callers of the first version and has no effect (phrases are no longer merged up to it)."""
     if language != "ar":
@@ -92,6 +103,10 @@ def build_speech_text(units: Sequence[TranslationUnit], translations: Mapping[st
     notes = dict(notes or {})
     if notes and notes_ref is None:
         raise ValueError("translator notes are spoken only from an accepted translator-notes artifact (notes_ref)")
+    if figures is not None and figures_ref is None:
+        raise ValueError("figure descriptions are spoken only from their artifact (figures_ref)")
+    if figures is not None and figures.language != language:
+        raise ValueError("figure descriptions must be in the speech language")
     for uid in notes:
         if (t := translations.get(uid)) is not None and t.decision in PUBLISHABLE:
             raise ValueError(f"a translator note belongs to a unit that was not accepted, not to {uid} ({t.decision})")
@@ -101,18 +116,23 @@ def build_speech_text(units: Sequence[TranslationUnit], translations: Mapping[st
     if not_ready:
         raise NotSpeechReady(f"{len(not_ready)} unit(s) are not accepted and carry no translator note "
                              f"(first: {not_ready[0]}); speech is made from accepted translations and notes only")
-    # unit, structure, source text, phrase, boundary, normalization, note part
-    pieces: list[tuple[TranslationUnit, str, str, str, str, Normalized, str | None]] = []
+    pieces: list[_Piece] = []
     excluded: list[SpeechExclusion] = []
     seen_glosses: set[str] = set()
+    placed = _figures_by_anchor(units, figures)
     for unit in units:
+        figure_pieces = [p for f in placed.get(unit.unit_id, [])
+                         for p in _figure_pieces(f, lexicon, seen_glosses, limit_chars, limit_words,
+                                                 engine.min_phrase_chars, excluded)]
         translation = translations[unit.unit_id]
         if translation.decision == "dropped":
             excluded.append(SpeechExclusion(unit_id=unit.unit_id, reason="dropped"))
+            pieces += figure_pieces
             continue
         structure = SPOKEN_KINDS.get(unit.kind)
         if structure is None:
             excluded.append(SpeechExclusion(unit_id=unit.unit_id, reason=f"not_spoken_kind:{unit.kind}"))
+            pieces += figure_pieces
             continue
         note = notes.get(unit.unit_id) if translation.decision not in PUBLISHABLE else None
         # (structure, text, note part): the author's text, or the note's announcement + approximate translation
@@ -123,7 +143,7 @@ def build_speech_text(units: Sequence[TranslationUnit], translations: Mapping[st
             spans.append(("paragraph", note.announcement_ar, "announcement"))
             if note.best_translation:
                 spans.append((structure, note.best_translation, "approximate_translation"))
-        unit_pieces: list[tuple[TranslationUnit, str, str, str, str, Normalized, str | None]] = []
+        unit_pieces: list[_Piece] = []
         reason = None
         for span_structure, raw, part in spans:
             text, stripped = strip_restored_markers(raw, unit.footnote_markers)
@@ -140,31 +160,88 @@ def build_speech_text(units: Sequence[TranslationUnit], translations: Mapping[st
             phrases = _phrases(normalized.text, limit_chars, limit_words, engine.min_phrase_chars)
             for i, (phrase, boundary) in enumerate(phrases):
                 last = i == len(phrases) - 1
-                unit_pieces.append((unit, span_structure, text, phrase,
-                                    STRUCTURE_BOUNDARY[span_structure] if last else boundary, normalized, part))
+                fields = {} if part is None else {"voice": "course", "note_id": notes[unit.unit_id].note_id,
+                                                  "note_part": part}
+                unit_pieces.append(_Piece([unit.unit_id], list(unit.block_ids), span_structure, text, phrase,
+                                          STRUCTURE_BOUNDARY[span_structure] if last else boundary, normalized, fields))
         if not unit_pieces:
             excluded.append(SpeechExclusion(unit_id=unit.unit_id, reason=reason or "empty_after_normalization"))
+            pieces += figure_pieces
             continue
-        pieces += unit_pieces
-    boundaries = plan_boundaries([p[1] for p in pieces], [p[4] for p in pieces])
+        pieces += unit_pieces + figure_pieces
+    boundaries = plan_boundaries([p.structure for p in pieces], [p.boundary for p in pieces])
     segments: list[SpeechSegment] = []
-    for (unit, structure, text, phrase, _, normalized, part), boundary in zip(pieces, boundaries):
+    for piece, boundary in zip(pieces, boundaries):
         seq = len(segments)
-        note_fields = {} if part is None else {"voice": "course", "note_id": notes[unit.unit_id].note_id,
-                                               "note_part": part}
+        normalized = piece.normalized
         segments.append(SpeechSegment(
-            segment_id=f"{book_id}:s{seq:05d}", seq=seq, unit_ids=[unit.unit_id], block_ids=list(unit.block_ids),
-            structure=structure, source_text=text, spoken_text=phrase,
+            segment_id=f"{book_id}:s{seq:05d}", seq=seq, unit_ids=list(piece.unit_ids), block_ids=piece.block_ids,
+            structure=piece.structure, source_text=piece.text, spoken_text=piece.phrase,
             rules_applied=list(dict.fromkeys(normalized.rules)), lexicon_hits=sorted(set(normalized.lexicon_hits)),
             lexicon_misses=sorted(set(normalized.lexicon_misses)), pause_after_ms=PAUSE_MS[boundary],
             boundary_after=boundary, break_after=BREAK_STRENGTH[boundary],  # type: ignore[arg-type]
-            unvoiced_glosses=sorted(set(normalized.unvoiced_glosses)), **note_fields))
+            unvoiced_glosses=sorted(set(normalized.unvoiced_glosses)), **piece.fields))
     if not segments:
         raise NotSpeechReady("no spoken text: every unit was excluded")
     noted = any(s.note_id for s in segments)
+    figured = any(s.figure_id for s in segments)
     return SpeechTextDocument(book_id=book_id, language=language, frontend_version=f"{FRONTEND_VERSION}-{engine.name}",
                               lexicon_digest=lexicon.digest, source=source, segments=segments, excluded=excluded,
-                              notes_ref=notes_ref if noted else None)
+                              notes_ref=notes_ref if noted else None, figures_ref=figures_ref if figured else None)
+
+
+@dataclass
+class _Piece:
+    """One TTS phrase before the boundary plan: its units/blocks, text and course-voice fields."""
+    unit_ids: list[str]
+    block_ids: list[str]
+    structure: str
+    text: str
+    phrase: str
+    boundary: str
+    normalized: Normalized
+    fields: dict = field(default_factory=dict)
+
+
+def _figures_by_anchor(units: Sequence[TranslationUnit], figures: FigureDescriptionsDocument | None
+                       ) -> dict[str, list[FigureDescription]]:
+    """Descriptions by the unit they are read after; a description without a known anchor has no
+    position in this text and is not read."""
+    out: dict[str, list[FigureDescription]] = {}
+    if figures is None:
+        return out
+    known = {u.unit_id for u in units}
+    for d in figures.descriptions:
+        if d.after_unit_id in known:
+            out.setdefault(d.after_unit_id, []).append(d)
+    return out
+
+
+def _figure_pieces(figure: FigureDescription, lexicon: PronunciationLexicon, seen_glosses: set[str], limit_chars: int,
+                   limit_words: int, min_chars: int, excluded: list[SpeechExclusion]) -> list[_Piece]:
+    """«وصف الشكل.», the accepted description lines, «انتهى وصف الشكل.» — or nothing if not accepted."""
+    unit_ids = [u for x in figure.lines for u in x.unit_ids]
+    if any(x.status != "accepted" for x in figure.lines):
+        excluded += [SpeechExclusion(unit_id=u, reason="figure_not_accepted") for u in dict.fromkeys(unit_ids)]
+        return []
+    out: list[_Piece] = []
+
+    def add(text: str, part: str, ids: list[str], *, last_boundary: str) -> None:
+        normalized = normalize_text(text, lexicon=lexicon, structure="caption", seen_glosses=seen_glosses,
+                                    terminal=True)
+        if not re.search(r"\w", normalized.text):
+            return
+        phrases = _phrases(normalized.text, limit_chars, limit_words, min_chars)
+        for i, (phrase, boundary) in enumerate(phrases):
+            out.append(_Piece(ids, list(figure.block_ids), "caption", text, phrase,
+                              last_boundary if i == len(phrases) - 1 else boundary, normalized,
+                              {"voice": "course", "figure_id": figure.figure_id, "figure_part": part}))
+
+    add(FIGURE_ANNOUNCEMENT_AR[figure.kind], "announcement", unit_ids[:1], last_boundary="sentence")
+    for x in figure.lines:
+        add(x.text, "description", list(x.unit_ids), last_boundary="sentence")
+    add(FIGURE_END_AR[figure.kind], "end", unit_ids[-1:], last_boundary="paragraph")
+    return out
 
 
 def _phrases(text: str, max_chars: int, max_words: int, min_chars: int) -> list[tuple[str, str]]:

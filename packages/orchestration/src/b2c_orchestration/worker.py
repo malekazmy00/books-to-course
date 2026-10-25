@@ -132,7 +132,9 @@ async def run_worker() -> None:
     ingest_v2_acts = IngestV2Activities(store=store, prov=prov)  # R3; workflow started only on request
     import psycopg
     chunk_store = PostgresChunkStore(lambda: psycopg.connect(s.pg_dsn))
-    index_acts = IndexActivities(artifact_store=store, chunk_store=chunk_store)
+    index_acts = IndexActivities(artifact_store=store, chunk_store=chunk_store,
+                                 promotion=PromotionService(StageOutputRegistry(s.pg_dsn),
+                                                            code_revision=code_revision()))
     retrieval_services = {"lexical": QueryRetrievalService(chunk_store)}
     retrieval = retrieval_services["lexical"]
     bge_embedding_url = os.getenv("B2C_BGE_EMBEDDING_BASE_URL", "").strip()

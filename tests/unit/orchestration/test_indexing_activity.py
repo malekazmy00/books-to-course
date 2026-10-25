@@ -89,12 +89,12 @@ def test_retry_restores_saved_chunks_after_database_failure(monkeypatch):
         ActivityEnvironment().run(activity.index_approved_book, inp)
     chunks.replace_book = original_replace
     from b2c_orchestration import indexing
-    original_chunk = indexing.chunk_book
+    original_chunk = indexing.index_book
     def check_cached(book, **kwargs):
         if book.book_id == "spine":
             raise AssertionError("completed spine chunking must not repeat")
         return original_chunk(book, **kwargs)
-    monkeypatch.setattr(indexing, "chunk_book", check_cached)
+    monkeypatch.setattr(indexing, "index_book", check_cached)
     result = ActivityEnvironment().run(activity.index_approved_book, inp)
     assert result["books"]["spine"]["cache_hit"] is True
     assert result["chunk_count"] == 3

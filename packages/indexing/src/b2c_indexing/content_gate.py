@@ -23,7 +23,7 @@ from typing import Literal
 
 from b2c_contracts import ParsedBookV2, parsed_book_v1_from_v2
 from b2c_contracts.models import FURNITURE_TYPES, NOTE_TYPES, ParsedBook
-from b2c_core.source_text import index_like, is_bibliographic, section_word, toc_like
+from b2c_core.source_text import NOTE_LABEL, index_like, is_bibliographic, section_word, toc_like
 
 GATE_VERSION = "b2c-content-gate/1"
 Evidence = Literal["body", "note", "excluded"]
@@ -137,8 +137,10 @@ def _v1_reason(block_type: str, text: str, section_path: list[str]) -> tuple[Evi
         return "note", None
     for title in reversed(section_path):
         kind = section_word(title)
-        if kind == "notes":
-            return "note", None
+        if kind == "notes":  # a numbered or citation-like entry under a Notes heading
+            if NOTE_LABEL.match(text) or is_bibliographic(text, notes_context=True):
+                return "note", None
+            break
         if kind in _V1_SECTION_CLASS:
             return "excluded", _V1_SECTION_CLASS[kind]
     if block_type == "heading":

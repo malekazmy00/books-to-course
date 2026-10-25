@@ -141,6 +141,48 @@ def test_arabic_books_are_refused_by_the_v2_layout(setup):
                                                    source_ref.model_dump(mode="json"), 1, 1))
 
 
+def test_text_layer_holds_two_independent_extractions(setup):
+    """D-040: the gate compares the parse with pypdf *and* pdfium (pinned pypdfium2, worker image)."""
+    pytest.importorskip("pypdfium2")
+    store, upload, source_ref = setup
+    inp = IngestV2Input("c1", upload.model_dump(mode="json"), source_ref.model_dump(mode="json"), [])
+    out = ActivityEnvironment().run(IngestV2Activities(store=store).text_layer, inp)
+    from b2c_contracts import ArtifactRef
+    doc = json.loads(store.read(ArtifactRef.model_validate(out["ref"]), "text-layer.json"))
+    assert doc["format"] == "pdf-text-layer/2" and doc["pdfium_version"]
+    page = doc["pages"][0]
+    assert "analyst must weigh" in page["text"] and "analyst must weigh" in page["text_pdfium"]
+    assert page["image_boxes"] == []
+
+
+def test_normalize_registers_the_parse_as_a_gated_candidate(setup, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from b2c_contracts import ArtifactRef
+    from b2c_core.stage_registry import StageOutputRegistry
+    from b2c_ingest.quality import GATE_ID
+    from b2c_orchestration.promotion import PromotionService
+    from tests.unit.core.fake_stage_registry_db import FakeRegistryDB
+
+    store, upload, source_ref = setup
+    monkeypatch.setattr(iv2, "docling_layout_batch", fake_layout(drop_page=2))
+    now = datetime(2026, 10, 25, tzinfo=timezone.utc)
+    clock = iter(now + timedelta(seconds=i) for i in range(10_000))
+    promotion = PromotionService(StageOutputRegistry("postgresql://unused", connect=FakeRegistryDB().connect,
+                                                     clock=lambda: next(clock)),
+                                 code_revision="a" * 40, clock=lambda: now)
+    acts = IngestV2Activities(store=store, promotion=promotion)
+    env = ActivityEnvironment()
+    inp = IngestV2Input("c1", upload.model_dump(mode="json"), source_ref.model_dump(mode="json"), [], page_batch=1)
+    text = env.run(acts.text_layer, inp)
+    refs = [env.run(acts.layout_batch, LayoutBatchInput("c1", inp.upload, inp.source_ref, p, p))["ref"]
+            for p in (1, 2)]
+    parsed = env.run(acts.normalize, NormalizeV2Input("c1", inp.upload, text["ref"], refs))
+    assert parsed["accepted"] is False and parsed["stage_output_status"] == "rejected"
+    record = promotion.registry.get("c1", "ingest-parse-v2", ArtifactRef.model_validate(parsed["ref"]).key)
+    assert record.required_gates == [GATE_ID]
+    assert record.latest_gate_results()[GATE_ID].passed is False
+
+
 # ----------------------------------------------------------------------------- workflow
 REF = {"stage": "s", "key": "k" * 64, "uri": "s3://artifacts/c1/s/k/", "sha256": "a" * 64,
        "created_at": "2026-10-25T00:00:00Z"}

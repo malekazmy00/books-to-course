@@ -15,7 +15,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION = "1.15.0"
+SCHEMA_VERSION = "1.16.0"
 
 
 class Contract(BaseModel):
@@ -425,6 +425,8 @@ class IngestQualityReport(Contract):
     metrics: dict[str, float | int | None]
     checks: list[QualityCheck]
     accepted: bool
+    # 1.16.0 (D-040): the physical pages each per-page check found (review list), by check name
+    page_findings: dict[str, list[int]] = {}
 
     @property
     def failed(self) -> list[str]:
@@ -434,6 +436,12 @@ class IngestQualityReport(Contract):
     def check_acceptance(self) -> "IngestQualityReport":
         if self.accepted and (self.failed or not any(c.passed for c in self.checks)):
             raise ValueError("a report with failed (or no passing) checks cannot be accepted")
+        names = {c.name for c in self.checks}
+        for name, pages in self.page_findings.items():
+            if name not in names:
+                raise ValueError(f"page findings for {name!r}, which is not a check of this report")
+            if any(p < 1 for p in pages):
+                raise ValueError("page findings are 1-based physical page numbers")
         return self
 
 

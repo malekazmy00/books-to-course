@@ -131,7 +131,9 @@ async def run_worker() -> None:
         store=store, prov=prov, gemini_api_key_file=s.gemini_api_key_file or None, gateway=gateway,
     )
     outline_acts = OutlineActivities(store=store, prov=prov, gateway=gateway)
-    ingest_v2_acts = IngestV2Activities(store=store, prov=prov)  # R3; workflow started only on request
+    ingest_v2_acts = IngestV2Activities(  # R3; started only when the API has B2C_INGEST_V2_ENABLED (D-040)
+        store=store, prov=prov,
+        promotion=PromotionService(StageOutputRegistry(s.pg_dsn), code_revision=code_revision()))
     # R4: outline v2 is promoted automatically by its structure gate + cross-check (no human reviewer)
     outline_v2_acts = OutlineV2Activities(store=store, prov=prov, promotion=PromotionService(
         StageOutputRegistry(s.pg_dsn), code_revision=code_revision()))

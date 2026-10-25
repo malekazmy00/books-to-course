@@ -72,13 +72,14 @@
 | pypdf | 6.1.3 (uv.lock; b2c-ingest) | 2026-09-29 | project-owned text-PDF parser and extraction fallback; scanned PDFs require Docling/OCR |
 | FastAPI / uvicorn / python-multipart | uv.lock (b2c-api) | 2026-09-30 | local upload/status API on 127.0.0.1:8100 |
 | Docling | 2.131.0 (uv.lock; b2c-ingest[docling]) | 2026-10-01 | CPU PyTorch; OCR/layout/table models prefetched into worker image for offline runtime |
+| Docling models used by ingest v2 (R3, `b2c_ingest.layout`) | HF `docling-project/docling-layout-heron` revision `8f39ad3c0b4c58e9c2d2c84a38465abf757272d8`; `docling-project/docling-layout-heron-onnx` `40bde044036bb181c130ddf6c51792187268748f`; `docling-project/docling-models` (TableFormer) `fc0f2d45e2218ea24bce5045f58a389aed16dc23`; RapidOCR PP-OCRv6 det/rec small (as fetched by `docling-tools models download` of docling 2.131.0) | 2026-10-25 | revisions read from the `.cache/huggingface/trees/<sha>.json` that `docling-tools models download` writes; the worker image fetches the same models at build time (L2 in audit 01: pin these revisions in `docker/worker/Dockerfile` when the image is next rebuilt) |
 | OpenRouter test profile | `nvidia/nemotron-3-super-120b-a12b:free` | 2026-10-01 | Verified with schema-constrained JSON; free endpoint reported $0 and 86.54% availability over 3d when checked. Read-only key mount; free-provider prompts may be logged. Base compose stays local. |
 | LightRAG | v1.5.7 (eval/reports/phase4) | — | VERIFY: record the image digest / lock entry used by compose.lightrag.yml |
 | bge-m3 / bge-reranker-v2-m3 | not pinned | — | VERIFY: model revision missing |
 | py-fsrs | `fsrs==6.3.2` (uv.lock) | 2026-10-24 | uv.lock |
 | temporalio SDK | 1.33.0 (uv.lock) | 2026-10-24 | uv.lock |
 | pySBD (sentence segmentation, translation units D-028) | `pysbd==0.3.4` (uv.lock; b2c-translation) | 2026-10-24 | PyPI (MIT, no dependencies, released 2021-02-11); rule-based Golden Rules segmenter, 97.92% on the English Golden Rules set (Sadvilkar & Neumann, NLP-OSS 2020, arXiv:2010.09657) |
-| wordfreq (general-English reference frequencies for termbase keyness, D-028 part E) | `wordfreq==3.1.1` (uv.lock; b2c-translation; pulls `ftfy` 6.3.1, `locate` 1.1.1, `msgpack` 1.2.3, `wcwidth` 0.9.4, plus `langcodes`/`regex` already locked) | 2026-10-24 | https://pypi.org/project/wordfreq/3.1.1/ (released 2023-11-21, final release; upstream frozen). Code Apache-2.0; bundled frequency data CC BY-SA 4.0 (Google Books Ngrams terms apply), per the upstream README "License" section — attribution required if the data is redistributed. Used read-only, offline, via `word_frequency(word, "en")` |
+| wordfreq (general-English reference frequencies for termbase keyness, D-028 part E; and since 2026-10-25 the English lexicon that S2 normalization uses to repair letter-spaced headings, R3) | `wordfreq==3.1.1` (uv.lock; b2c-translation, b2c-ingest; pulls `ftfy` 6.3.1, `locate` 1.1.1, `msgpack` 1.2.3, `wcwidth` 0.9.4, plus `langcodes`/`regex` already locked) | 2026-10-24 | https://pypi.org/project/wordfreq/3.1.1/ (released 2023-11-21, final release; upstream frozen). Code Apache-2.0; bundled frequency data CC BY-SA 4.0 (Google Books Ngrams terms apply), per the upstream README "License" section — attribution required if the data is redistributed. Used read-only, offline, via `word_frequency(word, "en")` |
 | python base (fasih, supertonic) | `python:3.11-slim@sha256:bab1b7ef4b450c81002278d035eff85ebe394ae94df904f7a3ba14f7e16e487b` | 2026-10-24 | digest of the locally built base (`docker image inspect`) |
 | python base (hy-translation) | `python:3.12-slim@sha256:f77ac9e44ae96ef2c90b8053ea08c31f8be030f824196b0ae4db6d462c84e51f` | 2026-10-24 | same |
 | haproxy (hy-translation-proxy) | `3.2-alpine@sha256:5d97434a423c2533cfeb42874d45cf6d69a840b60334582dfbfd5008e94c80be` | 2026-10-24 | same |
@@ -90,6 +91,13 @@
 
 ### 5.1 قاعدة الخيوط مقابل حد المعالج (2026-10-25)
 عدد خيوط الاستدلال (llama.cpp / Ollama / torch) يجب أن يكون **أقل من** قيمة `cpus` للخدمة. llama.cpp يختار افتراضيًا خيطًا لكل نواة فيزيائية (28). مع `cpus: 20` تعطّل الـ CFS quota الخيوط في 94% من الفترات، فانخفض توليد Gemma 4 إلى 0.14 token/s. بعد `num_thread 18` صار 12.3 token/s. وأوزان النماذج تُقرأ من القرص ext4 الخاص بالبيانات، لا من `/mnt/e` (9p بطيء).
+
+### 5.2 مفتاح الاستخراج v2 (R3، 2026-10-25)
+المسار v2 مسجَّل في الـ worker لكنه **غير مفعّل** إنتاجيًا: الـ API ما زال يبدأ `IngestPDFWorkflow`.
+- الـ workflow الجديد: `IngestPDFV2Workflow` (task queue `light` للـ workflow، والأنشطة `ingest_v2_text_layer` و`ingest_v2_layout_batch` و`ingest_v2_normalize` على `heavy`). المدخل `IngestV2Input(course_id, upload, source_ref, supplementary_book_ids, cache_bust, page_batch=50)`، بنفس حقول `IngestPDFInput` عدا `ocr_engine`.
+- التفعيل: يبدأ المشغّل (أو الـ API بعد تغيير صريح) `IngestPDFV2Workflow` بدل `IngestPDFWorkflow` لكتاب جديد. الـ workflows الجارية لا تتأثر لأن الاسم جديد ولم يتغير تسلسل أوامر القديم.
+- الخيوط: `B2C_DOCLING_THREADS` (افتراضي 8) يجب أن يبقى أقل من `cpus` لخدمة الـ worker (§5.1). المقيس على هذا الخادم: 4–7 ثوانٍ للصفحة بـ 8 خيوط.
+- البوابة: إذا كان `ingest-quality.json` غير مقبول ينتهي الـ workflow بـ `status=needs_review` ولا يبني مخططًا. الكتب العربية (`ocr_language=ar`) ترفض في v2 وتبقى على المسار القديم.
 
 ## 6. المراقبة (Observability)
 

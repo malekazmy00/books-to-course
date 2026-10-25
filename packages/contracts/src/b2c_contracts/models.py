@@ -14,7 +14,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION = "1.3.0"
+SCHEMA_VERSION = "1.4.0"
 
 
 class Contract(BaseModel):
@@ -225,6 +225,215 @@ class ParsedBook(Contract):
     toc_source: Literal["pdf_outline", "epub_nav", "headings", "llm_inferred"]
     blocks: list[Block]
     parser: dict[str, str]  # {"name": "docling", "version": "...", "options_hash": "..."}
+
+
+# ---------------------------------------------------------------- L1 ingestion v2 (1.3.0)
+# R3 / docs/audits/2026-10-24/01-ingest.md §5-6. A v2 block is a logical unit (paragraph,
+# heading, note, entry), not a page slice: it may span pages and columns. Nothing the parser
+# saw is dropped: running heads and page numbers are kept as furniture-zone blocks, notes,
+# bibliography, TOC and index entries have explicit types. `raw_text` is the parser's text
+# (fragments joined by "\n"), `text` the deterministic normalization of it.
+PARSED_BOOK_V2_FORMAT = "parsed-book/2"
+
+BlockTypeV2 = Literal[
+    "heading", "paragraph", "list_item", "table", "figure", "caption", "equation", "code",
+    "footnote", "endnote", "bibliography_entry", "toc_entry", "index_entry",
+    "running_header", "running_footer", "page_number",
+]
+FURNITURE_TYPES = frozenset({"running_header", "running_footer", "page_number"})
+NOTE_TYPES = frozenset({"footnote", "endnote"})
+Zone = Literal["front_matter", "body", "back_matter", "furniture"]
+LevelSource = Literal["pdf_outline", "layout", "numbering", "section_word"]
+
+
+class NoteRef(Contract):
+    """An in-text note marker. It is removed from `BlockV2.text`; `offset` is where it stood."""
+
+    label: str = Field(min_length=1)  # as printed: "87", "*", "a"
+    offset: int = Field(ge=0)
+    note_id: str | None = None  # None = no note found for this marker (counts against the gate)
+
+
+class BlockV2(Contract):
+    block_id: str  # f"{book_id}:b{seq:05d}", reading order; not tied to a page
+    type: BlockTypeV2
+    zone: Zone
+    level: int | None = Field(default=None, ge=1)  # headings only
+    level_source: LevelSource | None = None
+    text: str  # normalized
+    raw_text: str  # as parsed, fragments joined by "\n"
+    refs: list[PageRef] = Field(min_length=1)  # every page/column fragment, in reading order
+    section_path: list[str]
+    ocr: bool
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    note_label: str | None = None  # printed label of a footnote/endnote block
+    note_refs: list[NoteRef] = []
+    normalization: list[str] = []  # normalizer steps that changed this block
+    quality_flags: list[str] = []  # residual defects detected by the normalizer
+    source_items: list[str] = []  # parser item references (e.g. "#/texts/12@b0001") for audit
+
+    @model_validator(mode="after")
+    def check_block(self) -> "BlockV2":
+        if (self.type == "heading") != (self.level is not None):
+            raise ValueError("a heading needs a level and only headings have one")
+        if (self.zone == "furniture") != (self.type in FURNITURE_TYPES):
+            raise ValueError("zone 'furniture' is exactly the running header/footer/page-number types")
+        if self.note_label is not None and self.type not in NOTE_TYPES:
+            raise ValueError("note_label is only for footnote/endnote blocks")
+        if any(r.offset > len(self.text) for r in self.note_refs):
+            raise ValueError("note marker offset outside the block text")
+        return self
+
+
+class Note(Contract):
+    note_id: str  # f"{book_id}:n{seq:04d}"
+    kind: Literal["footnote", "endnote"]
+    label: str = Field(min_length=1)
+    block_ids: list[str] = Field(min_length=1)  # the note's own text block(s)
+    cited_by: list[str] = []  # blocks whose NoteRef links here
+
+
+class PageInfo(Contract):
+    page_no: int = Field(ge=1)
+    printed_label: str | None = None  # PDF /PageLabels (ISO 32000-1 §12.4.2)
+    status: Literal["content", "furniture_only", "empty"]
+    ocr: bool = False
+
+
+class OutlineEntry(Contract):
+    """A PDF bookmark and the heading block it was reconciled with (None = not found)."""
+
+    title: str
+    level: int = Field(ge=1)
+    page_no: int = Field(ge=1)
+    block_id: str | None = None
+
+
+class ParsedBookV2(Contract):
+    format: Literal["parsed-book/2"] = PARSED_BOOK_V2_FORMAT
+    book_id: str
+    title: str
+    role: Literal["spine", "supplementary"]
+    page_count: int = Field(ge=1)
+    toc_source: Literal["pdf_outline", "epub_nav", "headings", "llm_inferred"]
+    pages: list[PageInfo]
+    outline: list[OutlineEntry] = []
+    blocks: list[BlockV2]
+    notes: list[Note] = []
+    parser: dict[str, str]
+    normalizer: dict[str, str]  # {"name": ..., "version": ...}
+
+    @model_validator(mode="after")
+    def check_book(self) -> "ParsedBookV2":
+        if [p.page_no for p in self.pages] != list(range(1, self.page_count + 1)):
+            raise ValueError("pages must list every page 1..page_count in order")
+        ids = [b.block_id for b in self.blocks]
+        if len(set(ids)) != len(ids):
+            raise ValueError("block_id values must be unique")
+        for b in self.blocks:
+            for r in b.refs:
+                if r.book_id != self.book_id or r.page_no > self.page_count:
+                    raise ValueError(f"block {b.block_id} refers outside this book")
+        by_id = {b.block_id: b for b in self.blocks}
+        note_ids = {n.note_id for n in self.notes}
+        if len(note_ids) != len(self.notes):
+            raise ValueError("note_id values must be unique")
+        for n in self.notes:
+            if any(by_id.get(bid) is None or by_id[bid].type not in NOTE_TYPES for bid in n.block_ids):
+                raise ValueError(f"note {n.note_id} must point to footnote/endnote blocks")
+            if any(bid not in by_id for bid in n.cited_by):
+                raise ValueError(f"note {n.note_id} is cited by an unknown block")
+        for b in self.blocks:
+            for r in b.note_refs:
+                if r.note_id is not None and r.note_id not in note_ids:
+                    raise ValueError(f"block {b.block_id} links to unknown note {r.note_id}")
+        for e in self.outline:
+            if e.block_id is not None and e.block_id not in by_id:
+                raise ValueError(f"outline entry {e.title!r} points to an unknown block")
+        return self
+
+
+_V1_TYPE: dict[str, str] = {
+    "running_header": "page_header", "running_footer": "page_footer", "page_number": "page_footer",
+    "endnote": "footnote", "bibliography_entry": "list_item", "toc_entry": "list_item",
+    "index_entry": "list_item",
+}
+
+
+def parsed_book_v1_from_v2(book: ParsedBookV2) -> ParsedBook:
+    """Project ParsedBook v2 onto the v1 contract for consumers that have not migrated.
+
+    A pure schema projection (no inference): types outside the v1 set map to their nearest
+    v1 type, ids become f"{book_id}:{first_page}:{seq}", removed note markers are put back
+    glued at their offsets and note labels are prefixed again ("1. Ibid."), so v1 consumers
+    that find markers in text (translation units) keep working.
+    """
+    blocks: list[Block] = []
+    per_page: dict[int, int] = {}
+    for b in book.blocks:
+        page = b.refs[0].page_no
+        seq = per_page.get(page, 0)
+        per_page[page] = seq + 1
+        text = b.text
+        for r in sorted(b.note_refs, key=lambda r: r.offset, reverse=True):
+            text = text[: r.offset] + r.label + text[r.offset:]
+        if b.note_label is not None:
+            text = f"{b.note_label}. {text}"
+        blocks.append(Block(
+            block_id=f"{book.book_id}:{page}:{seq}", type=_V1_TYPE.get(b.type, b.type),  # type: ignore[arg-type]
+            level=b.level, text=text, refs=list(b.refs), section_path=list(b.section_path),
+            ocr=b.ocr, confidence=b.confidence,
+        ))
+    return ParsedBook(
+        book_id=book.book_id, title=book.title, role=book.role, page_count=book.page_count,
+        toc_source=book.toc_source, blocks=blocks,
+        parser={**book.parser, "normalizer": book.normalizer.get("name", ""),
+                "normalizer_version": book.normalizer.get("version", ""), "format": "parsed-book/2->1"},
+    )
+
+
+class QualityCheck(Contract):
+    """One deterministic gate check. `value=None` means not measurable here (passed=None)."""
+
+    name: str
+    value: float | None
+    op: Literal["<=", ">=", "=="]
+    threshold: float
+    passed: bool | None
+    detail: str = ""
+
+    @model_validator(mode="after")
+    def check_verdict(self) -> "QualityCheck":
+        if self.value is None:
+            if self.passed is not None:
+                raise ValueError("an unmeasured check has no verdict")
+            return self
+        ok = {"<=": self.value <= self.threshold, ">=": self.value >= self.threshold,
+              "==": self.value == self.threshold}[self.op]
+        if self.passed is not ok:
+            raise ValueError(f"check {self.name}: verdict does not match {self.value} {self.op} {self.threshold}")
+        return self
+
+
+class IngestQualityReport(Contract):
+    """Stored next to every ParsedBook v2; `accepted` is False whenever any check fails."""
+
+    book_id: str
+    report_version: str
+    parsed_sha256: str | None = None
+    metrics: dict[str, float | int | None]
+    checks: list[QualityCheck]
+    accepted: bool
+
+    @property
+    def failed(self) -> list[str]:
+        return [c.name for c in self.checks if c.passed is False]
+
+    @model_validator(mode="after")
+    def check_acceptance(self) -> "IngestQualityReport":
+        if self.accepted and (self.failed or not any(c.passed for c in self.checks)):
+            raise ValueError("a report with failed (or no passing) checks cannot be accepted")
+        return self
 
 
 # ---------------------------------------------------------------- L2 outline

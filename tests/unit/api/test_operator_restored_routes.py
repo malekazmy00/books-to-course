@@ -10,6 +10,11 @@ from b2c_api.app import create_app
 from b2c_core import ArtifactStore, Settings
 from b2c_api.course_library import course_library_router
 from fastapi import FastAPI
+from b2c_orchestration.audio import VERIFICATION_FILE, verification_record
+
+# R0: exports only serve audio with a verification record (here: spoken from untranslated text).
+VERIFIED = {VERIFICATION_FILE: json.dumps(verification_record(None)).encode()}
+
 
 class GoneTemporal:
     def get_workflow_handle(self, _):
@@ -24,7 +29,7 @@ async def test_expired_audio_remains_listable_downloadable_and_course_scoped(mon
         store = ArtifactStore(boto3.client("s3", region_name="us-east-1"))
         store.ensure_bucket()
         audio = b"ID3"+bytes(250)
-        ref = store.put("course", "generate-mp3-track", "a"*64, {"track.mp3":audio})
+        ref = store.put("course", "generate-mp3-track", "a"*64, {"track.mp3":audio, **VERIFIED})
         wid = "b2c-mp3-"+"b"*64
         manifest = {"course_id":"course", "workflow_id":wid, "track_count":1,
                     "tracks":[{"track_id":"l1", "lesson_id":"l1", "title":"Lesson",

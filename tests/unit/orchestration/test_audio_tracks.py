@@ -107,7 +107,9 @@ def test_partial_translation_cannot_be_used_for_audio():
     inp = GenerateMP3Input(course_id="c", source_artifact_ref=translation_ref.model_dump(mode="json"),
         source_kind="course", language="ar", approved_outline_ref=ref("approve-outline", "b").model_dump(mode="json"),
         source_qa_artifact_ref=qa_ref.model_dump(mode="json"),
-        source_book_ref=ref("ingest-parse-pdf", "c").model_dump(mode="json"))
+        source_book_ref=ref("ingest-parse-pdf", "c").model_dump(mode="json"),
+        # Legacy translations need the explicit opt-in since R0; even then a partial one is refused.
+        allow_unverified_legacy=True)
     with pytest.raises(ValueError, match="incomplete"):
         validate_mp3_input_lineage(PartialStore(), inp)
 
@@ -196,7 +198,7 @@ def test_book_audio_saves_each_selected_lesson_as_its_own_checkpoint(monkeypatch
     inp = GenerateMP3Input(course_id="c", source_artifact_ref=translated_ref.model_dump(mode="json"),
         source_kind="book", language="ar", approved_outline_ref=outline_ref.model_dump(mode="json"),
         source_book_ref=parsed_ref.model_dump(mode="json"), book_audio_layout="lessons",
-        lesson_ids=["m1.l1", "m1.l2"])
+        lesson_ids=["m1.l1", "m1.l2"], allow_unverified_legacy=True)  # legacy source: explicit opt-in (R0)
     result = activity.generate(inp)
     assert rendered == ["\u0627\u0644\u062f\u0631\u0633 \u0627\u0644\u0639\u0631\u0628\u064a 2", "\u0627\u0644\u062f\u0631\u0633 \u0627\u0644\u0639\u0631\u0628\u064a 3"]
     assert [track["lesson_id"] for track in result["manifest"]["tracks"]] == ["m1.l1", "m1.l2"]

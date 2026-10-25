@@ -6,10 +6,15 @@ from fastapi import FastAPI
 from moto import mock_aws
 from b2c_core import ArtifactStore
 from b2c_api.saved_audio import saved_audio_router
+from b2c_orchestration.audio import VERIFICATION_FILE, verification_record
+
+
+# R0: exports only serve audio with a verification record (here: spoken from untranslated text).
+VERIFIED = {VERIFICATION_FILE: json.dumps(verification_record(None)).encode()}
 
 
 def track(store, key, identity):
-    files = {"track.mp3": b"ID3" + bytes(300),
+    files = {"track.mp3": b"ID3" + bytes(300), **VERIFIED,
              "track.json": json.dumps({"track_id": "m1.l1-source-text",
                                       "kind": "lesson_source_text", "language": "ar"}).encode()}
     if identity is not None:

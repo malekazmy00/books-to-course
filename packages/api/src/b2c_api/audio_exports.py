@@ -7,8 +7,42 @@ import tempfile
 import zipfile
 from typing import Any
 from b2c_contracts import ArtifactRef
+from b2c_orchestration.audio import VERIFICATION_FILE
 
 log = logging.getLogger("b2c.api")
+
+# R0 (audits 07 C3, 09 C2): content that is not explicitly accepted never leaves through an export
+# unless the caller asks for it by name, and then it is marked.
+LEGACY_REFUSAL = {
+    "message_ar": ("هذا المحتوى غير موثَّق (ترجمة قديمة بلا تحقق، أو صوت أُنتج قبل تسجيل التحقق) ولا يُصدَّر "
+                   "افتراضيًا. لاستخدامه صراحةً مع وسمه كغير موثَّق أرسل allow_unverified_legacy=true."),
+    "message_en": ("this content is unverified (a legacy translation without verification, or audio produced "
+                   "before verification was recorded) and is not exported by default; pass "
+                   "allow_unverified_legacy=true to take it explicitly, marked as unverified"),
+    "parameter": "allow_unverified_legacy",
+}
+UNVERIFIED_NOTICE_NAME = "UNVERIFIED-LEGACY.txt"
+UNVERIFIED_NOTICE = (
+    "تنبيه: هذا الملف يحوي محتوى غير موثَّق (unverified_legacy). لم يمر بمراجعة أو قبول صريح، "
+    "وقد يحوي أخطاء ترجمة أو مصدر. لا يُعامل كمحتوى معتمد.\n"
+    "WARNING: this archive contains unverified legacy content. It was not explicitly accepted and may "
+    "contain translation or source errors. Do not treat it as verified.\n")
+
+
+def artifact_unverified(store, ref: ArtifactRef) -> bool:
+    """True unless the artifact carries a verification record that says it is not legacy.
+
+    Audio produced before R0 has no record and is treated as unverified (fail closed)."""
+    try:
+        record = json.loads(store.read(ref, VERIFICATION_FILE))
+    except Exception:
+        return True
+    return not (isinstance(record, dict) and record.get("unverified_legacy") is False)
+
+
+def annotate_verification(store, tracks: list[dict]) -> list[dict]:
+    return [{**track, "unverified_legacy": artifact_unverified(store, ArtifactRef.model_validate(track["artifact_ref"]))}
+            for track in tracks]
 
 
 def audio_progress(manifest: dict, status: str) -> dict:
@@ -97,8 +131,11 @@ def course_audio_checkpoints(store, bucket: str, course_id: str) -> list[dict]:
     return sorted(manifests, key=lambda m: (m.get("updated_at", ""), m["workflow_id"]), reverse=True)
 
 
-def audio_zip(store, manifest: dict, course_name: str):
-    """Spool archives to disk after 8 MiB; no whole-course in-memory buffer."""
+def audio_zip(store, manifest: dict, course_name: str, *, unverified: bool = False):
+    """Spool archives to disk after 8 MiB; no whole-course in-memory buffer.
+
+    ``unverified`` (the caller explicitly allowed unverified legacy tracks) adds a notice file and
+    marks the archived manifest."""
     validate_audio_manifest(manifest, store.bucket)
     target = tempfile.SpooledTemporaryFile(max_size=8*1024*1024, mode="w+b")
     try:
@@ -108,7 +145,10 @@ def audio_zip(store, manifest: dict, course_name: str):
                 raise ValueError("ambiguous lesson tracks cannot be exported together")
             for track in tracks:
                 archive.writestr(track["filename"], store.read(ArtifactRef.model_validate(track["artifact_ref"]), "track.mp3"))
-            archive.writestr("manifest.json", json.dumps({**manifest, "tracks": tracks}, ensure_ascii=False, indent=2))
+            if unverified:
+                archive.writestr(UNVERIFIED_NOTICE_NAME, UNVERIFIED_NOTICE)
+            archive.writestr("manifest.json", json.dumps({**manifest, "tracks": tracks, "unverified_legacy": unverified},
+                                                         ensure_ascii=False, indent=2))
         target.seek(0)
         return target
     except Exception:

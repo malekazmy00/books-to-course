@@ -108,6 +108,9 @@ class MP3GenerationRequest(BaseModel):
     allow_partial_qa: bool = False
     include_summaries: bool = True
     include_extra_scopes: bool = True
+    # R0 (audits 07 C3, 09 C2): legacy translate-content sources are refused unless this is set;
+    # the produced audio is then marked unverified_legacy.
+    allow_unverified_legacy: bool = False
 
     @model_validator(mode="after")
     def validate_lesson_selection(self):

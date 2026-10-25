@@ -15,8 +15,12 @@ from b2c_api.app import create_app
 from b2c_api.result_exports import result_exports_router
 from b2c_api.saved_audio import saved_audio_router
 from b2c_core import ArtifactStore, Settings
+from b2c_orchestration.audio import VERIFICATION_FILE, verification_record
 
 STREAMED = {"source.pdf", "track.mp3", "course.mp3", "notes.txt"}
+# R0: exports only serve audio with a verification record (here: spoken from untranslated text).
+VERIFIED = {VERIFICATION_FILE: json.dumps(verification_record(None)).encode()}
+
 
 
 class NoWholeReadStore(ArtifactStore):
@@ -58,8 +62,8 @@ async def test_whole_book_mp3_and_track_downloads_stream():
     with mock_aws():
         store = new_store()
         audio = b"ID3" + bytes(5000)
-        book_ref = store.put("course", "generate-mp3", "a" * 64, {"course.mp3": audio})
-        track_ref = store.put("course", "generate-mp3-track", "b" * 64, {"track.mp3": audio})
+        book_ref = store.put("course", "generate-mp3", "a" * 64, {"course.mp3": audio, **VERIFIED})
+        track_ref = store.put("course", "generate-mp3-track", "b" * 64, {"track.mp3": audio, **VERIFIED})
         wid = "b2c-mp3-" + "c" * 64
 
         async def connect(_):
@@ -118,19 +122,21 @@ async def test_saved_audio_and_result_file_downloads_stream():
         identity = {"source_file_sha256": "a" * 64, "source_parsed_sha256": "b" * 64}
         ref = store.put("course", "generate-mp3-track", "1" * 64, {
             "track.mp3": audio, "source-identity.json": json.dumps(identity).encode(),
-            "track.json": json.dumps({"track_id": "m1.l1-source-text", "kind": "lesson_source_text"}).encode()})
+            "track.json": json.dumps({"track_id": "m1.l1-source-text", "kind": "lesson_source_text"}).encode(),
+            **VERIFIED})
 
         async def progress(cid, bid):
             return {"source_file_sha256": "a" * 64, "stages": {"ingest": {"source_parsed_sha256": "b" * 64}}}
         notes = b"saved result " * 100
-        result = store.put("course", "translate-content", "2" * 64, {"notes.txt": notes})
+        # translate-content (legacy) results are refused since R0; translate-book is served.
+        result = store.put("course", "translate-book", "2" * 64, {"notes.txt": notes})
         app = FastAPI()
         app.include_router(saved_audio_router(lambda: store, progress))
         app.include_router(result_exports_router(lambda: store, store.bucket))
         response = await get(app, f"/v1/courses/course/books/book/saved-audio/{ref.key}")
         assert response.status_code == 200, response.text
         assert response.content == audio
-        response = await get(app, f"/v1/courses/course/results/translate-content:{result.key}/file", name="notes.txt")
+        response = await get(app, f"/v1/courses/course/results/translate-book:{result.key}/file", name="notes.txt")
         assert response.status_code == 200, response.text
         assert response.content == notes
         assert response.headers["x-artifact-sha256"] == result.sha256

@@ -102,6 +102,14 @@ class ChatEngine:
                 used += [terms_t, line_t]
                 parts.append(terms_t.render(term_lines="\n".join(
                     line_t.render(source_term=s, target_term=t) for s, t in present)))
+            locked = {s.casefold() for s, _ in present}
+            hinted = [(s, t) for s, t in sorted(request.hints.items())
+                      if s.casefold() in folded and s.casefold() not in locked]
+            if hinted:  # D-039: preferred renderings, rendered only when present (prompt version unchanged otherwise)
+                hints_t, line_t = get_template("chat.term_hints"), get_template("chat.term_line")
+                used += [hints_t] + ([] if line_t in used else [line_t])
+                parts.append(hints_t.render(term_lines="\n".join(
+                    line_t.render(source_term=s, target_term=t) for s, t in hinted)))
 
         if caps.supports_context and (request.context_before or request.context_after):
             context_t = get_template("chat.context")

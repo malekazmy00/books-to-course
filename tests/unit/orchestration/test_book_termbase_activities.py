@@ -277,6 +277,20 @@ def test_batches_get_locked_terms_and_reuse_results_only_under_the_same_digest(a
     assert dict(rice.terms) == {"Rice": "الأرز", "Wheat": "القمح"}
 
 
+def test_hint_entries_reach_the_engine_as_hints_not_locked_terms(artifacts, results, terms):  # D-039
+    engine = TermEngine()
+    inp, acts, prepared = setup(artifacts, results, terms, engine=engine)
+    acts.build_termbase(build_input(inp, prepared))
+    approve_terms(terms, SCOPE, [TermSelection("Rice", "الأرز", tier="hint")], "aly")
+    gate = acts.check_termbase(check_input(inp, require_approved=False))
+    assert gate.open and gate.locked_terms == 0
+    run = batch(inp, prepared, prepared.unit_ids).model_copy(update={"termbase_ref": gate.snapshot,
+                                                                     "termbase_digest": gate.digest})
+    acts.translate_batch(run)
+    rice = next(c for c in engine.calls if c.unit.source_text.startswith("Rice"))
+    assert dict(rice.terms) == {} and dict(rice.hints) == {"Rice": "الأرز"}
+
+
 def test_batch_refuses_a_digest_that_does_not_match_the_snapshot(artifacts, results, terms):
     inp, acts, prepared = setup(artifacts, results, terms)
     acts.build_termbase(build_input(inp, prepared))

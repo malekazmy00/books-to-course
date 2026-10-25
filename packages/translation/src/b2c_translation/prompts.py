@@ -102,6 +102,10 @@ _CHAT = [
         "Locked terminology: when one of these terms occurs in the source, translate it with "
         "exactly the given equivalent:\n{term_lines}"), "fragment", "b2c"),
     PromptTemplate("chat.term_line", 1, "- {source_term} => {target_term}", "fragment", "b2c"),
+    PromptTemplate("chat.term_hints", 1, (
+        "Preferred terminology: when one of these words occurs in the source, prefer the given "
+        "rendering, and inflect it as Arabic grammar requires (article, number, gender, case):\n"
+        "{term_lines}"), "fragment", "b2c"),
     PromptTemplate("chat.context", 1, (
         "Neighbouring source text follows for understanding only. It is NOT part of the text to "
         "translate: do not translate it, quote it, or include it in your reply.\n{context_blocks}"),

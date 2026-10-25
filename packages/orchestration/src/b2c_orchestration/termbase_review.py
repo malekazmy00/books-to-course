@@ -6,8 +6,13 @@ current state, then only the decided rows are written. A bulk approval is all-or
 
 Only APPROVED entries ever reach translation: ``approved_snapshot`` keeps the approved
 entries of the scope, and ``approved_digest`` hashes exactly what translation uses (locked
-terms, entity table, forbidden variants), so the digest changes when, and only when, the
-locked terms change.
+terms, entity table, forbidden variants and, since v3, hint entries), so the digest changes
+when, and only when, those change. The ``hints`` key is added only when a hint exists, so the
+digest of every termbase approved before v3 (D-039) is unchanged.
+
+Tiers (v3, D-039): an approval is ``locked`` (default) or ``hint``; noise is rejected
+("dropped"). A pending entry the termhood classifier marked ``dropped`` does not block the
+gate: pending entries never reach translation anyway.
 """
 from __future__ import annotations
 
@@ -57,6 +62,7 @@ class TermSelection:
     source: str
     target: str | None = None  # None -> the entry's first (highest-priority) proposal
     forbidden_variants: tuple[str, ...] = ()
+    tier: str = "locked"       # "locked" or "hint" (D-039)
 
 
 def _now() -> datetime:
@@ -100,7 +106,8 @@ def approve_terms(store: TermbaseStore, scope: TermbaseScope, selections: Sequen
         try:
             decided.append(termbase.approve(record.source, target, reviewer, replace=replace,
                                             forbidden_variants=selection.forbidden_variants,
-                                            allow_shared_target=allow_shared_target, now=now))
+                                            allow_shared_target=allow_shared_target, tier=selection.tier,
+                                            now=now))
         except TermbaseError as exc:
             raise TermbaseDecisionRejected(str(exc)) from exc
     store.write_decisions(scope, decided)
@@ -123,16 +130,19 @@ def reject_term(store: TermbaseStore, scope: TermbaseScope, source: str, reviewe
 # ------------------------------------------------------------------ gate
 @dataclass(frozen=True)
 class GateCounts:
-    pending_blocking: int   # pending, still extracted, frequency >= threshold
+    pending_blocking: int   # pending, still extracted, frequency >= threshold, not suggested "dropped"
     pending_total: int
     approved: int
     rejected: int
     absent: int             # no longer found by the latest extraction
     min_frequency: int
+    pending_dropped: int = 0   # pending entries the termhood classifier marked "dropped" (D-039)
+    approved_hint: int = 0     # approved entries of the hint tier (D-039)
 
     def as_json(self) -> dict[str, int]:
         return {"pending_blocking": self.pending_blocking, "pending_total": self.pending_total,
-                "approved": self.approved, "rejected": self.rejected, "absent": self.absent,
+                "pending_dropped": self.pending_dropped, "approved": self.approved,
+                "approved_hint": self.approved_hint, "rejected": self.rejected, "absent": self.absent,
                 "min_frequency": self.min_frequency}
 
 
@@ -140,11 +150,15 @@ def gate_counts(entries: Sequence[StoredTermEntry], min_frequency: int) -> GateC
     if min_frequency < 1:
         raise ValueError("min_frequency must be >= 1")
     pending = [e for e in entries if e.status == "pending"]
+    dropped = [e for e in pending if e.candidate.termhood == "dropped"]
     return GateCounts(
-        pending_blocking=sum(1 for e in pending if e.present and e.frequency >= min_frequency),
+        pending_blocking=sum(1 for e in pending if e.present and e.frequency >= min_frequency
+                             and e.candidate.termhood != "dropped"),
         pending_total=len(pending), approved=sum(1 for e in entries if e.status == "approved"),
         rejected=sum(1 for e in entries if e.status == "rejected"),
-        absent=sum(1 for e in entries if not e.present), min_frequency=min_frequency)
+        absent=sum(1 for e in entries if not e.present), min_frequency=min_frequency,
+        pending_dropped=len(dropped),
+        approved_hint=sum(1 for e in entries if e.status == "approved" and e.tier == "hint"))
 
 
 def approved_snapshot(termbase: BookTermbase) -> BookTermbase:
@@ -157,6 +171,9 @@ def approved_digest(termbase: BookTermbase) -> str:
     payload = {"terms": termbase.locked_terms(), "entities": termbase.entity_table(),
                "forbidden": {k: list(v) for k, v in termbase.forbidden_variants().items()},
                "languages": [termbase.source_language, termbase.target_language]}
+    hints = termbase.hint_terms()
+    if hints:  # v3 (D-039): only present when used, so every pre-v3 digest is unchanged
+        payload["hints"] = hints
     raw = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 

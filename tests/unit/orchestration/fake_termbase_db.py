@@ -45,7 +45,8 @@ class FakeTermbaseConn:
             if row is None:
                 row = dict(course_id=course, book_id=book, source_language=sl, target_language=tl, source_key=key,
                            status="pending", target=None, forbidden_variants_json=[], allow_shared_target=False,
-                           do_not_translate=False, reviewer=None, decided_at=None, rejection_reason=None)
+                           do_not_translate=False, reviewer=None, decided_at=None, rejection_reason=None,
+                           tier=None)
                 db.entries[pk] = row
             row.update(source=source, kind=kind, frequency=freq, candidate_json=json.loads(candidate),
                        proposals_json=json.loads(proposals), present=True, extracted_at=extracted_at, updated_at=at)
@@ -66,14 +67,14 @@ class FakeTermbaseConn:
                     and r["target_language"] == tl and r["status"] == "approved"]
             return FakeCursor([self._row(r) for r in sorted(rows, key=lambda r: (r["course_id"], r["source_key"]))])
         if sql == tbs._DECIDE:
-            (status, target, forbidden, allow_shared, dnt, reviewer, decided_at, reason, at,
+            (status, target, forbidden, allow_shared, dnt, reviewer, decided_at, reason, at, tier,
              course, book, sl, tl, key) = params
             row = db.entries.get((course, book, sl, tl, key))
             if row is None:
                 return FakeCursor(rowcount=0)
             row.update(status=status, target=target, forbidden_variants_json=json.loads(forbidden),
                        allow_shared_target=allow_shared, do_not_translate=dnt, reviewer=reviewer,
-                       decided_at=decided_at, rejection_reason=reason, updated_at=at)
+                       decided_at=decided_at, rejection_reason=reason, updated_at=at, tier=tier)
             return FakeCursor(rowcount=1)
         if sql == tbs._BUILD_UPSERT:
             course, book, sl, tl, ref, sha, count, at = params
@@ -93,4 +94,4 @@ class FakeTermbaseConn:
         return (r["course_id"], r["source_key"], r["source"], r["kind"], r["frequency"], r["candidate_json"],
                 r["proposals_json"], r["present"], r["status"], r["target"], r["forbidden_variants_json"],
                 r["allow_shared_target"], r["do_not_translate"], r["reviewer"], r["decided_at"],
-                r["rejection_reason"], r["extracted_at"], r["updated_at"])
+                r["rejection_reason"], r["extracted_at"], r["updated_at"], r.get("tier"))

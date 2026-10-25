@@ -130,7 +130,9 @@ def termbase_seeds(termbase: BookTermbase | None, *, units: Sequence[Translation
     """(seeds, basis, target terms for coverage). Approved terms/acronyms when there are any;
     otherwise the highest-scoring term/acronym candidates (from the termbase, else from the units)."""
     if termbase is not None:
-        approved = [r for r in termbase.entries if r.status == "approved" and r.approved_by and r.kind in TERM_KINDS]
+        # hint-tier entries (D-039) are general vocabulary kept for consistency, not book concepts
+        approved = [r for r in termbase.entries if r.status == "approved" and r.approved_by and r.kind in TERM_KINDS
+                    and r.effective_tier == "locked"]
         if approved:
             seeds = [ConceptSeed(r.source, r.kind, "approved", frequency=r.candidate.frequency,
                                  definition_context=r.candidate.definition_context, expansion=r.candidate.expansion,

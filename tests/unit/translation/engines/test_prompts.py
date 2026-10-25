@@ -14,6 +14,7 @@ LOCKED_SHA256 = {
     "chat.register.default@v1": "72bb6ce8941b49e532fb296baa3ff28966ae0479cf1080dcef4084d8caee2ed8",
     "chat.terms@v1": "edc2a14a6327d12cf74f19e8b1cfefe31174ec7a1ef6a29dd28aad8894a1feb0",
     "chat.term_line@v1": "66054ec7728073eac7157ccc269881fae6371a38e645daed1ae485740b8262fd",
+    "chat.term_hints@v1": "d676e2650560032ce2125f088fec1cda1180034eec3eac07797876c03cce20a0",
     "chat.context@v1": "4403e302c9ff01a65c571eb21c68b08c534c4db157100a95daacf87824a6ce4e",
     "chat.context_before@v1": "08479f0c01494c6979390da14737bbf004e2cba579e943d39015ef73fc397306",
     "chat.context_after@v1": "c9b462aff8c2498eca6f19fe3ecfa7d0577d623192b6a6f35cec50d16535edaa",

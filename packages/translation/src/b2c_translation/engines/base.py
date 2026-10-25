@@ -40,6 +40,8 @@ class EngineRequest:
     context_before: str | None = None
     context_after: str | None = None
     repair: RepairRequest | None = None
+    # hint-tier termbase entries occurring in the unit (D-039): preferred, not mandatory
+    hints: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

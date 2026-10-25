@@ -93,6 +93,7 @@ class UnitTranslator:
                  memory: Memory | None = None, terms: Mapping[str, str] | None = None,
                  entities: Mapping[str, str] | None = None,
                  forbidden: Mapping[str, Sequence[str]] | None = None,
+                 hints: Mapping[str, str] | None = None,
                  reference_renderer: Callable[[TranslationUnit], str] | None = None,
                  config: PipelineConfig = PipelineConfig(), clock: Callable[[], datetime] = _now) -> None:
         self.engine = engine
@@ -101,6 +102,7 @@ class UnitTranslator:
         self.terms = dict(terms or {})
         self.entities = dict(entities or {})
         self.forbidden = {k: tuple(v) for k, v in (forbidden or {}).items()}
+        self.hints = dict(hints or {})  # hint-tier termbase entries (D-039): preferred, minor check
         self.reference_renderer = reference_renderer or render_reference_unit
         self.config = config
         self.clock = clock
@@ -145,6 +147,7 @@ class UnitTranslator:
             unit=unit, source_language=self.config.source_language,
             target_language=self.config.target_language,
             terms=terms_in(unit.source_text, self.terms) if caps.supports_terms else {},
+            hints=terms_in(unit.source_text, self.hints) if caps.supports_terms else {},
             context_before=context_before if caps.supports_context else None,
             context_after=context_after if caps.supports_context else None)
         drafts: list[Draft] = []
@@ -185,8 +188,9 @@ class UnitTranslator:
         sub = unit.model_copy(update={"unit_id": f"{unit.unit_id}#s{index + 1}", "source_text": sentence,
                                       "footnote_markers": []})
         terms = terms_in(sentence, self.terms) if self.engine.capabilities.supports_terms else {}
+        hints = terms_in(sentence, self.hints) if self.engine.capabilities.supports_terms else {}
         return EngineRequest(unit=sub, source_language=request.source_language,
-                             target_language=request.target_language, terms=terms,
+                             target_language=request.target_language, terms=terms, hints=hints,
                              context_before=request.context_before, context_after=request.context_after)
 
     def _assess(self, unit: TranslationUnit, target: str, attempts: int, lever: str) -> Draft:
@@ -204,6 +208,7 @@ class UnitTranslator:
                             entities=terms_in(unit.source_text, self.entities),
                             forbidden={k: v for k, v in self.forbidden.items()
                                        if k in terms_in(unit.source_text, {k: ""})},
+                            hints=terms_in(unit.source_text, self.hints),
                             leak_fingerprints=_LEAK_FINGERPRINTS)
 
 

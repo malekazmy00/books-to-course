@@ -15,7 +15,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION = "1.16.0"
+SCHEMA_VERSION = "1.17.0"
 
 
 class Contract(BaseModel):
@@ -1741,3 +1741,208 @@ def prerequisite_cycle(graph: dict[str, set[str]]) -> bool:
                 state[nxt] = 1
                 stack.append((nxt, iter(sorted(graph.get(nxt, ())))))
     return False
+
+
+# ---------------------------------------------------------------- derived formats: episode scripts (1.14.0)
+# D-032/D-035..D-038, learning-companion §2, §12–§15. Every episode is written in ENGLISH from the
+# English book (grounded, validated), then translated through the book's translation pipeline. The
+# English and the Arabic script share this shape. The faithful core (the lesson's book text) is never
+# generated: a ``book_text`` section names the lesson's blocks and their translation units; the Arabic
+# script carries their ACCEPTED text (with the original term at its first mention, D-032 principle 3).
+EPISODE_SCRIPT_FORMAT = "b2c.episode-script/1"
+EpisodeVoice = Literal["author", "course", "external"]
+EpisodeSectionKind = Literal[
+    # book episodes (D-036 (3), D-038 (2))
+    "episode_intro", "book_text", "figure_description", "lesson_summary", "key_terms", "questions",
+    "others_say", "debate",
+    # episode 00, the course introduction (D-037)
+    "about_book", "about_author", "book_method", "course_guide", "acknowledgments",
+]
+SECTION_VOICES: dict[str, frozenset[str]] = {
+    "episode_intro": frozenset({"course"}), "book_text": frozenset({"author"}),
+    "figure_description": frozenset({"author"}), "lesson_summary": frozenset({"course"}),
+    "key_terms": frozenset({"course"}), "questions": frozenset({"course"}),
+    "others_say": frozenset({"external"}), "debate": frozenset({"external"}),
+    "about_book": frozenset({"course", "external"}), "about_author": frozenset({"course", "external"}),
+    "book_method": frozenset({"course"}), "course_guide": frozenset({"course"}),
+    "acknowledgments": frozenset({"course"}),
+}
+BOOK_TEXT_KINDS = frozenset({"book_text", "figure_description"})
+ScriptLineRole = Literal["text", "question", "answer", "term"]
+QUESTIONS_PER_EPISODE = 5
+_LINE_ID = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$"
+# lesson episode: intro, book text (with figure descriptions), summary, key terms, questions, then
+# optional "others say"/debate; course introduction: book, author, method, guide, optional external
+# sections, brief acknowledgments last.
+_LESSON_ORDER = re.compile(r"^I(?:B|F)*B(?:B|F)*SKQ(?:O|D)*$")
+_INTRO_ORDER = re.compile(r"^AUMG(?:O|D)*C?$")
+_ORDER_CODE = {"episode_intro": "I", "book_text": "B", "figure_description": "F", "lesson_summary": "S",
+               "key_terms": "K", "questions": "Q", "others_say": "O", "debate": "D", "about_book": "A",
+               "about_author": "U", "book_method": "M", "course_guide": "G", "acknowledgments": "C"}
+
+
+class ScriptSource(Contract):
+    """What a script line rests on (learning-companion §2.6: every claim has a source).
+
+    ``book``: a verbatim ``quote`` of block ``block_id`` (of lesson ``lesson_id``); ``dossier``: a
+    published KnowledgeDossier claim and its URL; ``concept``: a ConceptLayer entry; ``outline``: the
+    episode list (titles, numbers); ``course``: a fixed course-voice line and the decision it states."""
+    kind: Literal["book", "dossier", "concept", "outline", "course"]
+    lesson_id: str | None = None
+    block_id: str | None = None
+    quote: str | None = Field(default=None, max_length=1200)
+    claim_id: str | None = Field(default=None, pattern=_CLAIM_ID)
+    url: str | None = None
+    concept_id: str | None = Field(default=None, pattern=_CONCEPT_ID)
+    episode: int | None = Field(default=None, ge=0)
+    note: str | None = Field(default=None, max_length=200)
+
+    @model_validator(mode="after")
+    def _source(self) -> "ScriptSource":
+        ok = {"book": bool(self.block_id and (self.quote or "").strip()),
+              "dossier": bool(self.claim_id and (self.url or "").startswith("https://")),
+              "concept": bool(self.concept_id), "outline": self.episode is not None,
+              "course": bool((self.note or "").strip())}[self.kind]
+        if not ok:
+            raise ValueError(f"a {self.kind} source is missing its locator")
+        return self
+
+
+class ScriptLine(Contract):
+    """One spoken unit of a section. English lines are generated (grounded); Arabic lines are their
+    translation (``unit_ids`` = the translation units, ``status`` = the translation decision)."""
+    line_id: str = Field(pattern=_LINE_ID)
+    role: ScriptLineRole = "text"
+    text: str = Field(min_length=1)
+    sources: list[ScriptSource] = Field(min_length=1)
+    original: str | None = None          # key term: the source-language term
+    attributed_to: str | None = None     # external voice: who says it
+    pause_after_ms: int = Field(default=0, ge=0, le=10000)  # questions: the thinking pause
+    unit_ids: list[str] = []             # translation units this text came from (Arabic; book text)
+    status: Literal["accepted", "needs_review", "rejected"] | None = None  # Arabic: translation decision
+    inserted_originals: list[str] = []   # Arabic: originals inserted at a first mention (D-032 p.3)
+
+    @field_validator("text")
+    @classmethod
+    def _text(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("a script line has text")
+        return v
+
+
+class EpisodeSection(Contract):
+    section_id: str = Field(pattern=_LINE_ID)
+    kind: EpisodeSectionKind
+    voice: EpisodeVoice
+    lines: list[ScriptLine] = []
+    block_ids: list[str] = []  # book text: the lesson's blocks in reading order
+    unit_ids: list[str] = []   # book text: their translation units (the book's translation run)
+
+    @model_validator(mode="after")
+    def _section(self) -> "EpisodeSection":
+        if self.voice not in SECTION_VOICES[self.kind]:
+            raise ValueError(f"{self.kind} is spoken in the {sorted(SECTION_VOICES[self.kind])} voice, "
+                             f"not {self.voice}")
+        if self.kind in BOOK_TEXT_KINDS:
+            if not self.block_ids or not self.unit_ids:
+                raise ValueError("book text names its blocks and translation units (the faithful core)")
+            known = set(self.unit_ids)
+            if any(not line.unit_ids or not set(line.unit_ids) <= known for line in self.lines):
+                raise ValueError("a book-text line must come from the section's translation units")
+            return self
+        if self.block_ids or self.unit_ids:
+            raise ValueError("only book text refers to book translation units")
+        if not self.lines:
+            raise ValueError(f"a {self.kind} section has at least one line")
+        if self.voice == "external":
+            for line in self.lines:
+                if not (line.attributed_to or "").strip():
+                    raise ValueError("an external-voice line is attributed to its source")
+                if not any(s.kind == "dossier" for s in line.sources):
+                    raise ValueError("an external-voice line rests on a published dossier claim")
+        if self.kind == "key_terms":
+            for line in self.lines:
+                if line.role != "term" or not (line.original or "").strip():
+                    raise ValueError("a key term line carries the original term")
+                if not any(s.kind == "concept" for s in line.sources):
+                    raise ValueError("a key term line names its concept")
+        if self.kind == "questions":
+            roles = [line.role for line in self.lines]
+            if len(roles) % 2 or roles != ["question", "answer"] * (len(roles) // 2):
+                raise ValueError("questions alternate: question, then its answer")
+            if len(roles) // 2 != QUESTIONS_PER_EPISODE:
+                raise ValueError("an episode ends with exactly five questions")
+            for q, a in zip(self.lines[::2], self.lines[1::2]):
+                if q.pause_after_ms < 1000:
+                    raise ValueError("each question is followed by a thinking pause (>= 1000 ms)")
+                if not any(s.kind == "book" for s in a.sources):
+                    raise ValueError("each answer names its location in the lesson")
+        return self
+
+
+class EpisodeScript(Contract):
+    format: Literal["b2c.episode-script/1"] = EPISODE_SCRIPT_FORMAT
+    book_id: str = Field(min_length=1)
+    language: Literal["en", "ar"]
+    episode: int = Field(ge=0)  # 0 = course introduction (D-037/D-038); lessons are 1..n
+    kind: Literal["course_intro", "lesson"]
+    lesson_id: str | None = None
+    title: str
+    book_title: str = Field(min_length=1)
+    sections: list[EpisodeSection] = Field(min_length=1)
+    translation_run_id: str | None = None      # the book translation run of the book-text units
+    source_script_sha256: str | None = None    # Arabic: sha256 of the English script it translates
+    generator: ProducerIdentity | None = None
+    validator: ProducerIdentity | None = None
+    generator_family: str | None = None
+    validator_family: str | None = None
+    created_at: datetime
+    metrics: dict[str, Any] = {}
+
+    @field_validator("title")
+    @classmethod
+    def _title(cls, v: str) -> str:
+        return _check_title(v)
+
+    @field_validator("created_at")
+    @classmethod
+    def check_created_utc(cls, v: datetime) -> datetime:
+        return _utc(v)
+
+    def label(self, *, last_episode: int) -> str:
+        """Zero-padded episode number for file names (D-038): 00, 01, ... (3 digits from 100)."""
+        return f"{self.episode:0{max(2, len(str(last_episode)))}d}"
+
+    def all_lines(self) -> list[ScriptLine]:
+        return [line for s in self.sections for line in s.lines]
+
+    @model_validator(mode="after")
+    def _script(self) -> "EpisodeScript":
+        if (self.episode == 0) != (self.kind == "course_intro"):
+            raise ValueError("episode 0 is the course introduction, and only it")
+        if (self.lesson_id is None) != (self.kind == "course_intro"):
+            raise ValueError("a lesson episode names its lesson; the course introduction has none")
+        code = "".join(_ORDER_CODE[s.kind] for s in self.sections)
+        pattern = _INTRO_ORDER if self.kind == "course_intro" else _LESSON_ORDER
+        if not pattern.match(code):
+            raise ValueError(f"section order {code} breaks the episode order (D-038)")
+        ids = [s.section_id for s in self.sections]
+        line_ids = [line.line_id for line in self.all_lines()]
+        if len(set(ids)) != len(ids) or len(set(line_ids)) != len(line_ids):
+            raise ValueError("section and line ids must be unique")
+        if any(s.kind in BOOK_TEXT_KINDS for s in self.sections) and not self.translation_run_id:
+            raise ValueError("book text needs the translation_run_id of its units")
+        if self.generator_family and self.validator_family and self.generator_family == self.validator_family:
+            raise ValueError("the validator must come from another model family than the generator")
+        if self.language == "en":
+            if any(s.lines for s in self.sections if s.kind in BOOK_TEXT_KINDS):
+                raise ValueError("the English script refers to the book text, it does not hold generated book text")
+            if any(line.status is not None or line.inserted_originals for line in self.all_lines()):
+                raise ValueError("translation status belongs to the Arabic script")
+        else:
+            if not self.source_script_sha256:
+                raise ValueError("an Arabic script names the English script it translates (source_script_sha256)")
+            for line in self.all_lines():
+                if not line.unit_ids or line.status is None:
+                    raise ValueError(f"Arabic line {line.line_id} must name its translation unit(s) and decision")
+        return self

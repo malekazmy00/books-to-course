@@ -18,6 +18,7 @@ members = [
     "b2c-concepts",
     "b2c-contracts",
     "b2c-core",
+    "b2c-episodes",
     "b2c-indexing",
     "b2c-ingest",
     "b2c-kg",
@@ -174,6 +175,21 @@ requires-dist = [
 ]
 
 [[package]]
+name = "b2c-episodes"
+version = "0.0.0"
+source = { editable = "packages/episodes" }
+dependencies = [
+    { name = "b2c-contracts" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "b2c-contracts", editable = "packages/contracts" },
+    { name = "pydantic", specifier = ">=2.7,<3" },
+]
+
+[[package]]
 name = "b2c-indexing"
 version = "0.0.0"
 source = { editable = "packages/indexing" }
@@ -284,6 +300,7 @@ dependencies = [
     { name = "b2c-concepts" },
     { name = "b2c-contracts" },
     { name = "b2c-core" },
+    { name = "b2c-episodes" },
     { name = "b2c-indexing" },
     { name = "b2c-ingest" },
     { name = "b2c-kg" },
@@ -305,6 +322,7 @@ requires-dist = [
     { name = "b2c-concepts", editable = "packages/concepts" },
     { name = "b2c-contracts", editable = "packages/contracts" },
     { name = "b2c-core", editable = "packages/core" },
+    { name = "b2c-episodes", editable = "packages/episodes" },
     { name = "b2c-indexing", editable = "packages/indexing" },
     { name = "b2c-ingest", editable = "packages/ingest" },
     { name = "b2c-kg", editable = "packages/kg" },
@@ -457,6 +475,7 @@ dependencies = [
     { name = "b2c-concepts" },
     { name = "b2c-contracts" },
     { name = "b2c-core" },
+    { name = "b2c-episodes" },
     { name = "b2c-indexing" },
     { name = "b2c-ingest" },
     { name = "b2c-kg" },
@@ -486,6 +505,7 @@ requires-dist = [
     { name = "b2c-concepts", editable = "packages/concepts" },
     { name = "b2c-contracts", editable = "packages/contracts" },
     { name = "b2c-core", editable = "packages/core" },
+    { name = "b2c-episodes", editable = "packages/episodes" },
     { name = "b2c-indexing", editable = "packages/indexing" },
     { name = "b2c-ingest", editable = "packages/ingest" },
     { name = "b2c-kg", editable = "packages/kg" },

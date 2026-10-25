@@ -7,6 +7,13 @@ from types import SimpleNamespace
 import b2c_orchestration.worker as worker_mod
 
 
+def test_audio_worker_logs_its_code_revision_at_startup(monkeypatch):  # P8 / audit 08 C3
+    logged = []
+    monkeypatch.setattr(worker_mod, "log_startup_revision", lambda logger, service: logged.append(service))
+    test_audio_worker_store_records_artifact_provenance(monkeypatch)
+    assert logged == ["audio-worker"]
+
+
 def test_audio_worker_store_records_artifact_provenance(monkeypatch):
     created = {}
 

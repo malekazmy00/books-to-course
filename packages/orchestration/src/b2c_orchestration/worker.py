@@ -14,6 +14,7 @@ from b2c_core import (
     configure_logging,
     get_logger,
 )
+from b2c_core.revision import log_startup_revision
 from b2c_indexing import PostgresChunkStore, QueryRetrievalService
 from b2c_indexing.embedding_client import OpenAIEmbeddingClient
 from b2c_llm_gateway import (
@@ -97,6 +98,7 @@ async def run_worker() -> None:
     s = Settings()
     configure_logging(s.log_level)
     provider = setup_tracing(f"{s.service_name}-worker", s.otel_endpoint)
+    log_startup_revision(log, "worker")
 
     prov = ProvRecorder(s.pg_dsn)
     prov.migrate()
@@ -213,6 +215,7 @@ async def run_audio_worker() -> None:
     s = Settings()
     configure_logging(s.log_level)
     provider = setup_tracing(f"{s.service_name}-audio-worker", s.otel_endpoint)
+    log_startup_revision(log, "audio-worker")
     prov = ProvRecorder(s.pg_dsn)
     prov.migrate()
     store = ArtifactStore.from_settings(s, recorder=prov)

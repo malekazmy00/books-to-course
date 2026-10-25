@@ -21,7 +21,7 @@ services:
         bind: {create_host_path: false}
 
   generation-worker:
-    build: {context: .., dockerfile: docker/worker/Dockerfile.audio}
+    build: {context: .., dockerfile: docker/worker/Dockerfile.audio, args: {B2C_GIT_REVISION: "${B2C_GIT_REVISION:-unknown}"}}
     image: b2c-generation-worker:dev
     command: ["b2c-worker"]
     depends_on:

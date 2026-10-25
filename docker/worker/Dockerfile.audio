@@ -7,5 +7,10 @@ COPY vendor/booktrans/LICENSE /opt/booktrans/BOOKTRANS-LICENSE
 ENV PYTHONPATH=/opt/booktrans
 RUN uv pip install --python /app/.venv/bin/python \
     "charset-normalizer>=2.0" "pypdfium2>=4.0" "pillow>=9.0" "pyuca>=1.2"
+# P8 / audit 08 C3: the commit this image was built from (`make build|up` pass the HEAD sha).
+# Kept after the dependency layers so a new revision does not invalidate their cache.
+ARG B2C_GIT_REVISION=unknown
+LABEL org.opencontainers.image.revision=$B2C_GIT_REVISION
+ENV B2C_GIT_REVISION=$B2C_GIT_REVISION
 USER 10001:10001
 CMD ["b2c-worker"]

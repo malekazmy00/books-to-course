@@ -77,7 +77,7 @@ services:
 
   hy-translation-worker:
     profiles: [hy-translation]
-    build: {context: .., dockerfile: docker/worker/Dockerfile.audio}
+    build: {context: .., dockerfile: docker/worker/Dockerfile.audio, args: {B2C_GIT_REVISION: "${B2C_GIT_REVISION:-unknown}"}}
     image: b2c-hy-worker:dev
     command: ["b2c-worker"]
     depends_on:

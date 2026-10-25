@@ -54,6 +54,13 @@ def test_nisba_adjective_agreement_is_accepted(make_unit, target):
     assert C.terminology(ctx) == [], target
 
 
+def test_accusative_tanween_alif_is_accepted(make_unit):
+    # seen in book 1: «سواء كان محللاً، أو قائداً، أو ميسراً» for the locked «ميسر» (facilitator)
+    ctx = _ctx(make_unit, "whether analyst, leader or facilitator", "سواء كان محللاً، أو قائداً، أو ميسراً.",
+               terms={"facilitator": "ميسر"})
+    assert C.terminology(ctx) == []
+
+
 @pytest.mark.parametrize("target", [
     "يقاوم المثقفون العضويون.",
     "مع المثقفين العضويين.",

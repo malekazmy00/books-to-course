@@ -529,8 +529,9 @@ def contains_term(target: str, term: str) -> bool:
 
 
 # Inflection-tolerant matching (v3, D-039). Without a morphological analyser, each token is
-# reduced to a small set of candidate stems by removing, at the end of the word: a possessive
-# pronoun, a sound plural / dual ending (ات ون ين ان), then the feminine ending (ة, written ه
+# reduced to a small set of candidate stems by removing, at the end of the word: the alif of an
+# accusative tanween, a possessive pronoun, a sound plural / dual ending (ات ون ين ان), then the
+# feminine ending (ة, written ه
 # after ``_ar_key``); an open taa left by a suffix (جماعتهم -> جماعت) is read as ة. Two tokens
 # match when their stem sets intersect. Stems shorter than three letters are never used.
 _MIN_STEM = 3
@@ -541,6 +542,8 @@ _NUMBER_SUFFIXES = ("ات", "ون", "ين", "ان")
 def _stems(token: str) -> set[str]:
     """Candidate stems of one already clitic-stripped, ``_ar_key``-normalised token."""
     forms = {token}
+    if token.endswith("ا") and len(token) - 1 >= _MIN_STEM:
+        forms.add(token[:-1])                       # accusative tanween alif: ميسرًا -> ميسر
     forms |= {token[:-len(s)] for s in _PRONOUN_SUFFIXES
               if token.endswith(s) and len(token) - len(s) >= _MIN_STEM}
     forms |= {f[:-len(s)] for f in set(forms) for s in _NUMBER_SUFFIXES

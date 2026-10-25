@@ -173,6 +173,32 @@ def test_endnotes_keep_labels_and_markers_link_to_them():
     assert any(b.text.startswith("Hegemony rests on consent.1 It") for b in v1.blocks)
 
 
+def test_chapter_end_notes_link_to_their_chapter_despite_a_stray_marker():
+    doc = (Doc(1, 5)
+           .add("text", 1, "Published by the Press in London.1 All rights reserved. " + FILLER, top=80)
+           .add("section_header", 2, "Chapter One", top=20, bottom=30)
+           .add("text", 2, "First claim.1 Second claim.2 " + FILLER, top=40)
+           .add("section_header", 3, "NOTES", top=20, bottom=30)
+           .add("list_item", 3, "Doe, Book One, 4.", top=40, bottom=50, marker="1.")
+           .add("list_item", 3, "Doe, Book One, 9.", top=60, bottom=70, marker="2.")
+           .add("section_header", 4, "Chapter Two", top=20, bottom=30)
+           .add("text", 4, "Third claim.1 Fourth claim.2 " + FILLER, top=40)
+           .add("section_header", 5, "NOTES", top=20, bottom=30)
+           .add("list_item", 5, "Roe, Book Two, 4.", top=40, bottom=50, marker="1.")
+           .add("list_item", 5, "Roe, Book Two, 9.", top=60, bottom=70, marker="2."))
+    outline = [bookmark("Chapter One", 0, 2), bookmark("Chapter Two", 0, 4)]
+    book = normalize_docling(META, [doc.json()], text_layer(["a", "b", "c", "d", "e"], outline=outline))
+    by_note = {n.note_id: n for n in book.notes}
+    text_of = {b.block_id: b.text for b in book.blocks}
+
+    def targets(prefix):
+        b = next(b for b in book.blocks if b.text.startswith(prefix))
+        return [text_of[by_note[r.note_id].block_ids[0]] for r in b.note_refs]
+
+    assert targets("First claim") == ["Doe, Book One, 4.", "Doe, Book One, 9."]
+    assert targets("Third claim") == ["Roe, Book Two, 4.", "Roe, Book Two, 9."]
+
+
 def test_run_of_notes_in_one_item_is_split():
     doc = (Doc(1, 1).add("section_header", 1, "Notes", top=40, bottom=60)
            .add("code", 1, "140. Ibid., 119-124. 141. Ibid., 125. 142. SPN, 12.", top=80))
@@ -259,6 +285,20 @@ def test_docling_item_wrongly_joined_across_pages_is_cut_at_its_page_spans():
     book = normalize_docling(META, [doc.json()], text_layer(["a", "b", "c"]))
     assert [(b.text, [r.page_no for r in b.refs]) for b in book.blocks] == [
         ("contents", [1]), ("This book owes much to the insight of colleagues.", [3])]
+
+
+def test_ebook_figure_descriptions_and_back_links_are_figure_apparatus():
+    doc = (Doc(1, 2)
+           .add("section_header", 1, "Introduction", top=20, bottom=30).add("text", 1, FILLER, top=40)
+           .add("section_header", 2, "Descriptions of Images and Figures", top=20, bottom=30)
+           .add("section_header", 2, "Back to Figure", top=40, bottom=50)
+           .add("text", 2, "The cells in each row show the impact of the variable on each other variable.", top=60)
+           .add("section_header", 2, "Back to Figure", top=200, bottom=210)
+           .add("text", 2, "The mechanisms of engagement range from conflict to cooperation.", top=220))
+    book = normalize_docling(META, [doc.json()], text_layer(["a", "b"]))
+    page2 = [(b.type, b.text[:14]) for b in book.blocks if b.refs[0].page_no == 2]
+    assert page2 == [("heading", "Descriptions o"), ("caption", "Back to Figure"), ("caption", "The cells in e"),
+                     ("caption", "Back to Figure"), ("caption", "The mechanisms")]
 
 
 # ----------------------------------------------------------------------------- text-layer path

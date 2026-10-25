@@ -39,7 +39,7 @@ from b2c_contracts import (
     BlockV2, Note, NoteRef, OutlineEntry, PageInfo, PageRef, ParsedBookV2,
 )
 from b2c_core.source_text import (
-    BULLET, CONTINUATION_WORDS, NOTE_LABEL, PAGE_NUMBER, TERMINAL, MarkerSequence, Vocab,
+    BULLET, CONTINUATION_WORDS, NAV_LABELS, NOTE_LABEL, PAGE_NUMBER, TERMINAL, MarkerSequence, Vocab,
     citation_score, fix_punct_spacing, heading_key, index_like, is_bibliographic,
     join_hyphen, marker_candidates, normalize_chars, repair_letter_spacing, section_word,
     split_inline_notes, split_lines, toc_like,
@@ -500,6 +500,10 @@ def _base_kind(f: _Frag) -> str:
         if PAGE_NUMBER.match(f.text.strip()):
             return "page_number"
         return "running_header" if f.label == "page_header" else "running_footer"
+    nav = f.text.lower().strip(" .")
+    if nav in NAV_LABELS and not nav.startswith("description"):
+        f.tags.append("navigation_label")
+        return "caption"  # e-book link label ('Back to Figure'): belongs to the figure apparatus
     if f.label in ("section_header", "title") and _URLISH.search(f.text):
         return "paragraph"  # a wrapped URL of a note, not a heading
     return _DOCLING_KIND.get(f.label, "paragraph")
@@ -641,7 +645,8 @@ def _zones_and_sections(frags: list[_Frag]) -> None:
                     state, saw_body = "body", True
                 elif cls == "back" and state in ("body", "front_matter") and (saw_body or state == "body"):
                     state = "back_matter"
-            word = section_word(f.text)
+            word = section_word(f.text) or ("figure_descriptions" if f.text.lower().strip(" .")
+                                             in NAV_LABELS else None)
             if word is not None:
                 section = (word, level)
             elif section is not None and level <= section[1]:
@@ -666,6 +671,8 @@ def _apparatus_kinds(frags: list[_Frag]) -> None:
                 f.kind = "bibliography_entry"
             elif f.section == "notes":
                 f.kind = "endnote"
+            elif f.section == "figure_descriptions" and f.kind != "footnote":
+                f.kind = "caption"  # long text descriptions of figures (accessible e-books)
         if f.kind == "code" and len(split_inline_notes(f.text)) > 1:
             f.kind = "endnote"
     text_kinds = ("paragraph", "list_item")
@@ -884,20 +891,40 @@ def _extract_and_link_markers(items: list[_Item]) -> None:
                 run += 1
             found.append((it, start, end, digits, strong, run))
 
-    # align body marker runs with endnote runs, in order
+    # align body marker runs with endnote runs: an order-preserving, one-to-one matching that
+    # maximises the number of labels found, where a notes run never precedes the text that
+    # cites it (chapter-end notes) and a run counts only if half its labels are there; stray
+    # markers (a '1' on the copyright page) then cannot shift every chapter by one
     body_runs: dict[int, list[str]] = {}
-    for _, _, _, digits, _, r in found:
+    body_last_page: dict[int, int] = {}
+    for it, _, _, digits, _, r in found:
         body_runs.setdefault(r, []).append(digits)
-    run_map: dict[int, int] = {}
-    pointer = 0
-    for r in sorted(body_runs):
+        body_last_page[r] = max(body_last_page.get(r, 0), it.head.page)
+    order = sorted(body_runs)
+    run_first_page = [min(it.head.page for it in run.values()) for run in runs]
+
+    def score(r: int, k: int) -> int:
         labels = body_runs[r]
-        for k in range(pointer, len(runs)):
-            hits = sum(lab in runs[k] for lab in labels)
-            if hits * 2 >= len(labels):
-                run_map[r] = k
-                pointer = k + 1
-                break
+        hits = sum(lab in runs[k] for lab in labels)
+        return hits if hits * 2 >= len(labels) and run_first_page[k] >= body_last_page[r] else 0
+
+    m, n = len(order), len(runs)
+    best = [[0] * (n + 1) for _ in range(m + 1)]
+    for i in range(m - 1, -1, -1):
+        for k in range(n - 1, -1, -1):
+            take = score(order[i], k)
+            best[i][k] = max(best[i + 1][k], best[i][k + 1], take + best[i + 1][k + 1] if take else 0)
+    run_map: dict[int, int] = {}
+    i = k = 0
+    while i < m and k < n:
+        take = score(order[i], k)
+        if take and best[i][k] == take + best[i + 1][k + 1]:
+            run_map[order[i]] = k
+            i, k = i + 1, k + 1
+        elif best[i][k] == best[i + 1][k]:
+            i += 1
+        else:
+            k += 1
 
     kept: dict[int, list[tuple[int, int, str, str | None]]] = {}
     for it, start, end, digits, strong, r in found:

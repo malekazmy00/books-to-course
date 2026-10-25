@@ -102,6 +102,10 @@ _CHAT = [
         "Locked terminology: when one of these terms occurs in the source, translate it with "
         "exactly the given equivalent:\n{term_lines}"), "fragment", "b2c"),
     PromptTemplate("chat.term_line", 1, "- {source_term} => {target_term}", "fragment", "b2c"),
+    PromptTemplate("chat.entities", 1, (
+        "Approved names: when one of these names of people, places, organisations or works occurs in "
+        "the source, write it in Arabic script exactly as given here (Arabic prefixes such as و ب ل ال "
+        "may be attached), and keep the same spelling every time:\n{term_lines}"), "fragment", "b2c"),
     PromptTemplate("chat.term_hints", 1, (
         "Preferred terminology: when one of these words occurs in the source, prefer the given "
         "rendering, and inflect it as Arabic grammar requires (article, number, gender, case):\n"

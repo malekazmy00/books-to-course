@@ -24,6 +24,7 @@ from __future__ import annotations
 from b2c_contracts import EngineIdentity
 
 from ..prompts import PromptTemplate, compose_version, get_template, language_name
+from ..qa.checks import names_in
 from .base import EngineCapabilities, EngineRequest, EngineResult, TextCompletionGateway
 from .chat import output_token_budget
 
@@ -72,6 +73,10 @@ class PlainMTEngine:
 
         folded = source.casefold()
         terms = [(s, t) for s, t in sorted(request.terms.items()) if s.casefold() in folded]
+        locked = {s.casefold() for s, _ in terms}
+        # D-047: approved names go through the same documented "reference translations" template
+        terms += [(s, t) for s, t in sorted(names_in(source, request.entities).items())
+                  if s.casefold() not in locked]
         terminology, line = self._template("terminology"), self._template("terminology_line")
         context = self._template("context")
         background = "\n\n".join(x for x in (request.context_before, request.context_after) if x)

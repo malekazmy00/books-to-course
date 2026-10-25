@@ -42,6 +42,8 @@ class EngineRequest:
     repair: RepairRequest | None = None
     # hint-tier termbase entries occurring in the unit (D-039): preferred, not mandatory
     hints: Mapping[str, str] = field(default_factory=dict)
+    # approved names occurring in the unit (D-047): people, places, organisations, works
+    entities: Mapping[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

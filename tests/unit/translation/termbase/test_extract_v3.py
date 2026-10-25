@@ -17,7 +17,7 @@ def _by_source(cands):
 
 
 def test_extractor_version_is_v3():
-    assert EXTRACTOR_VERSION == "termbase-extract-v3"
+    assert EXTRACTOR_VERSION.startswith("termbase-extract-v3")
 
 
 # ------------------------------------------------------------------ 1. citations

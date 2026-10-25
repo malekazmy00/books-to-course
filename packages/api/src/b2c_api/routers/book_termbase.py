@@ -39,6 +39,8 @@ class ApproveTermRequest(_Body):
     reviewer_id: str = Field(pattern=REVIEWER_ID)
     # renderings the reviewer rules out; translations containing them are flagged (qa terminology)
     forbidden_variants: list[str] = Field(default=[], max_length=20)
+    # other acceptable Arabic spellings of an approved name (D-047): accepted by the check, never prompted
+    accepted_variants: list[str] = Field(default=[], max_length=20)
     replace: bool = False
     allow_shared_target: bool = False
     tier: ApprovalTier = "locked"
@@ -152,7 +154,8 @@ def book_termbase_router(ctx: ApiContext, router: Any = None) -> Any:
         _, scope = await built_scope(run_id)
         [entry] = await decide(approve_terms, termbase_store(), scope,
                                [TermSelection(request.source, request.target,
-                                              tuple(request.forbidden_variants), request.tier)],
+                                              tuple(request.forbidden_variants), request.tier,
+                                              tuple(request.accepted_variants))],
                                request.reviewer_id,
                                replace=request.replace, allow_shared_target=request.allow_shared_target)
         return entry.as_json()

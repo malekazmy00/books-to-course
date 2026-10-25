@@ -63,6 +63,7 @@ class TermSelection:
     target: str | None = None  # None -> the entry's first (highest-priority) proposal
     forbidden_variants: tuple[str, ...] = ()
     tier: str = "locked"       # "locked" or "hint" (D-039)
+    accepted_variants: tuple[str, ...] = ()  # other acceptable spellings of a name (D-047)
 
 
 def _now() -> datetime:
@@ -107,7 +108,7 @@ def approve_terms(store: TermbaseStore, scope: TermbaseScope, selections: Sequen
             decided.append(termbase.approve(record.source, target, reviewer, replace=replace,
                                             forbidden_variants=selection.forbidden_variants,
                                             allow_shared_target=allow_shared_target, tier=selection.tier,
-                                            now=now))
+                                            accepted_variants=selection.accepted_variants, now=now))
         except TermbaseError as exc:
             raise TermbaseDecisionRejected(str(exc)) from exc
     store.write_decisions(scope, decided)
@@ -174,6 +175,9 @@ def approved_digest(termbase: BookTermbase) -> str:
     hints = termbase.hint_terms()
     if hints:  # v3 (D-039): only present when used, so every pre-v3 digest is unchanged
         payload["hints"] = hints
+    variants = termbase.entity_variants()
+    if variants:  # D-047: likewise, a termbase without accepted variants keeps its digest
+        payload["entity_variants"] = {k: list(v) for k, v in variants.items()}
     raw = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 

@@ -29,7 +29,7 @@ from b2c_contracts import QAIssue, TranslationUnit, UnitTranslation
 
 from .engines import EngineRequest, RepairRequest, TranslationEngine
 from .qa import CheckContext, QEOutcome, QualityEstimator
-from .qa.checks import run_checks
+from .qa.checks import names_in, run_checks
 from .qa.leakage import fingerprints_from_templates
 from .prompts import ALL_TEMPLATES
 from .qa.policy import Decision, decide
@@ -94,6 +94,7 @@ class UnitTranslator:
                  entities: Mapping[str, str] | None = None,
                  forbidden: Mapping[str, Sequence[str]] | None = None,
                  hints: Mapping[str, str] | None = None,
+                 entity_variants: Mapping[str, Sequence[str]] | None = None,
                  reference_renderer: Callable[[TranslationUnit], str] | None = None,
                  config: PipelineConfig = PipelineConfig(), clock: Callable[[], datetime] = _now) -> None:
         self.engine = engine
@@ -103,6 +104,8 @@ class UnitTranslator:
         self.entities = dict(entities or {})
         self.forbidden = {k: tuple(v) for k, v in (forbidden or {}).items()}
         self.hints = dict(hints or {})  # hint-tier termbase entries (D-039): preferred, minor check
+        # D-047: accepted spellings of approved names; they widen the check and never reach the engine
+        self.entity_variants = {k: tuple(v) for k, v in (entity_variants or {}).items()}
         self.reference_renderer = reference_renderer or render_reference_unit
         self.config = config
         self.clock = clock
@@ -148,6 +151,7 @@ class UnitTranslator:
             target_language=self.config.target_language,
             terms=terms_in(unit.source_text, self.terms) if caps.supports_terms else {},
             hints=terms_in(unit.source_text, self.hints) if caps.supports_terms else {},
+            entities=names_in(unit.source_text, self.entities) if caps.supports_terms else {},
             context_before=context_before if caps.supports_context else None,
             context_after=context_after if caps.supports_context else None)
         drafts: list[Draft] = []
@@ -189,8 +193,10 @@ class UnitTranslator:
                                       "footnote_markers": []})
         terms = terms_in(sentence, self.terms) if self.engine.capabilities.supports_terms else {}
         hints = terms_in(sentence, self.hints) if self.engine.capabilities.supports_terms else {}
+        entities = names_in(sentence, self.entities) if self.engine.capabilities.supports_terms else {}
         return EngineRequest(unit=sub, source_language=request.source_language,
                              target_language=request.target_language, terms=terms, hints=hints,
+                             entities=entities,
                              context_before=request.context_before, context_after=request.context_after)
 
     def _assess(self, unit: TranslationUnit, target: str, attempts: int, lever: str) -> Draft:
@@ -209,6 +215,7 @@ class UnitTranslator:
                             forbidden={k: v for k, v in self.forbidden.items()
                                        if k in terms_in(unit.source_text, {k: ""})},
                             hints=terms_in(unit.source_text, self.hints),
+                            entity_variants={k: v for k, v in self.entity_variants.items() if k in self.entities},
                             leak_fingerprints=_LEAK_FINGERPRINTS)
 
 
@@ -263,5 +270,5 @@ def assemble_blocks(units: Iterable[TranslationUnit],
     return blocks
 
 
-__all__ = ["BlockText", "Draft", "Memory", "PipelineConfig", "RULE_KINDS", "UnitResult", "UnitTranslator",
+__all__ = ["BlockText", "Draft", "Memory", "PipelineConfig", "RULE_KINDS", "UnitResult", "UnitTranslator", "names_in",
            "assemble_blocks", "restore_footnotes", "split_sentences", "terms_in", "translate_units"]

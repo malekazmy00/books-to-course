@@ -80,7 +80,7 @@ from b2c_contracts import TranslationUnit
 
 from .model import source_key, TermCandidate
 
-EXTRACTOR_VERSION = "termbase-extract-v3"
+EXTRACTOR_VERSION = "termbase-extract-v3.1"  # v3.1 (D-047): coined names are terms
 
 GeneralFrequency = Callable[[str], float]
 
@@ -288,6 +288,28 @@ def mask_citations(text: str, kind: str = "prose") -> str:
             if not _names_an_organization(m.group("title")):
                 out = _blank(out, m.start("title"), m.end("title"))
     return out
+
+
+COINED_ING_MAX_ZIPF = 3.0     # -ing words rarer than this are coined process names, not surnames
+COINED_PART_MIN_ZIPF = 4.0    # both halves of a closed compound are common English words
+COINED_PART_MIN_LEN = 4
+
+
+def coined_term(surface: str, ref: GeneralFrequency) -> bool:
+    """A single capitalised word that names a technique or concept rather than a person (D-047):
+    a trademark sign (``Circleboarding™``), a rare -ing process noun (``Satisficing``), or a closed
+    compound of two common English words (``Groupthink``). Used only where the extractor would
+    otherwise guess "person" for an unresolved proper noun."""
+    word = surface.rstrip("™®")
+    if word != surface:
+        return True
+    w = word.casefold()
+    if not w.isalpha():
+        return False
+    if w.endswith("ing") and len(w) >= 7 and _zipf(ref(w)) < COINED_ING_MAX_ZIPF:
+        return True
+    return any(_zipf(ref(w[:i])) >= COINED_PART_MIN_ZIPF and _zipf(ref(w[i:])) >= COINED_PART_MIN_ZIPF
+               for i in range(COINED_PART_MIN_LEN, len(w) - COINED_PART_MIN_LEN + 1))
 
 
 def _zipf(freq: float) -> float:
@@ -972,8 +994,11 @@ def _finalise(aggs, occ: _Occurrences, trans, ctx: _Ctx, min_freq, min_sections)
                     continue
                 if kind != "term" or _not_people(key) or not _proper_noun(key, surface, a, hits, trans):
                     continue
-                kind = "person"  # most unresolved single proper nouns in books are surnames
-                a.signals.add("kind_uncertain")
+                if len(key) == 1 and coined_term(surface, ctx.ref):
+                    a.signals.add("coined")   # D-047: a technique or concept name, checked as a term
+                else:
+                    kind = "person"  # most unresolved single proper nouns in books are surnames
+                    a.signals.add("kind_uncertain")
         if kind == "term" and len(key) == 1 and a.signals & {"keyness", "index"} \
                 and ctx.stats.lower_share(key[0]) >= MIN_LOWER_SHARE:
             surface = key[0]    # "hegemony", not the heading / sentence-initial "Hegemony"

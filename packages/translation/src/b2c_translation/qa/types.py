@@ -25,6 +25,8 @@ class CheckContext:
     forbidden: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     # approved hint-tier entries (D-039): preferred renderings, checked only as a minor signal
     hints: Mapping[str, str] = field(default_factory=dict)
+    # approved termbase (D-047): other acceptable spellings of an approved name (source -> variants)
+    entity_variants: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     # D-032 principle 3: originals inserted after translation at a term's first mention, as
     # "العربي (original)". Explicit whitelist: exactly these bracketed glosses are removed before the
     # checks run (b2c_translation.first_mention), any other Latin is still checked.

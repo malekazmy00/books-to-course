@@ -490,8 +490,10 @@ class TranslateBookActivities:
         entities = termbase.entity_table() if termbase is not None else None
         forbidden = termbase.forbidden_variants() if termbase is not None else None
         hints = termbase.hint_terms() if termbase is not None else None  # D-039: preferred, minor check
+        variants = termbase.entity_variants() if termbase is not None else None  # D-047: check only
         return UnitTranslator(engine, estimator=estimator, memory=self.memory, clock=self.clock,
-                              terms=terms, entities=entities, forbidden=forbidden, hints=hints, config=PipelineConfig(source_language=inp.source_language,
+                              terms=terms, entities=entities, forbidden=forbidden, hints=hints,
+                              entity_variants=variants, config=PipelineConfig(source_language=inp.source_language,
                                                     target_language=inp.target_language))
 
     @activity.defn(name="translate_unit_batch")

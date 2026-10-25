@@ -40,7 +40,8 @@ def doc(descriptions=None, language="en", **kw):
 
 
 def test_schema_version():
-    assert c.SCHEMA_VERSION == "1.20.0"
+    # figure descriptions arrived in 1.20.0 (D-044); later contract versions keep them
+    assert tuple(map(int, c.SCHEMA_VERSION.split("."))) >= (1, 20, 0)
 
 
 def test_a_valid_english_document():

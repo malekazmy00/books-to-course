@@ -15,7 +15,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION = "1.20.0"
+SCHEMA_VERSION = "1.22.0"
 
 
 class Contract(BaseModel):
@@ -1082,11 +1082,27 @@ class TermbaseEntry(Contract):
     # preferred rendering given to the engine and checked only as a minor, inflection-tolerant
     # signal. Noise ("dropped") never becomes an entry.
     tier: TermTier = "locked"
+    # 1.22.0 (D-047): other acceptable Arabic spellings of an approved name ("جرونينجن" beside
+    # "خرونينغن"). The named-entity check accepts them; they are never sent to the engine.
+    accepted_variants_ar: list[str] = []
 
     @model_validator(mode="after")
     def check_hint_has_no_forbidden_variants(self) -> "TermbaseEntry":
         if self.tier == "hint" and self.forbidden_variants_ar:
             raise ValueError("a hint entry is not checked strictly, so it takes no forbidden variants")
+        return self
+
+    @model_validator(mode="after")
+    def check_accepted_variants(self) -> "TermbaseEntry":
+        forbidden = {v.strip() for v in self.forbidden_variants_ar}
+        for variant in self.accepted_variants_ar:
+            v = variant.strip()
+            if not v or re.search(r"[A-Za-z]", v):
+                raise ValueError("an accepted variant is a non-empty Arabic spelling")
+            if v == self.term_ar.strip():
+                raise ValueError("an accepted variant differs from the approved target")
+            if v in forbidden:
+                raise ValueError("an accepted variant cannot also be forbidden")
         return self
 
 

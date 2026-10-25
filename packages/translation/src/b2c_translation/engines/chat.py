@@ -15,6 +15,7 @@ import re
 from b2c_contracts import EngineIdentity, QAIssue
 
 from ..prompts import PromptTemplate, compose_version, get_template, language_name, repair_fix
+from ..qa.checks import names_in
 from .base import EngineCapabilities, EngineRequest, EngineResult, TextCompletionGateway
 
 _MAX_EVIDENCE_CHARS = 600
@@ -103,6 +104,15 @@ class ChatEngine:
                 parts.append(terms_t.render(term_lines="\n".join(
                     line_t.render(source_term=s, target_term=t) for s, t in present)))
             locked = {s.casefold() for s, _ in present}
+            # D-047: approved names occurring in the unit (as names, case-sensitive like the check)
+            named = [(s, t) for s, t in sorted(names_in(source, request.entities).items())
+                     if s.casefold() not in locked]
+            if named:
+                entities_t, line_t = get_template("chat.entities"), get_template("chat.term_line")
+                used += [entities_t] + ([] if line_t in used else [line_t])
+                parts.append(entities_t.render(term_lines="\n".join(
+                    line_t.render(source_term=s, target_term=t) for s, t in named)))
+                locked |= {s.casefold() for s, _ in named}
             hinted = [(s, t) for s, t in sorted(request.hints.items())
                       if s.casefold() in folded and s.casefold() not in locked]
             if hinted:  # D-039: preferred renderings, rendered only when present (prompt version unchanged otherwise)

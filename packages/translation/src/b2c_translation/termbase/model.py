@@ -124,10 +124,15 @@ class TermRecord(_Model):
     rejection_reason: str | None = None
     # v3: ``None`` = locked (every approval before v3); "hint" = preferred rendering only.
     tier: Literal["hint"] | None = None
+    # D-047: other acceptable spellings of an approved name; accepted by the check, never prompted.
+    accepted_variants: list[str] = []
 
     @model_serializer(mode="wrap")
     def _serialise(self, handler: SerializerFunctionWrapHandler) -> dict:
-        return _omit_unset(handler(self), ("tier",))
+        data = _omit_unset(handler(self), ("tier",))
+        if not data.get("accepted_variants"):
+            data.pop("accepted_variants", None)     # absent while empty: older artifacts keep their bytes
+        return data
 
     @property
     def effective_tier(self) -> Tier | None:
@@ -213,6 +218,12 @@ class BookTermbase(_Model):
         """Approved hint entries of any kind: UnitTranslator(hints=...), never checked strictly."""
         return self._approved(TERM_KINDS | ENTITY_KINDS, tier="hint")
 
+    def entity_variants(self) -> dict[str, tuple[str, ...]]:
+        """Accepted spellings of approved locked names (D-047): widen the check, never the prompt."""
+        return {r.source: tuple(r.accepted_variants) for r in self.entries
+                if r.status == "approved" and r.approved_by and r.target and r.kind in ENTITY_KINDS
+                and r.effective_tier == "locked" and r.accepted_variants}
+
     def forbidden_variants(self) -> dict[str, tuple[str, ...]]:
         return {r.source: tuple(r.forbidden_variants) for r in self.entries
                 if r.status == "approved" and r.effective_tier == "locked" and r.forbidden_variants}
@@ -236,7 +247,8 @@ class BookTermbase(_Model):
     def approve(self, source: str, target: str, reviewer: str, *, replace: bool = False,
                 forbidden_variants: Sequence[str] = (), forbid_other_proposals: bool = False,
                 allow_shared_target: bool = False, do_not_translate: bool = False,
-                tier: str = "locked", now: datetime | None = None) -> TermRecord:
+                tier: str = "locked", accepted_variants: Sequence[str] = (),
+                now: datetime | None = None) -> TermRecord:
         """Approve ``source`` as a ``locked`` (default) or ``hint`` entry; noise is ``reject``ed."""
         reviewer = _check_reviewer(reviewer)
         if tier not in APPROVAL_TIERS:
@@ -262,6 +274,17 @@ class BookTermbase(_Model):
         variants = list(dict.fromkeys(variants))
         if target_key(target) in {target_key(v) for v in variants}:
             raise TermbaseError("the approved target is one of its forbidden variants")
+        accepted = list(dict.fromkeys(_WS.sub(" ", unicodedata.normalize("NFC", v)).strip()
+                                      for v in accepted_variants if v.strip()))
+        if accepted:
+            if record.kind not in ENTITY_KINDS or tier != "locked":
+                raise TermbaseError("accepted variants are for locked names (people, places, organisations, works)")
+            if any(_LATIN.search(v) for v in accepted):
+                raise TermbaseError("an accepted variant contains Latin letters")
+            if target_key(target) in {target_key(v) for v in accepted}:
+                raise TermbaseError("an accepted variant repeats the approved target")
+            if {target_key(v) for v in accepted} & {target_key(v) for v in variants}:
+                raise TermbaseError("an accepted variant is also a forbidden variant")
         if not allow_shared_target:
             for other in self.entries:
                 if (other is not record and other.status == "approved" and other.target
@@ -277,6 +300,7 @@ class BookTermbase(_Model):
         record.approved_by = reviewer
         record.approved_at = now or _now()
         record.tier = "hint" if tier == "hint" else None
+        record.accepted_variants = accepted
         record.rejected_by = record.rejected_at = record.rejection_reason = None
         return record
 
@@ -288,6 +312,7 @@ class BookTermbase(_Model):
         record.approved_by = None
         record.approved_at = None
         record.tier = None
+        record.accepted_variants = []
         record.rejected_by = reviewer
         record.rejected_at = now or _now()
         record.rejection_reason = reason.strip() or "rejected"
@@ -325,7 +350,7 @@ class BookTermbase(_Model):
                               definition_en=r.candidate.definition_context or r.source,
                               forbidden_variants_ar=list(r.forbidden_variants),
                               do_not_translate=r.do_not_translate, approved_by=r.approved_by,
-                              tier=r.effective_tier)
+                              tier=r.effective_tier, accepted_variants_ar=list(r.accepted_variants))
                 for r in self.entries
                 if r.status == "approved" and r.target and r.kind in TERM_KINDS]
 

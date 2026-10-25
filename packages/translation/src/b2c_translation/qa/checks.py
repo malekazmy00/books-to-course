@@ -728,6 +728,11 @@ def _name_spans(source: str, name: str) -> list[tuple[int, int]]:
     return sorted(set(spans))
 
 
+def names_in(source: str, table: Mapping[str, str]) -> dict[str, str]:
+    """The entries of a name table that occur in ``source`` as names (see ``_name_spans``)."""
+    return {name: target for name, target in table.items() if _name_spans(source, name)}
+
+
 def _kept_in_source_spelling(target: str, name: str) -> bool:
     pattern = _term_pattern(name, flags=0)
     return pattern is not None and pattern.search(target) is not None
@@ -748,7 +753,7 @@ def named_entity(ctx: CheckContext) -> list[QAIssue]:
         if ctx.unit.kind in CITATION_KINDS and _kept_in_source_spelling(ctx.target, name):
             continue
         expected = ctx.entities[name]
-        if not contains_name(ctx.target, expected, name):
+        if not any(contains_name(ctx.target, form, name) for form in (expected, *ctx.entity_variants.get(name, ()))):
             issues.append(_issue("named_entity", "named_entity", "major", term=name, expected=expected))
     return issues
 
@@ -899,7 +904,7 @@ def run_checks(ctx: CheckContext, checks: Iterable[RegisteredCheck] = DEFAULT_CH
 
 
 __all__ = ["AR_NEGATION_CUES", "DEFAULT_CHECKS", "LENGTH_RATIO_BOUNDS", "RegisteredCheck", "brackets",
-           "CITATION_KINDS", "RULE_VERBATIM_KINDS", "contains_name", "contains_term", "contains_term_inflected", "count_source_sentences", "count_target_sentences", "empty_target",
+           "CITATION_KINDS", "RULE_VERBATIM_KINDS", "contains_name", "contains_term", "names_in", "contains_term_inflected", "count_source_sentences", "count_target_sentences", "empty_target",
            "footnote_markers", "foreign_script", "latin_not_in_source", "leakage", "length_ratio",
            "named_entity", "normalize_digits", "numbers", "polarity", "quotes", "repetition", "run_checks",
            "sentence_alignment", "strip_original_glosses", "terminology", "terminology_hint", "untranslated_english"]

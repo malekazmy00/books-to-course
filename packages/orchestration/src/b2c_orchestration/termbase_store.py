@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 import threading
 from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
@@ -67,6 +67,9 @@ _DDL = (
     )""",
     # v3 (D-039): NULL = locked (every row decided before v3), 'hint' = preferred rendering only.
     """ALTER TABLE book_termbase_entries ADD COLUMN IF NOT EXISTS tier text CHECK (tier IN ('hint'))""",
+    # D-047: accepted spellings of an approved name (empty for every row decided before).
+    """ALTER TABLE book_termbase_entries
+        ADD COLUMN IF NOT EXISTS accepted_variants_json jsonb NOT NULL DEFAULT '[]'::jsonb""",
 )
 
 _SCOPE = "course_id = %s AND book_id = %s AND source_language = %s AND target_language = %s"
@@ -84,14 +87,14 @@ _MARK_ABSENT = f"""UPDATE book_termbase_entries SET present = false, updated_at 
     WHERE {_SCOPE} AND present AND NOT (source_key = ANY(%s))"""
 _COLUMNS = """course_id, source_key, source, kind, frequency, candidate_json, proposals_json, present, status,
     target, forbidden_variants_json, allow_shared_target, do_not_translate, reviewer, decided_at,
-    rejection_reason, extracted_at, updated_at, tier"""
+    rejection_reason, extracted_at, updated_at, tier, accepted_variants_json"""
 _SELECT_SCOPE = f"SELECT {_COLUMNS} FROM book_termbase_entries WHERE {_SCOPE} ORDER BY source_key"
 _SELECT_BOOK_APPROVED = f"""SELECT {_COLUMNS} FROM book_termbase_entries
     WHERE book_id = %s AND source_language = %s AND target_language = %s AND status = 'approved'
     ORDER BY course_id, source_key"""
 _DECIDE = f"""UPDATE book_termbase_entries SET status = %s, target = %s, forbidden_variants_json = %s::jsonb,
     allow_shared_target = %s, do_not_translate = %s, reviewer = %s, decided_at = %s, rejection_reason = %s,
-    updated_at = %s, tier = %s WHERE {_SCOPE} AND source_key = %s"""
+    updated_at = %s, tier = %s, accepted_variants_json = %s::jsonb WHERE {_SCOPE} AND source_key = %s"""
 _BUILD_UPSERT = """INSERT INTO book_termbase_builds
     (course_id, book_id, source_language, target_language, artifact_ref_json, termbase_sha256, entry_count,
      built_at) VALUES (%s, %s, %s, %s, %s::jsonb, %s, %s, %s)
@@ -144,6 +147,7 @@ class StoredTermEntry:
     extracted_at: datetime
     updated_at: datetime
     tier: str | None = None  # v3: None = locked, "hint"
+    accepted_variants: list[str] = field(default_factory=list)  # D-047
 
     def record(self) -> TermRecord:
         approved = self.status == "approved"
@@ -157,7 +161,8 @@ class StoredTermEntry:
                           rejected_by=self.reviewer if rejected else None,
                           rejected_at=self.decided_at if rejected else None,
                           rejection_reason=self.rejection_reason if rejected else None,
-                          tier="hint" if approved and self.tier == "hint" else None)
+                          tier="hint" if approved and self.tier == "hint" else None,
+                          accepted_variants=list(self.accepted_variants) if approved else [])
 
     def as_json(self) -> dict[str, Any]:
         return {"source": self.source, "source_key": self.source_key, "kind": self.kind,
@@ -166,6 +171,7 @@ class StoredTermEntry:
                 "decided_at": None if self.decided_at is None else self.decided_at.isoformat(),
                 "rejection_reason": self.rejection_reason, "allow_shared_target": self.allow_shared_target,
                 "forbidden_variants": list(self.forbidden_variants),
+                "accepted_variants": list(self.accepted_variants),
                 "definition_context": self.candidate.definition_context,
                 "expansion": self.candidate.expansion, "unit_ids": list(self.candidate.unit_ids),
                 "signals": list(self.candidate.signals),
@@ -228,7 +234,7 @@ class TermbaseStore:
     @staticmethod
     def _entry(row: tuple) -> StoredTermEntry:
         (course_id, key, source, kind, frequency, candidate, proposals, present, status, target, forbidden,
-         allow_shared, dnt, reviewer, decided_at, reason, extracted_at, updated_at, tier) = row
+         allow_shared, dnt, reviewer, decided_at, reason, extracted_at, updated_at, tier, accepted) = row
         return StoredTermEntry(
             course_id=course_id, source_key=key, source=source, kind=kind, frequency=int(frequency),
             candidate=TermCandidate.model_validate(_json(candidate)),
@@ -236,7 +242,7 @@ class TermbaseStore:
             status=status, target=target, forbidden_variants=list(_json(forbidden) or []),
             allow_shared_target=bool(allow_shared), do_not_translate=bool(dnt), reviewer=reviewer,
             decided_at=_utc(decided_at), rejection_reason=reason, extracted_at=_utc(extracted_at),
-            updated_at=_utc(updated_at), tier=tier)
+            updated_at=_utc(updated_at), tier=tier, accepted_variants=list(_json(accepted) or []))
 
     # ------------------------------------------------------------------ extraction
     def merge_extraction(self, scope: TermbaseScope, termbase: BookTermbase) -> MergeOutcome:
@@ -301,6 +307,7 @@ class TermbaseStore:
                 r.status, r.target if r.status == "approved" else None,
                 json.dumps(list(r.forbidden_variants), ensure_ascii=False), r.allow_shared_target,
                 r.do_not_translate, reviewer, at, reason, now, r.tier if r.status == "approved" else None,
+                json.dumps(list(r.accepted_variants) if r.status == "approved" else [], ensure_ascii=False),
                 *scope.params(), source_key(r.source)))
         return written
 

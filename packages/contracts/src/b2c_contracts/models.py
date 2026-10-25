@@ -15,7 +15,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION = "1.11.0"
+SCHEMA_VERSION = "1.12.0"
 
 
 class Contract(BaseModel):
@@ -722,7 +722,8 @@ class CourseOutlineV2(Contract):
     modules: list[ModuleV2] = Field(min_length=1)
     excluded_ranges: list[ExcludedRange] = []
     requires_review: Literal[True] = True  # always a draft; acceptance lives in the registry (§7)
-    # 1.11.0 (D-037): episode 1 is the generated course introduction; book lessons then start at 2
+    # 1.11.0 (D-037) / 1.12.0 (D-038): episode 00 is the generated course introduction; book lessons
+    # are episodes 1..n (files named with zero-padded numbers: 00, 01, 02, ... for MP3 players)
     course_intro_episode: bool = False
 
     @property
@@ -745,9 +746,8 @@ class CourseOutlineV2(Contract):
         if len(set(ids)) != len(ids):
             raise ValueError("module and lesson ids must be unique")
         episodes = [lesson.episode for lesson in self.lessons]
-        first = 2 if self.course_intro_episode else 1
-        if any(e is not None for e in episodes) and episodes != list(range(first, first + len(episodes))):
-            raise ValueError(f"episode numbers must be {first}..n over all lessons in reading order (or absent)")
+        if any(e is not None for e in episodes) and episodes != list(range(1, len(episodes) + 1)):
+            raise ValueError("episode numbers must be 1..n over all lessons in reading order (or absent)")
         spans: list[tuple[int, int, str]] = []
         previous_end = -1
         seen: set[str] = set()

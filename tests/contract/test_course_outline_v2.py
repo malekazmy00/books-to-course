@@ -213,15 +213,13 @@ def test_front_matter_lessons_carry_audio_adaptation_flags_inside_the_lesson(): 
         c.AudioAdaptation(start_block=bid(3), end_block=bid(4), reason="boring", note="x")
 
 
-def test_episode_one_can_be_reserved_for_the_course_introduction():  # D-037, 1.11.0
-    ok = outline([module("m", [lesson("m.a", 0, 4, episode=2, episode_title="A"),
-                               lesson("m.b", 5, 9, order=2, episode=3, episode_title="B")])],
+def test_episode_00_is_the_course_introduction_and_book_lessons_start_at_1():  # D-038, 1.12.0
+    ok = outline([module("m", [lesson("m.a", 0, 4, episode=1, episode_title="A"),
+                               lesson("m.b", 5, 9, order=2, episode=2, episode_title="B")])],
                  course_intro_episode=True)
-    assert [l.episode for l in ok.lessons] == [2, 3]
-    with pytest.raises(ValidationError, match="episode"):  # with the intro reserved, book lessons start at 2
-        outline([module("m", [lesson("m.a", 0, 4, episode=1, episode_title="A"),
-                              lesson("m.b", 5, 9, order=2, episode=2, episode_title="B")])],
-                course_intro_episode=True)
+    assert ok.course_intro_episode and [l.episode for l in ok.lessons] == [1, 2]
+    with pytest.raises(ValidationError):  # 0 belongs to the generated introduction, never to a book lesson
+        outline([module("m", [lesson("m.a", 0, 4, episode=0, episode_title="A")])], course_intro_episode=True)
 
 
 def test_lessons_carry_episode_numbers_in_book_order():  # D-036 (3), 1.9.0

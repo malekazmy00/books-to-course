@@ -43,7 +43,7 @@ from .titles import TitleVocab, clean_title, english_zipf
 
 BUILDER_NAME = "b2c-outline-v2"
 BUILDER_VERSION = "5"  # 2: figure descriptions in lessons; 3: front-matter lessons; 4: episodes (D-036);
-# 5: episode 1 = course introduction, acknowledgments summarised there (D-037)
+# 5: course introduction episode (00) before the book, acknowledgments summarised there (D-037/D-038)
 # D-036 (2): front matter taught as lessons of the opening module, before chapter 1
 DEFAULT_FRONT_LESSONS = frozenset({"foreword", "preface"})  # acknowledgments -> course intro (D-037)
 FRONT_MODULE_TITLE = "Introduction to the Book"  # "مقدمة الكتاب" once translated (D-035)
@@ -51,7 +51,7 @@ _LEGAL_HEADINGS = frozenset({"disclaimer", "legalnotice", "copyright", "permissi
 _NOTE_HEADINGS = frozenset({"note", "notes", "references", "sources"})
 LONG_LIST_ITEMS = 8  # a run of this many list items is flagged for listening
 _ADAPTATION_NOTES = {
-    "acknowledgements": "thanks and names: not narrated here - summarised briefly in episode 1, the course "
+    "acknowledgements": "thanks and names: not narrated here - summarised briefly in episode 00, the course "
                         "introduction (D-037); the original text stays in the lesson",
     "table": "table: read it as sentences or summarise it row by row; the original table stays in the lesson",
     "long_list": "long list: group or summarise it for listening; the original list stays in the lesson",
@@ -713,10 +713,10 @@ def episode_title(text: str) -> str:
     return out or text.strip()
 
 
-def _number_episodes(modules: list[ModuleV2], *, first: int = 2) -> None:
-    """Every lesson is an episode (D-036 (3)) in book order, with a title for audio. Episode 1 is the
-    generated course introduction (D-037), so book lessons start at ``first`` = 2."""
-    k = first - 1
+def _number_episodes(modules: list[ModuleV2]) -> None:
+    """Every lesson is an episode (D-036 (3)) 1..n in book order, with a title for audio. Episode 00 is
+    the generated course introduction (D-037/D-038)."""
+    k = 0
     for m_i, m in enumerate(modules):
         chapter = episode_title(m.display_title)
         lessons = []

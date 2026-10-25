@@ -159,7 +159,7 @@ def test_acknowledgments_inside_the_preface_stay_but_are_not_narrated_there():  
             para(3, 900)]
     o = build(book(rows))
     [ack] = [a for a in o.modules[0].lessons[0].audio_adaptations if a.reason == "acknowledgements"]
-    assert "episode 1" in ack.note and "course introduction" in ack.note
+    assert "episode 00" in ack.note and "course introduction" in ack.note
 
 
 def test_long_lists_in_front_matter_are_marked_and_kept():
@@ -315,17 +315,17 @@ def test_v1_projection_of_a_built_outline():
 # ----------------------------------------------------------------------------- episodes (D-036 (3))
 def test_every_lesson_is_an_episode_numbered_in_book_order_with_a_title_for_audio():
     o = build(sat_like())
-    # episode 1 is the generated course introduction (D-037): book lessons start at 2
+    # episode 00 is the generated course introduction (D-037/D-038): book lessons are 1..n
     assert o.course_intro_episode is True
     assert [(l.episode, l.episode_title) for l in o.lessons] == [
-        (2, "Preface"), (3, "Getting Organized"), (4, "Sorting"), (5, "Ranking, Scoring, and Prioritizing"),
-        (6, "Simple Brainstorming"), (7, "Cluster Brainstorming")]
+        (1, "Preface"), (2, "Getting Organized"), (3, "Sorting"), (4, "Ranking, Scoring, and Prioritizing"),
+        (5, "Simple Brainstorming"), (6, "Cluster Brainstorming")]
     g = build(gramsci_like())
     assert [l.episode_title for l in g.lessons] == [
         "Introduction", "Gramsci: Lodestar of Renewal", "Critical Approaches",
         "The Originality of the Living Tradition", "Readings of Gramsci",
         "The Originality of the Living Tradition: Conclusion"]
-    assert [l.episode for l in g.lessons] == list(range(2, 8))
+    assert [l.episode for l in g.lessons] == list(range(1, 7))
 
 
 def test_episode_numbers_are_stable_across_reparse():

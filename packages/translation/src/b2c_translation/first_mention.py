@@ -7,8 +7,9 @@ each term's Arabic form becomes ``المقابل العربي (original)``.
 
 * Matching follows ``qa.checks.contains_term``: و/ف, ب/ل/ك and the article are allowed on each
   word (``وبالهيمنة`` is a mention of ``الهيمنة``).
-* Idempotent: a term already followed by its original in brackets anywhere in the text (inserted
-  earlier, or a gloss the engine wrote) counts as done; nothing is inserted twice.
+* Idempotent: when the first occurrence is already followed by its original in brackets (inserted
+  earlier, or a gloss the engine wrote) nothing is inserted; later glosses (e.g. the key-terms
+  reminder, which always shows the original) do not count as the first mention.
 * A term whose target form has Latin letters (do-not-translate acronyms) needs no gloss.
 
 QA checks run on text with these glosses only with an explicit whitelist
@@ -54,15 +55,6 @@ def find_term_span(text: str, term: str) -> tuple[int, int] | None:
     return None
 
 
-def _already_glossed(text: str, term: FirstMentionTerm) -> bool:
-    for m in _gloss_re(term.original).finditer(text):
-        before = text[:m.start()]
-        span = find_term_span(before[-max(60, len(term.target) * 3):], term.target)
-        if span is not None and not before[-max(60, len(term.target) * 3):][span[1]:].strip():
-            return True
-    return False
-
-
 def insert_first_mentions(texts: Sequence[str], terms: Iterable[FirstMentionTerm]) -> FirstMentionResult:
     out = list(texts)
     inserted: list[list[str]] = [[] for _ in out]
@@ -70,12 +62,12 @@ def insert_first_mentions(texts: Sequence[str], terms: Iterable[FirstMentionTerm
     for term in terms:
         if not term.target.strip() or _LATIN.search(term.target):
             continue
-        if any(_already_glossed(t, term) for t in out):
-            continue
         for i, text in enumerate(out):
             span = find_term_span(text, term.target)
             if span is None:
                 continue
+            if _gloss_re(term.original).match(text, span[1]):
+                break  # already glossed at its first mention (inserted earlier, or the engine's own gloss)
             out[i] = f"{text[:span[1]]} ({term.original}){text[span[1]:]}"
             inserted[i].append(term.original)
             break

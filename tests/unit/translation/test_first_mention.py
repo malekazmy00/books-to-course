@@ -63,3 +63,8 @@ def test_qa_whitelist_for_inserted_originals():
 
 def test_strip_original_glosses():
     assert strip_original_glosses("الهيمنة (hegemony) و(X)", {"hegemony"}) == "الهيمنة و(X)"
+
+
+def test_a_later_gloss_is_not_the_first_mention():
+    out = insert_first_mentions(["الهيمنة في النص.", "الهيمنة (hegemony): تعريف."], [HEG])
+    assert out.texts == ["الهيمنة (hegemony) في النص.", "الهيمنة (hegemony): تعريف."]

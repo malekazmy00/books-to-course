@@ -1,6 +1,6 @@
 # 02 — العقود بين الطبقات (Layer Contracts)
 
-المصدر الوحيد للحقيقة هو `packages/contracts/src/b2c_contracts/models.py` (SCHEMA_VERSION 1.12.0). سجل الإصدارات: 1.3.0 أضاف قبول المخرجات (R1، §7)، و1.4.0 أضاف ParsedBook v2 (R3، §8) بعد دمج العملين، و1.5.0 أضاف CourseOutline v2 (R4، §9)، و1.5.1 غيّر دلالة قبوله: بوابات نظامية لا قرار بشري (قرار المالك 2026-10-25، لا يوجد مراجع بشري في المنتج).، و1.6.0 دمج ذلك مع عقود الفهرسة v2 (R5، §10): provenance الـ chunk وتقرير بوابة الفهرسة وحكم الربط المساند.، و1.7.0 أضاف نص الكلام v2 (R7، §11): `SpeechSegment` و`SpeechExclusion` و`SpeechTextDocument` (كان 1.5.0 في فرعه).. وفي فرع المخطط بالتوازي (D-036): أوصاف الأشكال داخل الدروس `LessonV2.extra_spans`/`block_roles`، والمقدمة دروسًا `front_matter`/`audio_adaptations`، وكل درس حلقة `episode`/`episode_title` (§9؛ كانت 1.7.0–1.9.0 في فرعه)؛ و1.10.0 دمج ذلك مع نص الكلام v2، و1.11.0 (D-037) أضاف `CourseOutlineV2.course_intro_episode`: الحلقة 1 مقدمة الكورس المولَّدة، فتبدأ حلقات الكتاب من 2، و1.12.0 (D-038) جعل مقدمة الكورس الحلقة 00، فتعود حلقات الكتاب 1..n.
+المصدر الوحيد للحقيقة هو `packages/contracts/src/b2c_contracts/models.py` (SCHEMA_VERSION 1.13.0). سجل الإصدارات: 1.3.0 أضاف قبول المخرجات (R1، §7)، و1.4.0 أضاف ParsedBook v2 (R3، §8) بعد دمج العملين، و1.5.0 أضاف CourseOutline v2 (R4، §9)، و1.5.1 غيّر دلالة قبوله: بوابات نظامية لا قرار بشري (قرار المالك 2026-10-25، لا يوجد مراجع بشري في المنتج).، و1.6.0 دمج ذلك مع عقود الفهرسة v2 (R5، §10): provenance الـ chunk وتقرير بوابة الفهرسة وحكم الربط المساند.، و1.7.0 أضاف نص الكلام v2 (R7، §11): `SpeechSegment` و`SpeechExclusion` و`SpeechTextDocument` (كان 1.5.0 في فرعه).. وفي فرع المخطط بالتوازي (D-036): أوصاف الأشكال داخل الدروس `LessonV2.extra_spans`/`block_roles`، والمقدمة دروسًا `front_matter`/`audio_adaptations`، وكل درس حلقة `episode`/`episode_title` (§9؛ كانت 1.7.0–1.9.0 في فرعه)؛ و1.10.0 دمج ذلك مع نص الكلام v2، و1.11.0 (D-037) أضاف `CourseOutlineV2.course_intro_episode`: الحلقة 1 مقدمة الكورس المولَّدة، فتبدأ حلقات الكتاب من 2، و1.12.0 (D-038) جعل مقدمة الكورس الحلقة 00، فتعود حلقات الكتاب 1..n، و1.13.0 أضاف بحث المعرفة وطبقة المفاهيم (D-032..D-035، §12): `KnowledgeDossier` و`ConceptLayer` (كان 1.7.0 في فرعه).
 الوثيقة دي بتشرح **إزاي** كل طبقة بتسلّم للطبقة اللي بعدها. والتعريفات نفسها موجودة في الكود.
 
 > الكود ده اتشغّل واتختبر: `tests/contract/test_contracts_invariants.py` ونتيجته 8 passed. الاختبارات دي بتتأكد من القيود الأساسية (negative controls).
@@ -238,3 +238,31 @@ class GraphRetriever(Protocol):
 
 الثوابت التي يفرضها العقد: segment واحد على الأقل، و`segment_id` فريد، و`seq` متصل من 0، و`spoken_text` غير فارغ، ولا تكون وحدة منطوقة ومستبعدة معًا. أما شروط المحتوى (0 أرقام خام، و0 `[n]`، و0 حروف لاتينية، و0 روابط في `spoken_text`) فتفرضها بوابة `speech.text-frontend` الحتمية لا العقد، لأنها سياسة قابلة للتغيير.
 
+## 12. بحث المعرفة وطبقة المفاهيم (SCHEMA 1.13.0؛ D-032..D-035)
+المرجع: `docs/proposals/2026-10-25-learning-companion.md` §2 و§6 و§10–§12. المرحلتان تُنتجان **بالإنجليزية** من الكتاب الإنجليزي، ثم تُترجمان لاحقًا بمسار الترجمة وقاموسه. الأصوات الثلاثة منفصلة في العقد: صوت المؤلف (مواضع الكتاب `BookSpan`)، وصوت الكورس (`gloss`)، والمصادر الخارجية (ادعاءات الملف بمصدرها).
+
+### 12.1 `KnowledgeDossier` (المرحلة `knowledge-research`)
+| الحقل | المعنى |
+|---|---|
+| `ResearchSource` | وثيقة مجلوبة: `source_id` (`src_` + 16 hex)، و`url` (https فقط)، و`provider` (`openalex`، `wikidata`، `wikipedia`، `openlibrary`، `web:<engine>`)، و`tier` (1 أكاديمي/موسوعي/ناشر، 2 مراجعات وحوارات منشورة، 3 مدونات)، و`fetched_at` (UTC)، و`content_sha256` للنص المنقّى، و`flags` (مثل `injection_removed:N`) |
+| `Evidence` | مقتطف حرفي (`quote`) من مصدر، مع نسخة من `url` و`tier` و`fetched_at`، وحكمَي المدقق: `quote_found` (المقتطف موجود في النص المنقّى بعد توحيد المسافات وعلامات الاقتباس) و`supports` (محكّم من عائلة نماذج مختلفة) |
+| `DossierClaim` | `section` ∈ `book_card`/`author`/`context`/`reception`/`concept_in_field`/`further_reading`، و`kind` ‏(`fact`/`viewpoint`)، و`status` ‏(`verified`/`attributed`/`rejected`)، و`attributed_to`، و`concept` (لملاحظات المفهوم في مجاله)، و`conflict_group` |
+| `FurtherReading` / `RejectedItem` | قراءات تالية بمصدرها؛ وما رُفض (سياسة النطاق، الجلب، تعليمات محقونة أُزيلت، ادعاء فشل التحقق) |
+| `extractor` / `judge` + `*_family` | هوية المستخرج والمحكّم وعائلتاهما |
+
+ثوابت يفرضها العقد: الادعاء المنشور (غير `rejected`) كل أدلته `quote_found` و`supports=true`؛ و`verified` حقيقة فقط، ولها مصدر من الدرجة الأولى أو مصدران مختلفان؛ والرأي (`viewpoint`) والادعاء المتعارض (`conflict_group`) لا يكونان `verified` أبدًا بل `attributed` باسم قائله؛ و`rejected` يحتاج سببًا؛ وكل دليل يشير إلى مصدر مدرج بنفس `url` و`tier` و`fetched_at`؛ وعائلة المحكّم ≠ عائلة المستخرج؛ ومعرّفات المصادر والادعاءات فريدة. ‏`published()` يعيد ما يُعرض فقط.
+
+### 12.2 `ConceptLayer` (المرحلة `concept-layer`)
+| الحقل | المعنى |
+|---|---|
+| `BookSpan` | `block_id` و`pages` و`quote` حرفي من نص الـ block (يتحقق المدقق في `b2c_concepts.grounding` من وجوده) |
+| `ConceptEntry` | `term` و`kind` ‏(`term`/`acronym`)، و`termbase_status` ‏(`approved` من القاموس المعتمد، أو `candidate` إن لم يوجد قاموس معتمد)، و`introduced_at` (أول ورود في نص الدروس)، و`first_lesson_id`، و`occurrences`، و`author_definition` (مواضع + `gloss` بصوت الكورس)، و`relations`، و`novelty` + `external_notes` |
+| `ConceptRelation` | `prerequisite`/`related`/`part_of`/`contrasts_with` نحو مفهوم آخر في الطبقة، بدليل من الكتاب (`evidence ≥ 1`) |
+| `ExternalConceptNote` | `voice="external"` دائمًا: ادعاء منشور من الملف (`claim_id` + روابط)؛ لا يُعرض بصوت المؤلف |
+| `LessonConceptList` | لكل درس: المفاهيم التي يرد أول ذكر لها **في هذا الدرس** بترتيب القراءة (لـ «المصطلح بالأصل عند أول ذكر في كل درس») |
+
+ثوابت يفرضها العقد: كل تعريف وعلاقة لهما موضع واحد على الأقل؛ وأهداف العلاقات موجودة وليست المفهوم نفسه؛ ورسم المتطلبات السابقة بلا دورات (`prerequisite_cycle`)؛ و`novelty` غير `unknown` يحتاج ملاحظة خارجية من الملف (لا ادعاء جِدّة بلا مصدر)؛ والمفهوم يُذكر أولًا مرة واحدة في الدرس ويشير إلى مفهوم معروف؛ والمعرّفات والمصطلحات (بلا حساسية لحالة الأحرف) فريدة.
+
+### 12.3 القبول (§7)
+- `knowledge-research`: بوابتان نظاميتان مطلوبتان، `knowledge.citations` (`semantic`: نسبة دعم الإسناد الخام، وصحة كل ادعاء منشور، وحد أدنى من الادعاءات المنشورة) و`knowledge.tier-coverage` (`deterministic`: بطاقة الكتاب والمؤلف مسنودتان بمصدر من الدرجة الأولى، وحصة الادعاءات المسنودة بالدرجة الثالثة وحدها). العتبات في `b2c_research.gates`.
+- `concept-layer`: بوابتان `concepts.grounding` (كل موضع لكل عبارة بصوت المؤلف موجود حرفيًا في الكتاب المحلَّل، بإعادة الفحص عند البوابة) و`concepts.coverage` (تغطية مفاهيم القاموس المعتمد، أو المرشحين المختارين إن لم يوجد قاموس معتمد). العتبات في `b2c_concepts.gates`.

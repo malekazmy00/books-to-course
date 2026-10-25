@@ -1,0 +1,18 @@
+# b2c-searxng (compose profile knowledge-search). JSON output is required by
+# b2c_research.sources.web.SearxngSearch; the limiter is off because only the b2c worker
+# reaches this instance over the internal network (no published port).
+use_default_settings: true
+general:
+  instance_name: b2c-knowledge-search
+  enable_metrics: false
+server:
+  limiter: false
+  image_proxy: false
+  public_instance: false
+search:
+  safe_search: 1
+  default_lang: en
+  formats: [html, json]
+outgoing:
+  request_timeout: 6.0
+  max_request_timeout: 12.0

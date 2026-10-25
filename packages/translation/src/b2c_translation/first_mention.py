@@ -40,41 +40,75 @@ class FirstMentionResult:
     missing: list[str] = field(default_factory=list)          # terms never found in the texts
 
 
-def find_term_span(text: str, term: str) -> tuple[int, int] | None:
-    """Character span of the first occurrence of ``term`` in ``text`` (clitics/article allowed)."""
+def find_term_spans(text: str, term: str) -> list[tuple[int, int]]:
+    """Character spans of every occurrence of ``term`` in ``text`` (clitics/article allowed)."""
     term_tokens = [_strip_article(_ar_key(t)) for t in _WORD_RE.findall(term)]
     if not term_tokens:
-        return None
+        return []
     matches = list(_WORD_RE.finditer(text))
     keys = [_variants(_ar_key(m.group(0))) for m in matches]
     keys = [k | {_strip_article(v) for v in k} for k in keys]
     n = len(term_tokens)
-    for i in range(len(matches) - n + 1):
-        if all(term_tokens[k] in keys[i + k] for k in range(n)):
-            return matches[i].start(), matches[i + n - 1].end()
-    return None
+    return [(matches[i].start(), matches[i + n - 1].end()) for i in range(len(matches) - n + 1)
+            if all(term_tokens[k] in keys[i + k] for k in range(n))]
+
+
+def find_term_span(text: str, term: str) -> tuple[int, int] | None:
+    """Character span of the first occurrence of ``term`` in ``text`` (clitics/article allowed)."""
+    spans = find_term_spans(text, term)
+    return spans[0] if spans else None
+
+
+def _ordered(terms: Iterable[FirstMentionTerm]) -> list[FirstMentionTerm]:
+    """Longer terms first, so a term nested in a longer one ("التحليل المنظم" inside "تقنية التحليل
+    المنظم") is not glossed inside it."""
+    usable = [t for t in terms if t.target.strip() and not _LATIN.search(t.target)]
+    return sorted(usable, key=lambda t: (-len(_WORD_RE.findall(t.target)), -len(t.target), t.original.casefold()))
+
+
+def _walk(texts: list[str], terms: Iterable[FirstMentionTerm], *, insert: bool) -> tuple[list[list[str]], dict[str, str]]:
+    """Find each term's first mention outside a longer term's mention; insert the gloss when asked."""
+    protected: list[list[tuple[int, int]]] = [[] for _ in texts]
+    inserted: list[list[str]] = [[] for _ in texts]
+    state: dict[str, str] = {}
+    for term in _ordered(terms):
+        state[term.original] = "absent"
+        for i, text in enumerate(texts):
+            span = next((sp for sp in find_term_spans(text, term.target)
+                         if not any(a < sp[1] and sp[0] < b for a, b in protected[i])), None)
+            if span is None:
+                continue
+            gloss = _gloss_re(term.original).match(text, span[1])
+            if gloss is not None:  # already glossed at its first mention (earlier pass, or the engine's own)
+                protected[i].append((span[0], gloss.end()))
+                state[term.original] = "glossed"
+            elif insert:
+                add = f" ({term.original})"
+                texts[i] = f"{text[:span[1]]}{add}{text[span[1]:]}"
+                protected[i] = [(a + len(add), b + len(add)) if a >= span[1] else (a, b) for a, b in protected[i]]
+                protected[i].append((span[0], span[1] + len(add)))
+                inserted[i].append(term.original)
+                state[term.original] = "inserted"
+            else:
+                protected[i].append(span)
+                state[term.original] = "not_glossed"
+            break
+    return inserted, state
 
 
 def insert_first_mentions(texts: Sequence[str], terms: Iterable[FirstMentionTerm]) -> FirstMentionResult:
     out = list(texts)
-    inserted: list[list[str]] = [[] for _ in out]
-    missing: list[str] = []
-    for term in terms:
-        if not term.target.strip() or _LATIN.search(term.target):
-            continue
-        for i, text in enumerate(out):
-            span = find_term_span(text, term.target)
-            if span is None:
-                continue
-            if _gloss_re(term.original).match(text, span[1]):
-                break  # already glossed at its first mention (inserted earlier, or the engine's own gloss)
-            out[i] = f"{text[:span[1]]} ({term.original}){text[span[1]:]}"
-            inserted[i].append(term.original)
-            break
-        else:
-            missing.append(term.original)
-    return FirstMentionResult(texts=out, inserted=inserted, missing=missing)
+    terms = list(terms)
+    inserted, state = _walk(out, terms, insert=True)
+    return FirstMentionResult(texts=out, inserted=inserted,
+                              missing=[t.original for t in terms if state.get(t.original) == "absent"])
 
 
-__all__ = ["FirstMentionResult", "FirstMentionTerm", "find_term_span", "insert_first_mentions",
+def first_mention_status(texts: Sequence[str], terms: Iterable[FirstMentionTerm]) -> dict[str, str]:
+    """Per term: ``glossed`` (first mention carries the original), ``not_glossed`` or ``absent``."""
+    return _walk(list(texts), terms, insert=False)[1]
+
+
+__all__ = ["FirstMentionResult", "FirstMentionTerm", "find_term_span", "find_term_spans", "first_mention_status",
+           "insert_first_mentions",
            "strip_original_glosses"]

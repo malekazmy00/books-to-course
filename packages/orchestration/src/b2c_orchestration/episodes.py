@@ -49,7 +49,7 @@ with workflow.unsafe.imports_passed_through():
     from b2c_episodes.generate import (INTRO_PROMPT_VERSION, JUDGE_PROMPT_VERSION, LESSON_PROMPT_VERSION,
                                        RECAP_PROMPT_VERSION)
     from b2c_translation.book_pipeline import PipelineConfig, UnitTranslator
-    from b2c_translation.first_mention import FirstMentionTerm, find_term_span, insert_first_mentions
+    from b2c_translation.first_mention import FirstMentionTerm, first_mention_status, insert_first_mentions
     from b2c_translation.qa import CheckContext
     from b2c_translation.qa.checks import run_checks
     from b2c_translation.termbase import BookTermbase
@@ -66,7 +66,7 @@ AR_STAGE = "episode-script-ar"
 EN_ACTIVITY = "build_episode_script_en"
 AR_ACTIVITY = "translate_episode_script"
 WORKFLOW_NAME = "BuildEpisodeScriptsWorkflow"
-AR_VERSION = "episode-scripts-ar-2026-10-25.1"
+AR_VERSION = "episode-scripts-ar-2026-10-25.2"
 TRANSLATION_GATE_ID = "episodes.translation"
 FIRST_MENTION_GATE_ID = "episodes.first-mention"
 TRANSLATION_DEFINITION: dict[str, Any] = {"script_lines": "every line accepted (qa.policy)",
@@ -203,19 +203,10 @@ def evaluate_ar_script(script: EpisodeScript, *, units: Mapping[str, Translation
                                        "book_units_not_accepted": book_bad[:20], "missing_lines": missing[:20]},
                               definition=dict(TRANSLATION_DEFINITION))
     texts = [x.text for x in lines]
-    found = glossed = 0
-    not_glossed: list[str] = []
-    for term in terms:
-        for t in texts:
-            span = find_term_span(t, term.target)
-            if span is None:
-                continue
-            found += 1
-            if re.match(r"\s*\(\s*" + re.escape(term.original) + r"\s*\)", t[span[1]:], re.I):
-                glossed += 1
-            else:
-                not_glossed.append(term.original)
-            break
+    state = first_mention_status(texts, terms)
+    found = sum(1 for v in state.values() if v != "absent")
+    glossed = sum(1 for v in state.values() if v == "glossed")
+    not_glossed = [k for k, v in state.items() if v == "not_glossed"]
     again = insert_first_mentions(texts, terms)
     idempotent = again.texts == texts
     new_issues: list[str] = []

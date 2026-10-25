@@ -68,3 +68,17 @@ def test_strip_original_glosses():
 def test_a_later_gloss_is_not_the_first_mention():
     out = insert_first_mentions(["الهيمنة في النص.", "الهيمنة (hegemony): تعريف."], [HEG])
     assert out.texts == ["الهيمنة (hegemony) في النص.", "الهيمنة (hegemony): تعريف."]
+
+
+def test_nested_terms_longest_first_and_idempotent():
+    from b2c_translation.first_mention import first_mention_status
+    sat = FirstMentionTerm(original="Structured Analytic Technique", target="تقنية التحليل المنظم")
+    sa = FirstMentionTerm(original="structured analysis", target="التحليل المنظم")
+    texts = ["تقوم تقنية التحليل المنظم على خطوات.", "ويعني التحليل المنظم إظهار التفكير."]
+    out = insert_first_mentions(texts, [sa, sat])
+    assert out.texts == ["تقوم تقنية التحليل المنظم (Structured Analytic Technique) على خطوات.",
+                         "ويعني التحليل المنظم (structured analysis) إظهار التفكير."]
+    assert insert_first_mentions(out.texts, [sa, sat]).texts == out.texts
+    assert first_mention_status(out.texts, [sa, sat]) == {"Structured Analytic Technique": "glossed",
+                                                          "structured analysis": "glossed"}
+    assert first_mention_status(texts, [sa, sat])["structured analysis"] == "not_glossed"

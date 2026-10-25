@@ -74,12 +74,24 @@ def test_lettered_labels_and_prefixed_numbers_are_counted():
     assert counts(hyp)["labels H1 to H4"] == 4
 
 
-def test_a_run_of_letters_and_a_lettered_key_are_counted():
-    run = one("A B C D E F G H A Increased use of techniques + + C Availability of tools + D Generational change")
-    assert counts(run)["letters A to H"] == 8
+def test_a_lettered_key_is_counted_but_a_bare_run_of_letters_is_not():
+    # SAT fig087: OCR dropped «G» from the heading run «A B C D E F H» of a matrix whose rows go to «J»; a bare
+    # run of letters cannot show that it is complete, so it gets no count (found on SAT after the first tests)
+    run = one("A B C D E F H A Increased use of techniques + + C Availability of tools + J Lack of openness")
+    assert count_figure_elements(run) == []
     key = one("B C C A Key Drivers A. The role of neighboring states B. The capability of security forces "
               "C. The political environment")
     assert counts(key) == {"lettered items A to C": 3}
+
+
+def test_series_found_on_sat_glued_numbers_and_unnumbered_parts():
+    # added after the first SAT review: «Why2» is «Why 2» (fig035); «Baseline Scenario» beside «Scenario 1» and
+    # «Scenario 2» means more scenarios than numbers (fig060)
+    glued = one("Who 1 What 1 Why 1 Permutation 1 Why2 Permutation 2 Why3 Permutation 3")
+    assert counts(glued)["labels Why 1 to Why 3"] == 3 and counts(glued)["labels Permutation 1 to Permutation 3"] == 3
+    mixed = one("Scenario 1 More inclusive policies Baseline Scenario President under fire Scenario 2 "
+                "Junior officers stage a coup Wild-Card Scenario War breaks out")
+    assert count_figure_elements(mixed) == []
 
 
 def test_legend_entries_are_counted():
@@ -96,6 +108,8 @@ def test_a_two_by_two_matrix_named_by_the_evidence_has_four_quadrants():
               caption="Figure 9.6 A 2 × 2 Matrix of Alternative Futures")
     assert counts(fig)["quadrants"] == 4
     assert "quadrants" not in counts(one("Fully operational EFFECTIVENESS OF GOVERNMENT Robust STRENGTH Marginalized"))
+    # SAT fig014: a multiplication «2×2=4» in a scoring grid is not a 2 × 2 matrix
+    assert "quadrants" not in counts(one("Scores 3×8=24 2×2=4 2×3=6 1×6=6 weighted ranking of options"))
 
 
 def test_scrambled_text_gets_no_count():
@@ -122,6 +136,14 @@ def test_table_rows_named_columns_and_row_groups_are_counted():
     assert by["data rows"].count == 6          # the second header row is not a data row
     assert by["named columns"].count == 3       # the two label columns have no name
     assert by["row groups"].count == 2 and by["row groups"].items == ("Social change", "Economic factors")
+
+
+def test_a_merged_note_row_is_not_a_data_row():
+    # SAT fig032: the note under a cross-impact matrix is extracted as a row repeating one text in every cell
+    note = "Variable 2 has the greatest effect."
+    text = ("| | Variable 1 | Variable 2 |\n| --- | --- | --- |\n| Variable 1 | | + |\n| Variable 2 | - | |\n"
+            f"| {note} | {note} | {note} |")
+    assert counts(one(text, type_="table"))["data rows"] == 2
 
 
 def test_row_groups_are_not_counted_when_a_group_cell_is_empty():

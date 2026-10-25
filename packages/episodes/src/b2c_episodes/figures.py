@@ -45,8 +45,9 @@ from b2c_contracts import (EpisodeScript, EpisodeSection, FigureDescription,
 
 from .generate import ModelRole, parse_json_object
 
-FIGURE_PROMPT_VERSION = "figure-describe-v2"
-FIGURES_VERSION = "figure-descriptions-2026-10-25.3"  # .2: English check, empty form columns; .3: split packed lines
+FIGURE_PROMPT_VERSION = "figure-describe-v3"  # v3: element counts by code (D-049)
+FIGURES_VERSION = "figure-descriptions-2026-10-26.1"  # 10-25 .2: English check, empty form columns; .3: split
+# packed lines; 10-26 .1: element counts by code (D-049)
 SMALL_TABLE = {"max_rows": 8, "max_columns": 4, "max_cells": 24, "max_words": 160}
 MAX_LINES = 6
 MAX_LINE_WORDS = 60
@@ -69,7 +70,7 @@ Follow the image description guidelines of the DIAGRAM Center (NCAM):
 - Be objective: Do not interpret, judge or add knowledge; describe only what the evidence shows.
 - Describe the data and the relations, not colours or decoration unless they carry meaning.
 - Write out abbreviations and symbols as words.
-Use only numbers and names that appear in the evidence (the label, caption, figure text, table, paragraphs or printed description). Never invent a value, a count, a date or a name. Do not count the parts yourself: do not say "three columns", "four boxes" or "two groups" unless that number is written in the evidence; name the parts instead ("the columns are A, B and C"). If the figure text is too scrambled to read, describe only what the paragraphs and caption establish.
+Use only numbers and names that appear in the evidence (the label, caption, figure text, table, paragraphs or printed description). Never invent a value, a count, a date or a name. Do not count the parts yourself: do not say "three columns", "four boxes" or "two groups" unless that number is written in the evidence or given in "counts"; name the parts instead ("the columns are A, B and C"). "counts" lists the parts that the code counted in the figure's own text (for example {{"what": "questions", "count": 7}}): these counts are exact, so you may say them ("seven questions") when they help the listener, about what was counted and nothing else. If the figure text is too scrambled to read, describe only what the paragraphs and caption establish.
 Return ONLY one JSON object: {{"lines": ["sentence", "..."]}}"""
 
 TABLE_SUMMARY_SYSTEM_NOTE = (" This is a LARGE table that cannot be read row by row: summarise what it lists and "
@@ -105,6 +106,16 @@ class TableData:
         return "\n".join(" | ".join(r) for r in [self.header, *rows])
 
 
+@dataclass(frozen=True)
+class FigureCount:
+    """A number of parts the code counted in the figure's own text (D-049)."""
+    kind: str   # questions | labels | letters | lettered_items | numbered_items | legend | quadrants | data_rows |
+    #             named_columns | row_groups
+    what: str   # what was counted, as the model and the evidence see it («questions», «labels Option 1 to Option 3»)
+    count: int
+    items: tuple[str, ...] = ()
+
+
 @dataclass
 class PrintedDescription:
     block_ids: list[str]
@@ -124,6 +135,7 @@ class FigureCandidate:
     table: TableData | None = None
     referencing: list[FigureBlock] = field(default_factory=list)
     printed: list[PrintedDescription] = field(default_factory=list)
+    counts: list[FigureCount] = field(default_factory=list)   # by code (D-049), set by collect_figures
 
     @property
     def pages(self) -> list[int]:
@@ -134,12 +146,18 @@ class FigureCandidate:
         ids = [b.block_id for b in self.blocks] + ([self.caption_block.block_id] if self.caption_block else [])
         return list(dict.fromkeys(ids))
 
-    def evidence(self) -> str:
+    def source_evidence(self) -> str:
+        """What the book itself says: label, caption, figure text, table, referring paragraphs, printed description."""
         parts = [self.label or "", self.caption or "", self.figure_text]
         if self.table is not None:
             parts.append(self.table.text())
         parts += [b.text for b in self.referencing] + [p.text for p in self.printed]
         return "\n".join(p for p in parts if p)
+
+    def evidence(self) -> str:
+        """The book's evidence plus the element counts made by code (D-049): the gate accepts those counts."""
+        counted = [f"{k.what}: {k.count}." for k in self.counts]
+        return "\n".join([self.source_evidence(), *(["Counted by code:", *counted] if counted else [])])
 
 
 # ------------------------------------------------------------------ tables
@@ -201,6 +219,140 @@ def table_reading_lines(table: TableData) -> list[str]:
 
 def _sentence(text: str) -> str:
     return " ".join(text.split()).rstrip(" .")
+
+
+# ------------------------------------------------------------------ element counts (D-049)
+# DIAGRAM Center: say how many parts a figure has («a center circle and five smaller circles»). The model
+# miscounts, and the grounding gate refuses a count the evidence does not hold, so the code counts — from the
+# figure's own text and table, by the kind of structure it can read for sure. No rule fires on text it cannot
+# read for sure (a gap in a series, a question broken by OCR): no count is better than a wrong one.
+QUESTION_WORDS = frozenset({"who", "whom", "whose", "what", "which", "when", "where", "why", "how", "so", "is", "are",
+                            "was", "were", "do", "does", "did", "can", "could", "would", "will", "should", "shall",
+                            "has", "have", "had", "may", "might", "must"})
+MAX_QUESTION_WORDS = 30
+_LABEL_COLON = re.compile(r"^(?:(?P<title>.*?)\s)?(?P<label>[A-Z][A-Za-z]*(?: [A-Z][A-Za-z]*)?):\s+(?P<q>.+)$")
+_SERIES_NUMBER = re.compile(r"\b([A-Z][a-z]{2,})\s?(\d{1,2})\b(?![.,]\d|%)")   # «Why 1», «Why2»
+_SERIES_LETTER = re.compile(r"\b([A-Z][a-z]+)\s+([A-Z])\b(?![.'’]\w)")
+_PREFIXED = re.compile(r"\b([A-Z])(\d{1,2})\b(?![.,]\d)")
+_ITEM_LETTER = re.compile(r"(?:^|\s)([A-Z])\.\s+(?=[A-Z][a-z])")
+_ITEM_NUMBER = re.compile(r"(?:^|\s)(\d{1,2})\.\s+(?=[A-Z][a-z])")
+_LEGEND_KEY = re.compile(r"(?<![\w=×x*.])([A-Z0-9]{1,3})\s?=\s?(?=[A-Z][a-z])")
+_TWO_BY_TWO = re.compile(r"\b(?:2\s*[x×X]\s*2|2-by-2|2 by 2|two-by-two|two by two)\s+(?:matrix|grid|chart)\b", re.I)
+_NOT_SERIES = {"Figure", "Fig", "Table", "Page", "Exhibit", "Chart"}
+_LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+
+def _questions(text: str) -> FigureCount | None:
+    """A figure made only of questions (Who? Why? …, or «Motive: What …?» after a title)."""
+    text = " ".join(text.split())
+    if text.count("?") < 2 or not text.endswith("?"):
+        return None
+    items = []
+    for i, seg in enumerate(s.strip() for s in re.findall(r"[^?]+\?", text)):
+        m = _LABEL_COLON.match(seg)
+        question = seg
+        if m and (i == 0 or not m.group("title")):
+            question = m.group("q")
+        first = question.split()[0]
+        if not first[:1].isupper() or first.lower().strip("'\"“?") not in QUESTION_WORDS \
+                or len(question.split()) > MAX_QUESTION_WORDS:
+            return None
+        items.append(question)
+    return FigureCount("questions", "questions", len(items), tuple(items))
+
+
+def _complete(found: set[int], *, start: int = 1) -> int:
+    """N when the found values are exactly start..start+N-1 and N ≥ 2, else 0 (a gap: not sure)."""
+    n = len(found)
+    return n if n >= 2 and found == set(range(start, start + n)) else 0
+
+
+def _series(text: str) -> list[FigureCount]:
+    out: list[FigureCount] = []
+    numbered: dict[str, set[int]] = {}
+    for word, num in _SERIES_NUMBER.findall(text):
+        if word not in _NOT_SERIES:
+            numbered.setdefault(word, set()).add(int(num))
+    # a word that also labels a part without a number («Baseline Scenario» beside «Scenario 1») counts more
+    # parts than its numbers: not sure
+    for word, found in numbered.items():
+        if re.search(rf"\b{word}\b(?!\s?\d)", text):
+            continue
+        if n := _complete(found):
+            out.append(FigureCount("labels", f"labels {word} 1 to {word} {n}", n,
+                                   tuple(f"{word} {k}" for k in range(1, n + 1))))
+    lettered: dict[str, set[int]] = {}
+    for word, letter in _SERIES_LETTER.findall(text):
+        if word not in _NOT_SERIES:
+            lettered.setdefault(word, set()).add(_LETTERS.index(letter))
+    for word, found in lettered.items():
+        if re.search(rf"\b{word}\b(?!\s[A-Z]\b)", text):
+            continue
+        if n := _complete(found, start=0):
+            out.append(FigureCount("labels", f"labels {word} A to {word} {_LETTERS[n - 1]}", n,
+                                   tuple(f"{word} {_LETTERS[k]}" for k in range(n))))
+    prefixed: dict[str, set[int]] = {}
+    for letter, num in _PREFIXED.findall(text):
+        prefixed.setdefault(letter, set()).add(int(num))
+    for letter, found in prefixed.items():
+        if n := _complete(found):
+            out.append(FigureCount("labels", f"labels {letter}1 to {letter}{n}", n,
+                                   tuple(f"{letter}{k}" for k in range(1, n + 1))))
+    return out
+
+
+def _items(text: str) -> list[FigureCount]:
+    out: list[FigureCount] = []
+    letters = {_LETTERS.index(x) for x in _ITEM_LETTER.findall(text)}
+    if n := _complete(letters, start=0):
+        out.append(FigureCount("lettered_items", f"lettered items A to {_LETTERS[n - 1]}", n, tuple(_LETTERS[:n])))
+    numbers = {int(x) for x in _ITEM_NUMBER.findall(text)}
+    if n := _complete(numbers):
+        out.append(FigureCount("numbered_items", f"numbered items 1 to {n}", n,
+                               tuple(str(k) for k in range(1, n + 1))))
+    return out
+
+
+def _legend(text: str) -> FigureCount | None:
+    keys = list(dict.fromkeys(_LEGEND_KEY.findall(text)))
+    return FigureCount("legend", "legend entries", len(keys), tuple(keys)) if len(keys) >= 2 else None
+
+
+def _spanning(row: list[str]) -> bool:
+    """A merged row (a note under the table, a group heading): its first cell is repeated in another cell."""
+    cells = [c.strip() for c in row if c.strip()]
+    return len(cells) >= 2 and cells[0] in cells[1:]
+
+
+def _table_counts(table: TableData) -> list[FigureCount]:
+    """Data rows, named columns and row groups of a parsed table. Leading columns without a name are row
+    labels; leading rows whose row labels are empty are further header rows (e.g. «First Quarter»)."""
+    label_cols = next((j for j, h in enumerate(table.header) if h), table.columns)
+    rows = [r for r in table.rows if any(c.strip() for c in r) and not _spanning(r)]
+    if label_cols:
+        while rows and not any(c.strip() for c in rows[0][:label_cols]):
+            rows = rows[1:]
+    out = [FigureCount("data_rows", "data rows", len(rows))] if rows else []
+    named = table.header[label_cols:]
+    if named and all(named):
+        out.append(FigureCount("named_columns", "named columns", len(named), tuple(named)))
+    groups = list(dict.fromkeys(r[0].strip() for r in rows))
+    if label_cols >= 2 and rows and all(r[0].strip() for r in rows) and 2 <= len(groups) < len(rows):
+        out.append(FigureCount("row_groups", "row groups", len(groups), tuple(groups)))
+    return out
+
+
+def count_figure_elements(fig: FigureCandidate) -> list[FigureCount]:
+    """The element counts of one figure or table that the code is sure of (D-049); [] when none."""
+    text = fig.figure_text
+    out: list[FigureCount] = []
+    if fig.table is not None:
+        out += _table_counts(fig.table)
+    out += [k for k in (_questions(text), _legend(text)) if k is not None]
+    out += _series(text) + _items(text)
+    if _TWO_BY_TWO.search(fig.source_evidence()):
+        out.append(FigureCount("quadrants", "quadrants", 4))
+    return out
 
 
 # ------------------------------------------------------------------ inventory
@@ -296,6 +448,8 @@ def collect_figures(blocks: Sequence[FigureBlock], *, book_id: str) -> tuple[lis
         fig.figure_id = f"fig{n:03d}"
     _attach_references(figures, blocks, printed_ids)
     _attach_printed(figures, printed)
+    for fig in figures:
+        fig.counts = count_figure_elements(fig)
     return figures, skipped
 
 
@@ -442,7 +596,9 @@ def _payload(fig: FigureCandidate, image: bool) -> str:
                  "rows": fig.table.rows[:12]}
     data = {"kind": fig.kind, "label": fig.label, "caption": fig.caption, "figure_text": fig.figure_text[:1500],
             "table": table, "referring_paragraphs": [b.text[:1200] for b in fig.referencing],
-            "printed_description": fig.printed[0].text[:1500] if fig.printed else None, "image_attached": image}
+            "printed_description": fig.printed[0].text[:1500] if fig.printed else None,
+            "counts": [{"what": k.what, "count": k.count, "items": list(k.items[:24])} for k in fig.counts],
+            "image_attached": image}
     return "Describe this " + fig.kind + " for a listener.\n" + json.dumps(data, ensure_ascii=False)
 
 
@@ -535,7 +691,7 @@ def describe_figure(fig: FigureCandidate, *, generator: ModelRole | None, image:
             report.setdefault("ungrounded", []).append(grounding.ungrounded)
             feedback = ("Your previous answer named things that are not in the evidence: "
                         + ", ".join(grounding.ungrounded) + ". Remove them; use only the evidence. Do not count "
-                        "parts yourself; name them instead.")
+                        "parts yourself; name them instead, or use a count given in \"counts\".")
     lines = list(head)
     if fig.printed and len(fig.printed[0].text.split()) <= PRINTED_FALLBACK_WORDS:
         lines.append("The book describes it as follows: " + _sentence(fig.printed[0].text) + ".")
@@ -552,7 +708,10 @@ def describe_figures(figures: Sequence[FigureCandidate], *, generator: ModelRole
     failures: dict[str, int] = {}
     errors: dict[str, str] = {}
     images = 0
+    counted: dict[str, int] = {}
     for fig in figures:
+        for kind in dict.fromkeys(k.kind for k in fig.counts):
+            counted[kind] = counted.get(kind, 0) + 1
         image = image_for(fig) if image_for is not None else None
         mode, lines, grounding, used, report = describe_figure(fig, generator=generator, image=image,
                                                                max_attempts=max_attempts)
@@ -574,6 +733,7 @@ def describe_figures(figures: Sequence[FigureCandidate], *, generator: ModelRole
     metrics = {"figures": len(figures), "described": len(descriptions), "skipped": len(skipped),
                "skipped_reasons": _count(s.reason for s in skipped), "modes": modes, "gate_failures": failures,
                "model_errors": errors, "images_used": images,
+               "counted": sum(1 for f in figures if f.counts), "counts": counted,
                "placed": sum(1 for d in descriptions if d.after_unit_id), "small_table": dict(SMALL_TABLE)}
     return FigureDescriptionsDocument(book_id=book_id, language="en", parsed_ref=parsed_ref, units_ref=units_ref,
                                       descriptions=descriptions, skipped=list(skipped),

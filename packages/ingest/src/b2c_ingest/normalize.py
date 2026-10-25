@@ -59,7 +59,7 @@ _UNEXPECTED_SCRIPT = re.compile("[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-
 _LIGATURE = re.compile("[\ufb00-\ufb06]")
 _TRAILING_MARKER = re.compile(r"(?<=[.!?…:;’”\"')\]])\s?\d{1,3}$")
 _FOOTNOTE_LABEL = re.compile(r"^(\d{1,3}|[*†‡§])\s+(?=\S)")
-_QUOTES = "“‘\"'("
+_QUOTES = "“‘\"'(["
 _FLOAT_KINDS = frozenset({"figure", "caption", "table", "equation", "footnote"})
 _FURNITURE = frozenset({"running_header", "running_footer", "page_number"})
 _DOCLING_KIND = {
@@ -742,7 +742,7 @@ def _strip_trailing_marker(text: str) -> str:
     return _TRAILING_MARKER.sub("", text.rstrip())
 
 
-def _merge(frags: list[_Frag], vocab: Vocab) -> list[_Item]:
+def _merge(frags: list[_Frag], vocab: Vocab, text_pages: frozenset[int] = frozenset()) -> list[_Item]:
     flow_idx = [i for i, f in enumerate(frags) if f.kind not in _FURNITURE and f.kind not in _FLOAT_KINDS]
     first_on_page: dict[int, int] = {}
     last_on_page: dict[int, int] = {}
@@ -768,7 +768,7 @@ def _merge(frags: list[_Frag], vocab: Vocab) -> list[_Item]:
             items.append(_Item([f], f.text, f.kind, list(f.tags)))
             continue
         target = open_.get(stream) if stream else None
-        if target is not None and _continues(target, f, frags, index, first_on_page, last_on_page):
+        if target is not None and _continues(target, f, index, first_on_page, last_on_page, text_pages):
             gap = f.page - target.frags[-1].last_page
             tag = "joined_page_break" if gap >= 1 else ("joined_note_continuation" if stream in ("endnote", "footnote")
                                                         else "joined_column")
@@ -786,11 +786,11 @@ def _merge(frags: list[_Frag], vocab: Vocab) -> list[_Item]:
     return items
 
 
-def _continues(target: _Item, f: _Frag, frags, index, first_on_page, last_on_page) -> bool:
+def _continues(target: _Item, f: _Frag, index, first_on_page, last_on_page, text_pages) -> bool:
     prev = target.frags[-1]
     gap = f.page - prev.last_page
-    if not 0 <= gap <= 2:
-        return False
+    if not 0 <= gap <= 2 or any(p in text_pages for p in range(prev.last_page + 1, f.page)):
+        return False  # never join over a skipped page that has text
     if target.kind in ("endnote", "footnote"):
         return f.note_label is None and not BULLET.match(f.text) and (gap == 0 or f.section == "notes" or
                                                                        not TERMINAL.search(target.text))
@@ -811,7 +811,8 @@ def _continues(target: _Item, f: _Frag, frags, index, first_on_page, last_on_pag
     i_prev, i_next = index[id(prev)], index[id(f)]
     page_break = gap >= 1 and last_on_page.get(prev.last_page) == i_prev and first_on_page.get(f.page) == i_next
     # the page ended inside running prose (not on a short title-like line)
-    prose_end = len(at) >= 40 and (at[-1].islower() or at[-1] in ",;–—-(")
+    bare = at.rstrip("'’\"”)]")
+    prose_end = len(at) >= 40 and bool(bare) and (bare[-1].islower() or bare[-1] in ",;–—-(")
     return page_break and prose_end and (first.isalpha() or first in _QUOTES)
 
 
@@ -949,7 +950,9 @@ def _build(meta: BookMeta, frags: list[_Frag], text_layer: dict[str, Any], parse
     _zones_and_sections(frags)
     _apparatus_kinds(frags)
     frags = _split_notes(frags)
-    items = _merge(frags, vocab)
+    text_pages = frozenset(int(p["page_no"]) for p in text_layer["pages"]
+                           if len(re.findall(r"[A-Za-z]{3,}", p.get("text") or "")) >= 3)
+    items = _merge(frags, vocab, text_pages)
     _extract_and_link_markers(items)
 
     # printed labels: /PageLabels, else the page-number furniture printed on the page
@@ -965,8 +968,11 @@ def _build(meta: BookMeta, frags: list[_Frag], text_layer: dict[str, Any], parse
 
     flow = [i for i, it in enumerate(items) if it.kind not in _FURNITURE and it.kind not in _FLOAT_KINDS]
     last_flow_on_page: dict[int, int] = {}
+    continued: set[int] = set()  # pages a body item runs off into the next page
     for i in flow:
         last_flow_on_page[items[i].frags[-1].last_page] = i
+        pages = [ref[0] for f in items[i].frags for ref in f.refs]
+        continued.update(p for p in pages if p < max(pages))
     max_flow_page = max((items[i].frags[0].page for i in flow), default=0)
 
     blocks: list[BlockV2] = []
@@ -990,8 +996,8 @@ def _build(meta: BookMeta, frags: list[_Frag], text_layer: dict[str, Any], parse
         flags = list(it.flags)
         if it.kind in ("paragraph", "list_item"):
             last_page = it.frags[-1].last_page
-            if last_flow_on_page.get(last_page) == seq - 1 and last_page < max_flow_page \
-                    and it.text and not TERMINAL.search(_strip_trailing_marker(it.text)):
+            if head.zone == "body" and last_flow_on_page.get(last_page) == seq - 1 and last_page < max_flow_page \
+                    and last_page not in continued and it.text and not TERMINAL.search(_strip_trailing_marker(it.text)):
                 flags.append("cut_at_page_break")
         if letter_spacing_residue(it.text, it.kind == "heading", vocab):
             flags.append("letter_spacing_residue")

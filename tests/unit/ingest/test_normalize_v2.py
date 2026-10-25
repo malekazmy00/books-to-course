@@ -92,7 +92,8 @@ def test_paragraph_cut_at_page_break_becomes_one_block_with_both_pages():
 
 
 def test_unjoinable_page_end_is_flagged_not_hidden():
-    doc = (Doc(1, 2).add("text", 1, FILLER).add("text", 1, "A sentence that ends without", top=480)
+    doc = (Doc(1, 2).add("section_header", 1, "Introduction", top=20, bottom=30).add("text", 1, FILLER)
+           .add("text", 1, "A sentence that ends without", top=480)
            .add("section_header", 2, "New Section", top=60, bottom=80)
            .add("text", 2, "Fresh start.", top=90))
     book = normalize_docling(META, [doc.json()], text_layer(["x", "y"]))
@@ -266,7 +267,7 @@ def test_text_layer_path_removes_running_heads_and_joins_pages():
     WORDS = [None, "first", "second", "third", "fourth", "fifth", "sixth"]
     pages = []
     for p in range(1, 7):
-        lines = [f"{head}", f"{p + 10}"] if p % 2 else [f"{p + 10}", f"Chapter Title Here"]
+        lines = [f"{head}", f"{p + 10}"] if p % 2 else [f"{p + 10}", "Chapter Title Here"]
         tail = f"The analyst must structure the {WORDS[p]} problem in such a way that the"
         body_lines = [FILLER.strip(), tail]
         if p > 1:

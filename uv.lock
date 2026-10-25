@@ -185,6 +185,7 @@ dependencies = [
     { name = "b2c-llm-gateway" },
     { name = "pypdf" },
     { name = "python-bidi" },
+    { name = "wordfreq" },
 ]
 
 [package.optional-dependencies]
@@ -212,6 +213,7 @@ requires-dist = [
     { name = "python-bidi", specifier = ">=0.6,<1" },
     { name = "torch", marker = "extra == 'docling'", index = "https://download.pytorch.org/whl/cpu" },
     { name = "torchvision", marker = "extra == 'docling'", index = "https://download.pytorch.org/whl/cpu" },
+    { name = "wordfreq", specifier = "==3.1.1" },
 ]
 provides-extras = ["docling"]
 

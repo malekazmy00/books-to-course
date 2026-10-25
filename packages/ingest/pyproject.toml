@@ -9,6 +9,7 @@ dependencies = [
     "b2c-llm-gateway",
     "pypdf==6.1.3",
     "python-bidi>=0.6,<1",
+    "wordfreq==3.1.1",
 ]
 
 [project.optional-dependencies]

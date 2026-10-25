@@ -177,19 +177,46 @@ def test_en_then_ar_episode_with_promotion_and_first_mentions(store):
     assert all(t["unit"]["section_path"][0] == "episode-script" for t in translations)
 
 
-def test_book_text_not_accepted_keeps_ar_out(store):
-    db = FakeRegistryDB()
-    refs, units, results = setup(store)
-    victim = next(u for u in units if "Hegemony again" in u.source_text)
-    results[victim.unit_id] = c.UnitTranslation(unit_id=victim.unit_id, target_text="نص.", origin="rule",
-                                                decision="needs_review", decided_by="policy", decided_at=NOW)
+def run_ar(store, db, results, refs):
     a = acts(store, db, results)
     env = ActivityEnvironment()
     en = env.run(a.build_en, EpisodeScriptENInput(**common(refs), episode=2, require_accepted_inputs=False))
     ar = env.run(a.translate, EpisodeScriptARInput(**common(refs), episode=2, en_ref=en["ref"],
                                                    termbase_ref=refs["termbase"].model_dump(mode="json"),
                                                    engine_profile="fake", qe_profile="qe"))
+    aref = c.ArtifactRef.model_validate(ar["ref"])
+    return ar, c.EpisodeScript.model_validate_json(store.read(aref, "script.json")), \
+        json.loads(store.read(aref, "gates.json"))
+
+
+def test_book_text_without_a_result_keeps_ar_out(store):
+    db = FakeRegistryDB()
+    refs, units, results = setup(store)
+    victim = next(u for u in units if "Hegemony again" in u.source_text)
+    del results[victim.unit_id]  # not translated yet: nothing to speak and no note
+    ar, _, _ = run_ar(store, db, results, refs)
     assert ar["gates"]["episodes.translation"] is False and ar["stage_output_status"] == "rejected"
+
+
+def test_book_text_needing_review_becomes_a_translator_note(store):
+    """D-041 (SAT episodes 01/02 stopped on needs_review book units): the unit is spoken as a
+    course-voice note with its approximate translation, and the episode is accepted."""
+    db = FakeRegistryDB()
+    refs, units, results = setup(store)
+    victim = next(u for u in units if "Hegemony again" in u.source_text)
+    results[victim.unit_id] = c.UnitTranslation(
+        unit_id=victim.unit_id, target_text="نص تقريبي للفقرة.", origin="rule", decision="needs_review",
+        decided_by="policy", decided_at=NOW,
+        issues=[c.QAIssue(check_id="terminology", category="terminology", severity="major", origin="deterministic")])
+    ar, script, gates = run_ar(store, db, results, refs)
+    line = next(x for s in script.sections if s.kind == "book_text" for x in s.lines if x.unit_ids == [victim.unit_id])
+    assert line.note_id == f"{victim.unit_id}:note" and line.status == "needs_review"
+    assert line.text.startswith(c.TRANSLATOR_NOTE_LEAD_AR) and "نص تقريبي للفقرة." in line.text
+    assert "مصطلح" in line.text  # the learner-facing reason
+    metrics = gates["episodes.translation"]["metrics"]
+    assert ar["gates"]["episodes.translation"] is True, metrics
+    assert metrics["book_units_annotated"] == 1 and metrics["book_units_not_accepted"] == []
+    assert ar["stage_output_status"] == "accepted"
 
 
 def test_inputs_must_be_accepted(store):

@@ -9,7 +9,9 @@ book's termbase plus the original (``المقابل (original): ...``), the same
 
 ``assemble_arabic``: the Arabic script, line by line, from the unit decisions (orchestration runs
 ``UnitTranslator`` with the book's approved termbase and the run's engine/QE profiles). Book text is
-not translated again: its lines are the ACCEPTED target text of the book's own translation units.
+not translated again: its lines are the ACCEPTED target text of the book's own translation units,
+or, for a unit that was not accepted, its translator note (D-041: course voice — the announcement,
+then the approximate translation if one is offered; the original stays in the line's source quote).
 ``with_texts`` replaces line texts after the post-translation first-mention pass.
 """
 from __future__ import annotations
@@ -19,7 +21,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from b2c_contracts import (BOOK_TEXT_KINDS, EpisodeScript, EpisodeSection, ScriptLine, ScriptSource, TranslationUnit,
-                           UnitTranslation)
+                           TranslatorNote, UnitTranslation)
 
 SCRIPT_MARKER = "episode-script"
 
@@ -40,6 +42,12 @@ class BookLine:
     target_text: str
     decision: str  # accepted | needs_review | rejected | dropped
     kind: str = "prose"
+    note: TranslatorNote | None = None  # D-041: the unit's translator note when it was not accepted
+
+
+def note_text(note: TranslatorNote) -> str:
+    """What a translator-note line says: the announcement, then the approximate translation."""
+    return f"{note.announcement_ar} {note.best_translation}" if note.best_translation else note.announcement_ar
 
 
 def script_unit_id(book_id: str, episode: int, seq: int) -> str:
@@ -93,6 +101,12 @@ def assemble_arabic(script: EpisodeScript, units: list[ScriptUnit], translations
             lines = []
             for uid in section.unit_ids:
                 bl = book_lines.get(uid)
+                if bl is not None and bl.note is not None and bl.decision not in ("accepted", "dropped"):
+                    lines.append(ScriptLine(
+                        line_id=f"{section.section_id}.{uid.rsplit(':', 1)[-1]}", text=note_text(bl.note),
+                        sources=[ScriptSource(kind="book", block_id=bl.block_id, quote=bl.source_text[:1200])],
+                        unit_ids=[uid], status=_status(bl.decision), note_id=bl.note.note_id))
+                    continue
                 if bl is None or bl.decision == "dropped" or not bl.target_text.strip():
                     if bl is None or bl.decision != "dropped":
                         missing.append(uid)
@@ -142,5 +156,5 @@ def _status(decision: str) -> str:
     return decision if decision in ("accepted", "needs_review", "rejected") else "rejected"
 
 
-__all__ = ["BookLine", "SCRIPT_MARKER", "ScriptUnit", "assemble_arabic", "is_script_unit", "script_unit_id",
+__all__ = ["BookLine", "SCRIPT_MARKER", "note_text", "ScriptUnit", "assemble_arabic", "is_script_unit", "script_unit_id",
            "script_units", "with_texts"]

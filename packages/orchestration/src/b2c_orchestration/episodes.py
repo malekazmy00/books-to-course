@@ -59,6 +59,8 @@ with workflow.unsafe.imports_passed_through():
     from .promotion import NotAccepted, PromotionService
     from .retry import DEFAULT_RETRY
     from .termbase_review import approved_snapshot
+    from b2c_translation.notes import ANNOTATED, NOTES_BUILDER_VERSION, note_for_unit
+
     from .translate_book import draft_record
 
 EN_STAGE = "episode-script-en"
@@ -66,11 +68,12 @@ AR_STAGE = "episode-script-ar"
 EN_ACTIVITY = "build_episode_script_en"
 AR_ACTIVITY = "translate_episode_script"
 WORKFLOW_NAME = "BuildEpisodeScriptsWorkflow"
-AR_VERSION = "episode-scripts-ar-2026-10-25.3"
+AR_VERSION = "episode-scripts-ar-2026-10-25.4"  # .4: book units not accepted -> translator notes (D-041)
 TRANSLATION_GATE_ID = "episodes.translation"
 FIRST_MENTION_GATE_ID = "episodes.first-mention"
 TRANSLATION_DEFINITION: dict[str, Any] = {"script_lines": "every line accepted (qa.policy)",
-                                          "book_text": "every non-dropped lesson unit accepted in the book run",
+                                          "book_text": "every non-dropped lesson unit accepted in the book run "
+                                                       "or spoken as its translator note (D-041)",
                                           "max_missing_lines": 0}
 FIRST_MENTION_DEFINITION: dict[str, Any] = {
     "terms": "approved locked terms first mentioned in the lesson (ConceptLayer)",
@@ -193,14 +196,18 @@ def evaluate_ar_script(script: EpisodeScript, *, units: Mapping[str, Translation
     for x in generated:
         statuses[x.status or "none"] = statuses.get(x.status or "none", 0) + 1
     book_units = [u for s in script.sections if s.kind in ("book_text", "figure_description") for u in s.unit_ids]
-    book_bad = [u for u in book_units if book_decisions.get(u) not in ("accepted", "dropped")]
+    annotated = {u for s in script.sections if s.kind in ("book_text", "figure_description")
+                 for x in s.lines if x.note_id for u in x.unit_ids}
+    book_bad = [u for u in book_units if book_decisions.get(u) not in ("accepted", "dropped") and u not in annotated]
     missing = list(script.metrics.get("missing_lines") or [])
     translation = GateOutcome(TRANSLATION_GATE_ID, "deterministic", passed=bool(generated)
                               and statuses.get("accepted", 0) == len(generated) and not book_bad and not missing,
                               metrics={"script_lines": len(generated), "decisions": statuses,
                                        "accepted_rate": round(statuses.get("accepted", 0) / len(generated), 4)
                                        if generated else 0.0, "book_units": len(book_units),
-                                       "book_units_not_accepted": book_bad[:20], "missing_lines": missing[:20]},
+                                       "book_units_not_accepted": book_bad[:20],
+                                       "book_units_annotated": len(annotated & set(book_units)),
+                                       "missing_lines": missing[:20]},
                               definition=dict(TRANSLATION_DEFINITION))
     texts = [x.text for x in lines]
     state = first_mention_status(texts, terms)
@@ -235,6 +242,7 @@ def evaluate_ar_script(script: EpisodeScript, *, units: Mapping[str, Translation
 class EpisodeActivities:
     def __init__(self, *, artifact_store: Any, generator: ModelRole, judge: ModelRole, runtime: Any | None = None,
                  memory: Any | None = None, book_results: Callable[[str], Mapping[str, UnitTranslation]] | None = None,
+                 book_drafts: Callable[[str], Mapping[str, Sequence[Mapping[str, Any]]]] | None = None,
                  promotion: PromotionService | None = None, clock: Callable[[], datetime] = _now,
                  workers: int = 3) -> None:
         if generator.family == judge.family:
@@ -245,6 +253,7 @@ class EpisodeActivities:
         self.runtime = runtime
         self.memory = memory
         self.book_results = book_results
+        self.book_drafts = book_drafts  # run id -> unit id -> stored drafts (best approximate translation)
         self.promotion = promotion
         self.clock = clock
         self.workers = workers
@@ -380,10 +389,12 @@ class EpisodeActivities:
         termbase = approved_snapshot(BookTermbase.from_json(self.store.read(tb_ref, "termbase.json")))
         fingerprint = self.runtime.fingerprint(inp.engine_profile, inp.qe_profile) if self.runtime else ""
         inputs = [en_ref, tb_ref, concept_ref, self._ref(inp.units_ref)]
-        config = {"ar_version": AR_VERSION, "episode": inp.episode, "run_id": inp.translation_run_id,
+        config = {"ar_version": AR_VERSION, "notes_builder": NOTES_BUILDER_VERSION, "episode": inp.episode,
+                  "run_id": inp.translation_run_id,
                   "engine_profile": inp.engine_profile, "qe_profile": inp.qe_profile, "profiles": fingerprint,
                   "cache_bust": inp.cache_bust}
         book_results = dict(self.book_results(inp.translation_run_id)) if self.book_results else {}
+        book_drafts = dict(self.book_drafts(inp.translation_run_id)) if self.book_drafts else {}
         book_units = {u.unit_id: u for u in self._units(self._ref(inp.units_ref))}
         script = EpisodeScript.model_validate_json(self.store.read(en_ref, "script.json"))
         book_ids = [u for s in script.sections for u in s.unit_ids]
@@ -420,8 +431,10 @@ class EpisodeActivities:
                 u, t = book_units.get(uid), book_results.get(uid)
                 if u is None:
                     continue
+                # D-041: a unit that was not accepted is spoken as its translator note (same builder as the book's)
+                note = note_for_unit(u, t, book_drafts.get(uid, ())) if t and t.decision in ANNOTATED else None
                 book_lines[uid] = BookLine(uid, u.block_ids[0], u.source_text, t.target_text if t else "",
-                                           t.decision if t else "pending", u.kind)
+                                           t.decision if t else "pending", u.kind, note=note)
             ar = assemble_arabic(script, units, results, book_lines=book_lines, key_term_labels=labels,
                                  source_sha256=en_ref.sha256, clock=self.clock)
             # the episode heading (book title, number, title) is a name, not a mention of a term

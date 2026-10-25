@@ -14,8 +14,10 @@ from b2c_contracts import ArtifactRef
 from temporalio.exceptions import ApplicationError
 
 from b2c_orchestration.translate_book import AssembleTranslationInput, TranslateBookActivities
-from tests.unit.orchestration.test_speech_v2 import (RUN, acts, assembly, promo, results, speech_input, store,  # noqa: F401
-                                                     translation)
+from tests.unit.orchestration import test_speech_v2 as base
+from tests.unit.orchestration.test_speech_v2 import RUN, acts, assembly, speech_input, translation
+
+store, results, promo = base.store, base.results, base.promo  # the same fixtures
 
 LEX = {"Gramsci": "غرامشي"}
 

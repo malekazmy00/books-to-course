@@ -165,3 +165,48 @@ def test_script_units_and_arabic_assembly():
     assert ar.sections[0].lines[1].status == "needs_review"
     again = with_texts(ar, {ar.sections[1].lines[0].line_id: ("الهيمنة (hegemony) هنا.", ["hegemony"])})
     assert again.sections[1].lines[0].inserted_originals == ["hegemony"]
+
+
+def test_book_text_takes_a_translator_note_for_a_unit_that_was_not_accepted():
+    """D-041: a book unit that was not accepted is spoken as a course-voice note, not left out."""
+    script, _ = lesson_script()
+    labels = {"hegemony": "الهيمنة", "war of position": "حرب المواقع", "civil society": "المجتمع المدني"}
+    units = script_units(script, key_term_labels=labels, page_of=lambda b: [int(b.split(":")[1])])
+    translations = {su.unit.unit_id: tr(su.unit, "نص عربي.") for su in units}
+    ids = script.sections[1].unit_ids
+    assert len(ids) >= 3
+    announce = f"{c.TRANSLATOR_NOTE_LEAD_AR} تعذّر التحقق من دقة ترجمة هذه الفقرة. وما يلي ترجمة تقريبية."
+    with_best = c.TranslatorNote(
+        note_id=f"{ids[1]}:note", unit_id=ids[1], book_id="bk", block_ids=["bk:3:1"], pages=[3], unit_kind="prose",
+        unit_decision="needs_review", reasons=["unverified"], reason_ar="تعذّر التحقق من دقة ترجمة هذه الفقرة.",
+        source_text="src 1", best_translation="نص الكتاب التقريبي.",
+        best_translation_label_ar=c.BEST_TRANSLATION_LABEL_AR, best_translation_from="final", announcement_ar=announce)
+    bare = (f"{c.TRANSLATOR_NOTE_LEAD_AR} تعذّرت ترجمة هذه الفقرة ترجمةً موثوقة. "
+            "والنص الأصلي محفوظ في النسخة المكتوبة من الكورس.")
+    without = c.TranslatorNote(
+        note_id=f"{ids[2]}:note", unit_id=ids[2], book_id="bk", block_ids=["bk:3:2"], pages=[3], unit_kind="prose",
+        unit_decision="rejected", reasons=["no_translation"], reason_ar="تعذّرت ترجمة هذه الفقرة ترجمةً موثوقة.",
+        source_text="NOT ES", withheld="fabrication_risk", announcement_ar=bare)
+    book_lines = {uid: BookLine(uid, f"bk:3:{i}", "src", "", "dropped") for i, uid in enumerate(ids)}
+    book_lines[ids[0]] = BookLine(ids[0], "bk:3:0", "src 0", "نص الكتاب 0.", "accepted")
+    book_lines[ids[1]] = BookLine(ids[1], "bk:3:1", "src 1", "نص الكتاب التقريبي.", "needs_review", note=with_best)
+    book_lines[ids[2]] = BookLine(ids[2], "bk:3:2", "NOT ES", "نص مختلق طويل.", "rejected", note=without)
+    ar = assemble_arabic(script, units, translations, book_lines=book_lines, key_term_labels=labels,
+                         source_sha256="a" * 64, clock=lambda: NOW)
+    lines = ar.sections[1].lines
+    assert [x.note_id for x in lines] == [None, f"{ids[1]}:note", f"{ids[2]}:note"]
+    assert lines[1].text == f"{announce} نص الكتاب التقريبي." and lines[1].status == "needs_review"
+    assert lines[2].text == bare and "مختلق" not in lines[2].text  # nothing offered: announcement only
+    assert lines[2].sources[0].quote == "NOT ES"  # the original stays in the written script
+    assert ar.metrics["missing_lines"] == []
+
+
+def test_a_book_line_not_accepted_and_without_a_note_is_kept_as_before():
+    script, _ = lesson_script()
+    units = script_units(script, key_term_labels={}, page_of=lambda b: [1])
+    translations = {su.unit.unit_id: tr(su.unit, "نص عربي.") for su in units}
+    ids = script.sections[1].unit_ids
+    book_lines = {uid: BookLine(uid, f"bk:3:{i}", "src", "نص.", "needs_review") for i, uid in enumerate(ids)}
+    ar = assemble_arabic(script, units, translations, book_lines=book_lines, key_term_labels={},
+                         source_sha256="a" * 64, clock=lambda: NOW)
+    assert all(x.note_id is None and x.status == "needs_review" for x in ar.sections[1].lines)

@@ -15,6 +15,7 @@ import androidx.media3.session.CommandButton
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionError
 import androidx.media3.session.SessionResult
 import com.book2course.learner.LearnerApp
 import com.book2course.learner.MainActivity
@@ -93,7 +94,7 @@ class PlaybackService : MediaSessionService() {
             when (customCommand.customAction) {
                 CMD_BACK -> player.seekTo((player.currentPosition - settings.skipBackSeconds * 1000L).coerceAtLeast(0))
                 CMD_FORWARD -> player.seekTo(player.currentPosition + settings.skipForwardSeconds * 1000L)
-                else -> return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+                else -> return Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
             }
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
         }

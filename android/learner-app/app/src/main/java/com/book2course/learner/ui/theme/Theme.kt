@@ -3,12 +3,15 @@ package com.book2course.learner.ui.theme
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.unit.sp
 import com.book2course.learner.data.local.ThemeMode
 
 /** Colours chosen for contrast (WCAG 2.2 AA, ≥ 4.5:1 for body text) rather than brand. */
@@ -44,6 +47,22 @@ private val Sepia = Light.copy(
     onSurface = Color(0xFF3B2F1E), surfaceContainer = Color(0xFFEDE2C9), surfaceContainerHigh = Color(0xFFE6D9BD),
 )
 
+/**
+ * Material 3 type scale without letter spacing. Arabic is cursive: before Android 9 the text stack
+ * applies tracking between Arabic letters too, which breaks their joining on Android 7 / 8 devices.
+ * Sizes and line heights stay Material's; the system Arabic font (Noto Naskh) is used on every version.
+ */
+val LearnerTypography: Typography = Typography().run {
+    fun TextStyle.untracked() = copy(letterSpacing = 0.sp)
+    Typography(
+        displayLarge = displayLarge.untracked(), displayMedium = displayMedium.untracked(), displaySmall = displaySmall.untracked(),
+        headlineLarge = headlineLarge.untracked(), headlineMedium = headlineMedium.untracked(), headlineSmall = headlineSmall.untracked(),
+        titleLarge = titleLarge.untracked(), titleMedium = titleMedium.untracked(), titleSmall = titleSmall.untracked(),
+        bodyLarge = bodyLarge.untracked(), bodyMedium = bodyMedium.untracked(), bodySmall = bodySmall.untracked(),
+        labelLarge = labelLarge.untracked(), labelMedium = labelMedium.untracked(), labelSmall = labelSmall.untracked(),
+    )
+}
+
 /** Colours of the three voices (D-032): author, course, external. Always paired with a text label. */
 data class VoiceColors(val author: Color, val course: Color, val external: Color)
 
@@ -63,6 +82,6 @@ fun LearnerTheme(mode: ThemeMode, content: @Composable () -> Unit) {
     }
     val voices = VoiceColors(scheme.primary, scheme.secondary, scheme.tertiary)
     CompositionLocalProvider(LocalVoiceColors provides voices) {
-        MaterialTheme(colorScheme = scheme, content = content)
+        MaterialTheme(colorScheme = scheme, typography = LearnerTypography, content = content)
     }
 }

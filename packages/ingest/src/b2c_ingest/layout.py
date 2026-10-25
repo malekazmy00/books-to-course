@@ -104,15 +104,7 @@ def batch_name(first: int, last: int) -> str:
     return f"layout/pages-{first:04d}-{last:04d}.json"
 
 
-def docling_layout_batches(
-    source: str | Path, *, page_count: int, ocr_language: str = "en", num_threads: int = 8,
-    page_batch: int = DEFAULT_PAGE_BATCH, done: Iterable[str] = (),
-) -> Iterator[tuple[str, bytes]]:
-    """Run Docling over every page, one batch at a time; yield (name, DoclingDocument JSON).
-
-    Batches whose name is in ``done`` are skipped (resume). Arabic OCR keeps the existing
-    ``parse_pdf_with_docling`` path; this layout path is for left-to-right books.
-    """
+def _converter(ocr_language: str, num_threads: int):
     from .docling_pdf import DoclingUnavailable
 
     try:
@@ -124,7 +116,6 @@ def docling_layout_batches(
         raise DoclingUnavailable("install the b2c-ingest[docling] extra in the worker image") from exc
     if ocr_language != "en":
         raise ValueError("the v2 layout path supports ocr_language='en' only; Arabic stays on v1")
-
     cfg = docling_options(ocr_language=ocr_language, num_threads=num_threads)
     options = PdfPipelineOptions()
     options.do_ocr = cfg["do_ocr"]
@@ -132,16 +123,37 @@ def docling_layout_batches(
                                           text_score=cfg["ocr_text_score"], scale=cfg["ocr_scale"])
     options.do_table_structure = cfg["do_table_structure"]
     options.accelerator_options = AcceleratorOptions(num_threads=num_threads, device="cpu")
-    converter = DocumentConverter(
+    return DocumentConverter(
         allowed_formats=[InputFormat.PDF],
         format_options={InputFormat.PDF: PdfFormatOption(pipeline_options=options)},
     )
+
+
+def _convert(converter: Any, source: str | Path, first: int, last: int) -> bytes:
+    result = converter.convert(Path(source), page_range=(first, last))
+    payload = result.document.export_to_dict()
+    payload["b2c_batch"] = {"format": LAYOUT_FORMAT, "first_page": first, "last_page": last}
+    return json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+
+
+def docling_layout_batch(source: str | Path, first: int, last: int, *, ocr_language: str = "en",
+                         num_threads: int = 8) -> bytes:
+    """One page batch [first, last] (1-based, inclusive) as DoclingDocument JSON."""
+    return _convert(_converter(ocr_language, num_threads), source, first, last)
+
+
+def docling_layout_batches(
+    source: str | Path, *, page_count: int, ocr_language: str = "en", num_threads: int = 8,
+    page_batch: int = DEFAULT_PAGE_BATCH, done: Iterable[str] = (),
+) -> Iterator[tuple[str, bytes]]:
+    """Run Docling over every page, one batch at a time; yield (name, DoclingDocument JSON).
+
+    Batches whose name is in ``done`` are skipped (resume). Arabic OCR keeps the existing
+    ``parse_pdf_with_docling`` path; this layout path is for left-to-right books.
+    """
+    converter = _converter(ocr_language, num_threads)
     skip = set(done)
     for first, last in batch_ranges(page_count, page_batch):
         name = batch_name(first, last)
-        if name in skip:
-            continue
-        result = converter.convert(Path(source), page_range=(first, last))
-        payload = result.document.export_to_dict()
-        payload["b2c_batch"] = {"format": LAYOUT_FORMAT, "first_page": first, "last_page": last}
-        yield name, json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+        if name not in skip:
+            yield name, _convert(converter, source, first, last)

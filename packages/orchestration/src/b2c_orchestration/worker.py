@@ -26,6 +26,7 @@ from .hello import HelloActivities, HelloPipeline
 from .indexing import IndexActivities, IndexApprovedBookWorkflow
 from .audio import MP3Activities, GenerateMP3Workflow
 from .ingest import IngestPDFActivities, IngestPDFWorkflow, OutlineActivities
+from .ingest_v2 import IngestPDFV2Workflow, IngestV2Activities, ingest_v2_activities
 from .qa import CourseQAActivities, GenerateCourseQAWorkflow
 from .translation import TranslationActivities, TranslateContentWorkflow, RetranslateSegmentWorkflow
 from .queues import AUDIO, HEAVY, IO, LIGHT, TRANSLATE_BOOK, max_concurrent_activities
@@ -121,6 +122,7 @@ async def run_worker() -> None:
         store=store, prov=prov, gemini_api_key_file=s.gemini_api_key_file or None, gateway=gateway,
     )
     outline_acts = OutlineActivities(store=store, prov=prov, gateway=gateway)
+    ingest_v2_acts = IngestV2Activities(store=store, prov=prov)  # R3; workflow started only on request
     import psycopg
     chunk_store = PostgresChunkStore(lambda: psycopg.connect(s.pg_dsn))
     index_acts = IndexActivities(artifact_store=store, chunk_store=chunk_store)
@@ -185,12 +187,12 @@ async def run_worker() -> None:
     executor = ThreadPoolExecutor(max_workers=sum(max_concurrent_activities(q)
                                                   for q in (LIGHT, HEAVY, IO, TRANSLATE_BOOK)))
     workers = [
-        Worker(client, task_queue=LIGHT, workflows=[HelloPipeline, IngestPDFWorkflow, IndexApprovedBookWorkflow], activities=[acts.finalize, outline_acts.build, index_acts.index_approved_book],
+        Worker(client, task_queue=LIGHT, workflows=[HelloPipeline, IngestPDFWorkflow, IngestPDFV2Workflow, IndexApprovedBookWorkflow], activities=[acts.finalize, outline_acts.build, index_acts.index_approved_book],
                activity_executor=executor, max_concurrent_activities=max_concurrent_activities(LIGHT)),
         Worker(client, task_queue=HEAVY, workflows=[GenerateCourseQAWorkflow, TranslateContentWorkflow, RetranslateSegmentWorkflow, GenerateMP3Workflow],
                # outline_acts.build stays on LIGHT too, for histories scheduled
                # before outline-heavy-queue-v1.
-               activities=[acts.greet, ingest_acts.parse_pdf, outline_acts.build, qa_acts.generate, translation_acts.translate, translation_acts.retranslate_segment, mp3_acts.generate],
+               activities=[acts.greet, ingest_acts.parse_pdf, *ingest_v2_activities(ingest_v2_acts), outline_acts.build, qa_acts.generate, translation_acts.translate, translation_acts.retranslate_segment, mp3_acts.generate],
                activity_executor=executor, max_concurrent_activities=max_concurrent_activities(HEAVY)),
         Worker(client, task_queue=IO, activities=[acts.prepare],
                activity_executor=executor, max_concurrent_activities=max_concurrent_activities(IO)),

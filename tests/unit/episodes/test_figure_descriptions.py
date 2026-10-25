@@ -194,6 +194,33 @@ def test_grounding_tokens_keep_digits_and_ignore_capitalised_function_words():
     assert bad.ungrounded == ["3", "H3"]
 
 
+def test_a_description_not_in_english_is_regenerated():
+    calls: list = []
+
+    def reply(msg):
+        calls.append(msg)
+        if "not in English" in msg:
+            return {"lines": ["The figure contrasts System 1, intuitive and fast, with System 2."]}
+        return {"lines": ["La figura describe un proceso de colaboración en un equipo de análisis."]}
+    figures, _ = collect_figures(book(), book_id=B)
+    doc = describe_figures(figures[:1], generator=_role(reply), units=units(), book_id=B, clock=lambda: NOW)
+    assert len(calls) == 2 and doc.descriptions[0].mode == "description"
+    assert "System 1" in doc.descriptions[0].lines[1].text
+
+
+def test_columns_empty_in_every_row_are_said_once():
+    form = parse_markdown_table("| Actor | Interest | Impact |\n| --- | --- | --- |\n| Me |  |  |\n| My supervisor |  |  |")
+    lines = table_reading_lines(form)
+    assert lines[1] == "The columns Interest and Impact are empty in every row."
+    assert lines[2] == "Row 1. Actor: Me."
+
+
 def test_the_prompt_forbids_counting_parts_that_the_evidence_does_not_count():
     from b2c_episodes.figures import FIGURE_SYSTEM
     assert "Do not count the parts yourself" in FIGURE_SYSTEM
+
+
+def test_a_line_that_packs_several_sentences_is_split_not_dropped():
+    from b2c_episodes.figures import _clean_lines
+    long = " ".join(["The figure shows the index card technique."] * 3 + ["Ideas are collected and displayed."] * 3)
+    assert _clean_lines({"lines": [long]})[0] == "The figure shows the index card technique."

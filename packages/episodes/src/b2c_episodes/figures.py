@@ -46,7 +46,7 @@ from b2c_contracts import (EpisodeScript, EpisodeSection, FigureDescription,
 from .generate import ModelRole, parse_json_object
 
 FIGURE_PROMPT_VERSION = "figure-describe-v2"
-FIGURES_VERSION = "figure-descriptions-2026-10-25.1"
+FIGURES_VERSION = "figure-descriptions-2026-10-25.3"  # .2: English check, empty form columns; .3: split packed lines
 SMALL_TABLE = {"max_rows": 8, "max_columns": 4, "max_cells": 24, "max_words": 160}
 MAX_LINES = 6
 MAX_LINE_WORDS = 60
@@ -185,11 +185,16 @@ def table_shape_line(table: TableData) -> str:
 
 
 def table_reading_lines(table: TableData) -> list[str]:
-    """Row by row with the column names (DAISY: tables read across from left to right)."""
+    """Row by row with the column names (DAISY: tables read across from left to right). A column that is
+    empty in every row (a form to fill in) is said once, not in every row."""
+    names = [h or f"Column {j}" for j, h in enumerate(table.header, 1)]
+    empty = [j for j in range(table.columns) if table.rows and all(not r[j].strip() for r in table.rows)]
     lines = [table_shape_line(table)]
+    if empty:
+        lines.append(f"The {'column' if len(empty) == 1 else 'columns'} {_join([names[j] for j in empty])} "
+                     f"{'is' if len(empty) == 1 else 'are'} empty in every row.")
     for i, row in enumerate(table.rows, 1):
-        cells = [f"{(h or f'Column {j}')}: {_sentence(c) if c else 'empty'}"
-                 for j, (h, c) in enumerate(zip(table.header, row), 1)]
+        cells = [f"{names[j]}: {_sentence(c) if c else 'empty'}" for j, c in enumerate(row) if j not in empty]
         lines.append(f"Row {i}. " + " ".join(x if x.endswith(".") else x + "." for x in cells))
     return lines
 
@@ -445,16 +450,36 @@ def _clean_lines(raw: Any) -> list[str]:
     if not isinstance(raw, dict) or not isinstance(raw.get("lines"), list):
         raise ValueError("no lines")
     lines = [" ".join(str(x).split()) for x in raw["lines"] if isinstance(x, str) and x.strip()]
+    # one spoken sentence per line: a line that packs several sentences is split at sentence ends
+    lines = [p for x in lines for p in re.split(r"(?<=[.!?])\s+(?=[A-Z])", x) if p]
     lines = [x for x in lines if len(x.split()) <= MAX_LINE_WORDS][:MAX_LINES]
     out, total = [], 0
     for x in lines:
         total += len(x.split())
         if total > MAX_DESCRIPTION_WORDS:
             break
-        out.append(x if x[-1] in ".!?" else x + ".")
+        out.append(x if x.rstrip("'\"’”)")[-1:] in (".", "!", "?") else x + ".")
     if not out:
         raise ValueError("empty description")
+    if not is_english(" ".join(out)):
+        raise NotEnglish("the description is not in English")
     return out
+
+
+class NotEnglish(ValueError):
+    """The model answered in another language (seen on SAT: Spanish); the pipeline translates from English."""
+
+
+_EN_FUNCTION = {"the", "a", "an", "and", "of", "to", "in", "is", "are", "with", "for", "on", "by", "it", "this",
+                "that", "as", "from", "its", "each", "or", "between", "which", "into", "shows", "has"}
+
+
+def is_english(text: str) -> bool:
+    """Deterministic: no letters outside ASCII Latin, and English function words are frequent."""
+    words = re.findall(r"[^\W\d_]+", text.lower())
+    if not words or any(not w.isascii() for w in words):
+        return False
+    return sum(1 for w in words if w in _EN_FUNCTION) / len(words) >= 0.12
 
 
 def _ask(role: ModelRole, fig: FigureCandidate, image: bytes | None, feedback: str | None) -> list[str]:
@@ -495,6 +520,10 @@ def describe_figure(fig: FigureCandidate, *, generator: ModelRole | None, image:
             report["attempts"] += 1
             try:
                 lines = _ask(generator, fig, image if can_see else None, feedback)
+            except NotEnglish:
+                report["not_english"] = report.get("not_english", 0) + 1
+                feedback = "Your previous answer was not in English. Write every sentence in English."
+                continue
             except Exception as exc:  # the fallback below never stops the book
                 report["error"] = type(exc).__name__
                 break

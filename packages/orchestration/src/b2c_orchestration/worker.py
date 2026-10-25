@@ -9,6 +9,8 @@ from b2c_core import (
     ArtifactStore,
     ProvRecorder,
     Settings,
+    StageOutputRegistry,
+    code_revision,
     configure_logging,
     get_logger,
 )
@@ -33,6 +35,7 @@ from .translate_book import AssembleBookTranslationWorkflow, TranslateBookActivi
 from .translation_profiles import ProfileRuntime, UnknownProfile, load_translation_profiles
 from .termbase_store import TermbaseStore
 from .translation_store import TranslationResultStore
+from .promotion import PromotionService
 from .telemetry import setup_tracing
 
 log = get_logger("b2c.worker")
@@ -75,7 +78,8 @@ def translate_book_worker(client, s, *, store, cache, executor) -> Worker:
         runtime = _UnavailableProfiles(type(exc).__name__)
     acts = TranslateBookActivities(artifact_store=store, result_store=TranslationResultStore(s.pg_dsn),
                                    runtime=runtime, memory=TranslationMemory(s.pg_dsn),
-                                   termbase_store=TermbaseStore(s.pg_dsn))
+                                   termbase_store=TermbaseStore(s.pg_dsn),
+                                   promotion=PromotionService(StageOutputRegistry(s.pg_dsn), code_revision=code_revision()))
     return Worker(client, task_queue=TRANSLATE_BOOK,
                   workflows=[TranslateBookWorkflow, AssembleBookTranslationWorkflow],
                   activities=[acts.prepare, acts.build_termbase, acts.check_termbase, acts.translate_batch,

@@ -77,6 +77,8 @@ def test_translate_book_worker_registers_new_names_on_its_own_queue(monkeypatch)
     assert names == ["assemble_translation", "build_book_termbase", "check_book_termbase",
                      "prepare_translation_units", "translate_unit_batch"]
     assert captured["activities"][0].__self__.termbase_store is not None
+    promotion = captured["activities"][0].__self__.promotion  # R1: assemblies go through the registry
+    assert promotion is not None and promotion.registry.dsn == "postgresql://x"
     assert captured["max_concurrent_activities"] == max_concurrent_activities(TRANSLATE_BOOK) == 1
 
 

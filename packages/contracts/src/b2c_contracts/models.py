@@ -15,7 +15,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION = "1.8.0"
+SCHEMA_VERSION = "1.9.0"
 
 
 class Contract(BaseModel):
@@ -638,6 +638,11 @@ class LessonV2(_OutlineNode):
     prior_lessons: list[str] = []  # empty unless there is evidence (audit 02 P12)
     block_roles: list[BlockRoleRun] = []  # 1.7.0: e.g. figure descriptions, in reading order
     audio_adaptations: list[AudioAdaptation] = []  # 1.8.0: blocks to adapt for listening, kept in place
+    # 1.9.0 (D-036 (3)): every lesson is an audio episode. The number is 1-based over the whole course
+    # in book order (front-matter lessons included); the title is for audio ("الحلقة 3: ..." is
+    # rendered later, after translation). None only in outlines built before 1.9.0.
+    episode: int | None = Field(default=None, ge=1)
+    episode_title: str | None = None
 
     @property
     def spans(self) -> list[OutlineSpanV2]:
@@ -648,8 +653,15 @@ class LessonV2(_OutlineNode):
     def last_seq(self) -> int:
         return self.spans[-1].seqs[1]
 
+    @field_validator("episode_title")
+    @classmethod
+    def _episode_title(cls, v: str | None) -> str | None:
+        return None if v is None else _check_title(v)
+
     @model_validator(mode="after")
     def _lesson(self) -> "LessonV2":
+        if self.episode is not None and self.episode_title is None:
+            raise ValueError("an episode number needs an episode_title")
         if self.size_status != "ok" and not (self.size_exception or "").strip():
             raise ValueError("a lesson outside the size policy needs a size_exception")
         a, b = self.spine_span.seqs
@@ -730,6 +742,9 @@ class CourseOutlineV2(Contract):
             ids.extend(lesson.lesson_id for lesson in m.lessons)
         if len(set(ids)) != len(ids):
             raise ValueError("module and lesson ids must be unique")
+        episodes = [lesson.episode for lesson in self.lessons]
+        if any(e is not None for e in episodes) and episodes != list(range(1, len(episodes) + 1)):
+            raise ValueError("episode numbers must be 1..n over all lessons in reading order (or absent)")
         spans: list[tuple[int, int, str]] = []
         previous_end = -1
         seen: set[str] = set()

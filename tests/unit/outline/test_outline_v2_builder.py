@@ -299,3 +299,35 @@ def test_v1_projection_of_a_built_outline():
     assert [l.title for m in v1.modules for l in m.lessons][2] == "5.1 Sorting"
     assert len(v1.excluded_prefix_block_ids) == 4  # the preface is a lesson (D-036)
     assert [l.title for m in v1.modules for l in m.lessons][0] == "Preface"
+
+
+# ----------------------------------------------------------------------------- episodes (D-036 (3))
+def test_every_lesson_is_an_episode_numbered_in_book_order_with_a_title_for_audio():
+    o = build(sat_like())
+    assert [(l.episode, l.episode_title) for l in o.lessons] == [
+        (1, "Preface"), (2, "Getting Organized"), (3, "Sorting"), (4, "Ranking, Scoring, and Prioritizing"),
+        (5, "Simple Brainstorming"), (6, "Cluster Brainstorming")]
+    g = build(gramsci_like())
+    assert [l.episode_title for l in g.lessons] == [
+        "Introduction", "Gramsci: Lodestar of Renewal", "Critical Approaches",
+        "The Originality of the Living Tradition", "Readings of Gramsci",
+        "The Originality of the Living Tradition: Conclusion"]
+    assert [l.episode for l in g.lessons] == list(range(1, 7))
+
+
+def test_episode_numbers_are_stable_across_reparse():
+    original = gramsci_like()
+    shifted = book([furniture(1, "From Subordination")] + rows_of(original),
+                   labels={p.page_no: p.printed_label for p in original.pages if p.printed_label})
+    a, b = build(original), build(shifted)
+    assert [(l.lesson_id, l.episode, l.episode_title) for l in a.lessons] == \
+        [(l.lesson_id, l.episode, l.episode_title) for l in b.lessons]
+
+
+def test_episode_titles_drop_numbering_and_trademark_signs():
+    rows = [head("CHAPTER 6 • EXPLORATION TECHNIQUES", 1, level=1, bm=(1, "Chapter 6 • Exploration Techniques")),
+            head("6.4 Circleboarding™", 1, level=2, bm=(2, "6.4 Circleboarding™")), para(1, 800),
+            head("6.5 Multiple Hypotheses Generator®", 2, level=2, bm=(2, "6.5 Multiple Hypotheses Generator®")),
+            para(2, 800)]
+    o = build(book(rows))
+    assert [l.episode_title for l in o.lessons] == ["Circleboarding", "Multiple Hypotheses Generator"]

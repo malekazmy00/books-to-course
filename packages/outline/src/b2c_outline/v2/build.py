@@ -42,7 +42,7 @@ from .reference import FURNITURE, bookmark_entries, find_heading, printed_toc_en
 from .titles import TitleVocab, clean_title, english_zipf
 
 BUILDER_NAME = "b2c-outline-v2"
-BUILDER_VERSION = "3"  # 2: figure descriptions in lessons; 3: front-matter lessons (D-036)
+BUILDER_VERSION = "4"  # 2: figure descriptions in lessons; 3: front-matter lessons; 4: episodes (D-036)
 # D-036 (2): front matter taught as lessons of the opening module, before chapter 1
 DEFAULT_FRONT_LESSONS = frozenset({"foreword", "preface", "acknowledgments"})
 FRONT_MODULE_TITLE = "Introduction to the Book"  # "مقدمة الكتاب" once translated (D-035)
@@ -88,6 +88,10 @@ _LEAD_NUMBER = re.compile(r"^\s*(?:[Cc]hapter\s+|CHAPTER\s+)?(\d{1,3})(?=[\s.:�
 _PART = re.compile(r"^\s*(?:part|book|volume)\s+(?:\d+|[ivxlc]+|one|two|three|four|five|six|seven|eight|nine|ten)\b",
                    re.I)
 _CAPTION_LIKE = re.compile(r"^(?:figure|fig\.|table|exhibit|chart|map|plate)\s+\d", re.I)
+_EPISODE_NUMBERING = re.compile(
+    r"^\s*(?:(?:chapter|part|section)\s+(?:\d{1,3}|[ivxlc]{1,6})\s*(?:[•·:.\-–—]\s*|\s+)|\d{1,3}(?:\.\d{1,3})*\.?\s+)",
+    re.I)
+_MARKS = re.compile(r"\s*[™®©]\s*")
 _TOC_LIKE = re.compile(r"\[\s*\d{1,4}\s*\]")
 _FIGURE_MARKER = re.compile(r"^\s*(?:back\s+to\s+(?:figure|table|image|exhibit)s?|return\s+to\s+(?:figure|table))\b",
                             re.I)
@@ -320,6 +324,7 @@ def build_outline_v2(book: ParsedBookV2, *, course_id: str, supplementary_book_i
         modules = [_front_module(bk, front, book.book_id, config.size_policy, top_level)] + [
             m.model_copy(update={"order": m.order + 1}) for m in modules]
     _unique_ids(modules)
+    _number_episodes(modules)
     excluded = _merge_adjacent(sorted(excluded, key=lambda r: r.seqs))
     return CourseOutlineV2(
         course_id=course_id, spine_book_id=book.book_id, supplementary_book_ids=list(supplementary_book_ids),
@@ -690,6 +695,32 @@ def _lesson(bk: _Book, p: _Piece, order: int, module_id: str, module_title: str,
         word_count=words, size_status=status, size_exception=exception,  # type: ignore[arg-type]
         subheadings=[bk.blocks[i].block_id for i in p.subheadings],
         block_roles=_role_runs(bk, [(p.start, p.end), *p.extras]))
+
+
+def episode_title(text: str) -> str:
+    """A title for audio: no leading chapter/section numbering, no trademark signs."""
+    out = _EPISODE_NUMBERING.sub("", text, count=1)
+    out = re.sub(r"\s+", " ", _MARKS.sub(" ", out)).strip(" :·•-")
+    return out or text.strip()
+
+
+def _number_episodes(modules: list[ModuleV2]) -> None:
+    """Every lesson is an episode (D-036 (3)): 1..n in book order, with a title for audio."""
+    k = 0
+    for m_i, m in enumerate(modules):
+        chapter = episode_title(m.display_title)
+        lessons = []
+        for lesson in m.lessons:
+            k += 1
+            if lesson.kind in ("chapter_intro", "chapter"):
+                title = chapter if lesson.kind == "chapter" or title_key(m.display_title) not in _GENERIC \
+                    else episode_title(lesson.display_title)
+            elif " · " in lesson.display_title:  # "Chapter 3 · Conclusion" -> "<chapter name>: Conclusion"
+                title = f"{chapter}: {episode_title(lesson.display_title.split(' · ', 1)[1])}"
+            else:
+                title = episode_title(lesson.display_title)
+            lessons.append(lesson.model_copy(update={"episode": k, "episode_title": title}))
+        modules[m_i] = m.model_copy(update={"lessons": lessons})
 
 
 def _unique_ids(modules: list[ModuleV2]) -> None:

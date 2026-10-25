@@ -211,3 +211,20 @@ def test_front_matter_lessons_carry_audio_adaptation_flags_inside_the_lesson(): 
         c.AudioAdaptation(start_block=bid(3), end_block=bid(4), reason="acknowledgements", note="")
     with pytest.raises(ValidationError):
         c.AudioAdaptation(start_block=bid(3), end_block=bid(4), reason="boring", note="x")
+
+
+def test_lessons_carry_episode_numbers_in_book_order():  # D-036 (3), 1.9.0
+    assert tuple(int(x) for x in c.SCHEMA_VERSION.split(".")) >= (1, 9, 0)
+    ok = outline([module("m", [lesson("m.a", 0, 4, episode=1, episode_title="Our Vision"),
+                               lesson("m.b", 5, 9, order=2, episode=2, episode_title="Getting Started")])])
+    assert [(l.episode, l.episode_title) for l in ok.lessons] == [(1, "Our Vision"), (2, "Getting Started")]
+    with pytest.raises(ValidationError, match="episode"):  # 1..n across the whole course, in order
+        outline([module("m", [lesson("m.a", 0, 4, episode=1, episode_title="A"),
+                              lesson("m.b", 5, 9, order=2, episode=3, episode_title="B")])])
+    with pytest.raises(ValidationError, match="episode"):  # all lessons or none (outlines before 1.9.0)
+        outline([module("m", [lesson("m.a", 0, 4, episode=1, episode_title="A"), lesson("m.b", 5, 9, order=2)])])
+    with pytest.raises(ValidationError, match="episode"):  # a number needs a title
+        lesson("m.a", 0, 4, episode=1)
+    with pytest.raises(ValidationError, match="line"):
+        lesson("m.a", 0, 4, episode=1, episode_title="A\nB")
+    assert valid().lessons[0].episode is None  # an outline built before 1.9.0 still validates

@@ -1,0 +1,1038 @@
+{
+ "summary": {
+  "tracks": 15,
+  "app_pass": 3,
+  "acx_pass": 0,
+  "app_pass_after_single_gain": 15,
+  "with_text_violations": 12,
+  "wrong_language": 2,
+  "rate_outliers": 1,
+  "median_chars_per_second": 7.758,
+  "max_abs_delta_vs_ffmpeg": {
+   "integrated_lu": 0.055,
+   "true_peak_db": 0.056
+  },
+  "violation_counts": {
+   "loudness_out_of_range": 9,
+   "true_peak_too_high": 9
+  },
+  "acx_violation_counts": {
+   "mp3_format": 15,
+   "noise_floor_too_high": 4,
+   "peak_too_high": 15,
+   "rms_out_of_range": 15,
+   "sample_rate_mismatch": 15
+  }
+ },
+ "tracks": [
+  {
+   "key": "1b9186f6",
+   "kind": "lesson_source_text",
+   "language": "ar",
+   "render_policy": "legacy",
+   "verification": false,
+   "stream": {
+    "codec": "mp3",
+    "sample_rate": 24000,
+    "layout": "mono",
+    "bitrate_kbps": 96
+   },
+   "measure": {
+    "duration_s": 26.016,
+    "sample_rate": 24000,
+    "channels": 1,
+    "integrated_lufs": -14.761,
+    "true_peak_dbtp": -1.098,
+    "peak_dbfs": -1.115,
+    "rms_dbfs": -14.373,
+    "noise_floor_dbfs": -34.962,
+    "clipped_samples": 0,
+    "clipped_runs": 0,
+    "leading_silence_s": 0.1,
+    "trailing_silence_s": 0.14,
+    "longest_internal_silence_s": 0.56,
+    "silent": false
+   },
+   "app_profile": {
+    "passed": false,
+    "violations": [
+     "loudness_out_of_range"
+    ]
+   },
+   "acx_profile": {
+    "passed": false,
+    "violations": [
+     "rms_out_of_range",
+     "peak_too_high",
+     "noise_floor_too_high",
+     "sample_rate_mismatch",
+     "mp3_format"
+    ]
+   },
+   "app_after_single_gain": {
+    "passed": true,
+    "violations": [],
+    "gain_db": -1.24,
+    "integrated_lufs": -16.0,
+    "true_peak_dbtp": -2.338
+   },
+   "ffmpeg_ebur128": {
+    "integrated_lufs": -14.8,
+    "true_peak_dbtp": -1.1
+   },
+   "text": {
+    "chars": 202,
+    "chars_per_second": 7.764,
+    "violations": [
+     "latin_letters"
+    ],
+    "wrong_language": true,
+    "digits": 0,
+    "bracket_refs": 0,
+    "latin_words": 27
+   },
+   "rate_outlier": false
+  },
+  {
+   "key": "2000af7f",
+   "kind": "lesson_source_text",
+   "language": "ar",
+   "render_policy": "legacy",
+   "verification": false,
+   "stream": {
+    "codec": "mp3",
+    "sample_rate": 24000,
+    "layout": "mono",
+    "bitrate_kbps": 96
+   },
+   "measure": {
+    "duration_s": 277.464,
+    "sample_rate": 24000,
+    "channels": 1,
+    "integrated_lufs": -14.982,
+    "true_peak_dbtp": -0.848,
+    "peak_dbfs": -0.876,
+    "rms_dbfs": -14.305,
+    "noise_floor_dbfs": -75.767,
+    "clipped_samples": 0,
+    "clipped_runs": 0,
+    "leading_silence_s": 0.1,
+    "trailing_silence_s": 0.12,
+    "longest_internal_silence_s": 0.74,
+    "silent": false
+   },
+   "app_profile": {
+    "passed": false,
+    "violations": [
+     "loudness_out_of_range",
+     "true_peak_too_high"
+    ]
+   },
+   "acx_profile": {
+    "passed": false,
+    "violations": [
+     "rms_out_of_range",
+     "peak_too_high",
+     "sample_rate_mismatch",
+     "mp3_format"
+    ]
+   },
+   "app_after_single_gain": {
+    "passed": true,
+    "violations": [],
+    "gain_db": -1.02,
+    "integrated_lufs": -16.0,
+    "true_peak_dbtp": -1.866
+   },
+   "ffmpeg_ebur128": {
+    "integrated_lufs": -15.0,
+    "true_peak_dbtp": -0.8
+   },
+   "text": {
+    "chars": 2096,
+    "chars_per_second": 7.554,
+    "violations": [
+     "raw_digit"
+    ],
+    "wrong_language": false,
+    "digits": 6,
+    "bracket_refs": 0,
+    "latin_words": 0
+   },
+   "rate_outlier": false
+  },
+  {
+   "key": "2acfe948",
+   "kind": "lesson_source_text",
+   "language": "ar",
+   "render_policy": "legacy",
+   "verification": false,
+   "stream": {
+    "codec": "mp3",
+    "sample_rate": 24000,
+    "layout": "mono",
+    "bitrate_kbps": 96
+   },
+   "measure": {
+    "duration_s": 420.192,
+    "sample_rate": 24000,
+    "channels": 1,
+    "integrated_lufs": -14.927,
+    "true_peak_dbtp": -0.944,
+    "peak_dbfs": -0.986,
+    "rms_dbfs": -14.232,
+    "noise_floor_dbfs": -77.396,
+    "clipped_samples": 0,
+    "clipped_runs": 0,
+    "leading_silence_s": 0.08,
+    "trailing_silence_s": 0.1,
+    "longest_internal_silence_s": 0.9,
+    "silent": false
+   },
+   "app_profile": {
+    "passed": false,
+    "violations": [
+     "loudness_out_of_range",
+     "true_peak_too_high"
+    ]
+   },
+   "acx_profile": {
+    "passed": false,
+    "violations": [
+     "rms_out_of_range",
+     "peak_too_high",
+     "sample_rate_mismatch",
+     "mp3_format"
+    ]
+   },
+   "app_after_single_gain": {
+    "passed": true,
+    "violations": [],
+    "gain_db": -1.07,
+    "integrated_lufs": -16.0,
+    "true_peak_dbtp": -2.016
+   },
+   "ffmpeg_ebur128": {
+    "integrated_lufs": -14.9,
+    "true_peak_dbtp": -1.0
+   },
+   "text": {
+    "chars": 3267,
+    "chars_per_second": 7.775,
+    "violations": [
+     "raw_digit",
+     "latin_letters"
+    ],
+    "wrong_language": false,
+    "digits": 6,
+    "bracket_refs": 0,
+    "latin_words": 1
+   },
+   "rate_outlier": false
+  },
+  {
+   "key": "2cf5607a",
+   "kind": "lesson_source_text",
+   "language": "ar",
+   "render_policy": "legacy",
+   "verification": false,
+   "stream": {
+    "codec": "mp3",
+    "sample_rate": 24000,
+    "layout": "mono",
+    "bitrate_kbps": 96
+   },
+   "measure": {
+    "duration_s": 284.472,
+    "sample_rate": 24000,
+    "channels": 1,
+    "integrated_lufs": -14.945,
+    "true_peak_dbtp": -1.021,
+    "peak_dbfs": -1.093,
+    "rms_dbfs": -14.266,
+    "noise_floor_dbfs": -71.581,
+    "clipped_samples": 0,
+    "clipped_runs": 0,
+    "leading_silence_s": 0.12,
+    "trailing_silence_s": 0.1,
+    "longest_internal_silence_s": 0.84,
+    "silent": false
+   },
+   "app_profile": {
+    "passed": false,
+    "violations": [
+     "loudness_out_of_range"
+    ]
+   },
+   "acx_profile": {
+    "passed": false,
+    "violations": [
+     "rms_out_of_range",
+     "peak_too_high",
+     "sample_rate_mismatch",
+     "mp3_format"
+    ]
+   },
+   "app_after_single_gain": {
+    "passed": true,
+    "violations": [],
+    "gain_db": -1.05,
+    "integrated_lufs": -16.0,
+    "true_peak_dbtp": -2.075
+   },
+   "ffmpeg_ebur128": {
+    "integrated_lufs": -15.0,
+    "true_peak_dbtp": -1.0
+   },
+   "text": {
+    "chars": 2207,
+    "chars_per_second": 7.758,
+    "violations": [
+     "raw_digit",
+     "latin_letters"
+    ],
+    "wrong_language": false,
+    "digits": 21,
+    "bracket_refs": 0,
+    "latin_words": 9
+   },
+   "rate_outlier": false
+  },
+  {
+   "key": "4dcd622d",
+   "kind": "lesson_attachment",
+   "language": "ar",
+   "render_policy": "legacy",
+   "verification": false,
+   "stream": {
+    "codec": "mp3",
+    "sample_rate": 24000,
+    "layout": "mono",
+    "bitrate_kbps": 96
+   },
+   "measure": {
+    "duration_s": 91.44,
+    "sample_rate": 24000,
+    "channels": 1,
+    "integrated_lufs": -15.019,
+    "true_peak_dbtp": -0.997,
+    "peak_dbfs": -1.04,
+    "rms_dbfs": -14.326,
+    "noise_floor_dbfs": -47.626,
+    "clipped_samples": 0,
+    "clipped_runs": 0,
+    "leading_silence_s": 0.08,
+    "trailing_silence_s": 0.5,
+    "longest_internal_silence_s": 0.66,
+    "silent": false
+   },
+   "app_profile": {
+    "passed": false,
+    "violations": [
+     "true_peak_too_high"
+    ]
+   },
+   "acx_profile": {
+    "passed": false,
+    "violations": [
+     "rms_out_of_range",
+     "peak_too_high",
+     "noise_floor_too_high",
+     "sample_rate_mismatch",
+     "mp3_format"
+    ]
+   },
+   "app_after_single_gain": {
+    "passed": true,
+    "violations": [],
+    "gain_db": -0.98,
+    "integrated_lufs": -16.0,
+    "true_peak_dbtp": -1.979
+   },
+   "ffmpeg_ebur128": {
+    "integrated_lufs": -15.0,
+    "true_peak_dbtp": -1.0
+   },
+   "text": {
+    "chars": 673,
+    "chars_per_second": 7.36,
+    "violations": [
+     "raw_digit"
+    ],
+    "wrong_language": false,
+    "digits": 16,
+    "bracket_refs": 0,
+    "latin_words": 0
+   },
+   "rate_outlier": false
+  },
+  {
+   "key": "5afb23cc",
+   "kind": "lesson_source_text",
+   "language": "ar",
+   "render_policy": "legacy",
+   "verification": false,
+   "stream": {
+    "codec": "mp3",
+    "sample_rate": 24000,
+    "layout": "mono",
+    "bitrate_kbps": 96
+   },
+   "measure": {
+    "duration_s": 507.624,
+    "sample_rate": 24000,
+    "channels": 1,
+    "integrated_lufs": -14.966,
+    "true_peak_dbtp": -0.784,
+    "peak_dbfs": -0.918,
+    "rms_dbfs": -14.345,
+    "noise_floor_dbfs": -79.629,
+    "clipped_samples": 0,
+    "clipped_runs": 0,
+    "leading_silence_s": 0.12,
+    "trailing_silence_s": 0.12,
+    "longest_internal_silence_s": 0.82,
+    "silent": false
+   },
+   "app_profile": {
+    "passed": false,
+    "violations": [
+     "loudness_out_of_range",
+     "true_peak_too_high"
+    ]
+   },
+   "acx_profile": {
+    "passed": false,
+    "violations": [
+     "rms_out_of_range",
+     "peak_too_high",
+     "sample_rate_mismatch",
+     "mp3_format"
+    ]
+   },
+   "app_after_single_gain": {
+    "passed": true,
+    "violations": [],
+    "gain_db": -1.03,
+    "integrated_lufs": -16.0,
+    "true_peak_dbtp": -1.818
+   },
+   "ffmpeg_ebur128": {
+    "integrated_lufs": -15.0,
+    "true_peak_dbtp": -0.8
+   },
+   "text": {
+    "chars": 3678,
+    "chars_per_second": 7.246,
+    "violations": [
+     "raw_digit",
+     "latin_letters"
+    ],
+    "wrong_language": false,
+    "digits": 65,
+    "bracket_refs": 0,
+    "latin_words": 7
+   },
+   "rate_outlier": false
+  },
+  {
+   "key": "7312e3ba",
+   "kind": "lesson_attachment",
+   "language": "ar",
+   "render_policy": "legacy",
+   "verification": false,
+   "stream": {
+    "codec": "mp3",
+    "sample_rate": 24000,
+    "layout": "mono",
+    "bitrate_kbps": 96
+   },
+   "measure": {
+    "duration_s": 82.584,
+    "sample_rate": 24000,
+    "channels": 1,
+    "integrated_lufs": -15.005,
+    "true_peak_dbtp": -1.291,
+    "peak_dbfs": -1.322,
+    "rms_dbfs": -14.299,
+    "noise_floor_dbfs": -65.787,
+    "clipped_samples": 0,
+    "clipped_runs": 0,
+    "leading_silence_s": 0.1,
+    "trailing_silence_s": 0.16,
+    "longest_internal_silence_s": 0.66,
+    "silent": false
+   },
+   "app_profile": {
+    "passed": true,
+    "violations": []
+   },
+   "acx_profile": {
+    "passed": false,
+    "violations": [
+     "rms_out_of_range",
+     "peak_too_high",
+     "sample_rate_mismatch",
+     "mp3_format"
+    ]
+   },
+   "app_after_single_gain": {
+    "passed": true,
+    "violations": [],
+    "gain_db": -0.99,
+    "integrated_lufs": -16.0,
+    "true_peak_dbtp": -2.286
+   },
+   "ffmpeg_ebur128": {
+    "integrated_lufs": -15.0,
+    "true_peak_dbtp": -1.3
+   },
+   "text": {
+    "chars": 641,
+    "chars_per_second": 7.762,
+    "violations": [],
+    "wrong_language": false,
+    "digits": 0,
+    "bracket_refs": 0,
+    "latin_words": 0
+   },
+   "rate_outlier": false
+  },
+  {
+   "key": "8173a8ce",
+   "kind": "lesson_source_text",
+   "language": "ar",
+   "render_policy": "legacy",
+   "verification": false,
+   "stream": {
+    "codec": "mp3",
+    "sample_rate": 24000,
+    "layout": "mono",
+    "bitrate_kbps": 96
+   },
+   "measure": {
+    "duration_s": 356.184,
+    "sample_rate": 24000,
+    "channels": 1,
+    "integrated_lufs": -14.951,
+    "true_peak_dbtp": -0.961,
+    "peak_dbfs": -1.063,
+    "rms_dbfs": -14.266,
+    "noise_floor_dbfs": -78.06,
+    "clipped_samples": 0,
+    "clipped_runs": 0,
+    "leading_silence_s": 0.12,
+    "trailing_silence_s": 0.12,
+    "longest_internal_silence_s": 1.04,
+    "silent": false
+   },
+   "app_profile": {
+    "passed": false,
+    "violations": [
+     "loudness_out_of_range",
+     "true_peak_too_high"
+    ]
+   },
+   "acx_profile": {
+    "passed": false,
+    "violations": [
+     "rms_out_of_range",
+     "peak_too_high",
+     "sample_rate_mismatch",
+     "mp3_format"
+    ]
+   },
+   "app_after_single_gain": {
+    "passed": true,
+    "violations": [],
+    "gain_db": -1.05,
+    "integrated_lufs": -16.0,
+    "true_peak_dbtp": -2.01
+   },
+   "ffmpeg_ebur128": {
+    "integrated_lufs": -15.0,
+    "true_peak_dbtp": -1.0
+   },
+   "text": {
+    "chars": 2542,
+    "chars_per_second": 7.137,
+    "violations": [
+     "raw_digit",
+     "bracket_reference"
+    ],
+    "wrong_language": false,
+    "digits": 27,
+    "bracket_refs": 6,
+    "latin_words": 0
+   },
+   "rate_outlier": false
+  },
+  {
+   "key": "81efc85f",
+   "kind": "lesson_attachment",
+   "language": "ar",
+   "render_policy": "legacy",
+   "verification": false,
+   "stream": {
+    "codec": "mp3",
+    "sample_rate": 24000,
+    "layout": "mono",
+    "bitrate_kbps": 96
+   },
+   "measure": {
+    "duration_s": 114.864,
+    "sample_rate": 24000,
+    "channels": 1,
+    "integrated_lufs": -15.06,
+    "true_peak_dbtp": -0.741,
+    "peak_dbfs": -0.774,
+    "rms_dbfs": -14.38,
+    "noise_floor_dbfs": -51.044,
+    "clipped_samples": 0,
+    "clipped_runs": 0,
+    "leading_silence_s": 0.1,
+    "trailing_silence_s": 0.14,
+    "longest_internal_silence_s": 0.64,
+    "silent": false
+   },
+   "app_profile": {
+    "passed": false,
+    "violations": [
+     "true_peak_too_high"
+    ]
+   },
+   "acx_profile": {
+    "passed": false,
+    "violations": [
+     "rms_out_of_range",
+     "peak_too_high",
+     "noise_floor_too_high",
+     "sample_rate_mismatch",
+     "mp3_format"
+    ]
+   },
+   "app_after_single_gain": {
+    "passed": true,
+    "violations": [],
+    "gain_db": -0.94,
+    "integrated_lufs": -16.0,
+    "true_peak_dbtp": -1.681
+   },
+   "ffmpeg_ebur128": {
+    "integrated_lufs": -15.1,
+    "true_peak_dbtp": -0.7
+   },
+   "text": {
+    "chars": 928,
+    "chars_per_second": 8.079,
+    "violations": [],
+    "wrong_language": false,
+    "digits": 0,
+    "bracket_refs": 0,
+    "latin_words": 0
+   },
+   "rate_outlier": false
+  },
+  {
+   "key": "8a61e10b",
+   "kind": "lesson_attachment",
+   "language": "ar",
+   "render_policy": "legacy",
+   "verification": false,
+   "stream": {
+    "codec": "mp3",
+    "sample_rate": 24000,
+    "layout": "mono",
+    "bitrate_kbps": 96
+   },
+   "measure": {
+    "duration_s": 87.12,
+    "sample_rate": 24000,
+    "channels": 1,
+    "integrated_lufs": -15.058,
+    "true_peak_dbtp": -1.01,
+    "peak_dbfs": -1.015,
+    "rms_dbfs": -14.69,
+    "noise_floor_dbfs": -73.958,
+    "clipped_samples": 0,
+    "clipped_runs": 0,
+    "leading_silence_s": 0.1,
+    "trailing_silence_s": 0.14,
+    "longest_internal_silence_s": 0.78,
+    "silent": false
+   },
+   "app_profile": {
+    "passed": true,
+    "violations": []
+   },
+   "acx_profile": {
+    "passed": false,
+    "violations": [
+     "rms_out_of_range",
+     "peak_too_high",
+     "sample_rate_mismatch",
+     "mp3_format"
+    ]
+   },
+   "app_after_single_gain": {
+    "passed": true,
+    "violations": [],
+    "gain_db": -0.94,
+    "integrated_lufs": -16.0,
+    "true_peak_dbtp": -1.952
+   },
+   "ffmpeg_ebur128": {
+    "integrated_lufs": -15.1,
+    "true_peak_dbtp": -1.0
+   },
+   "text": {
+    "chars": 979,
+    "chars_per_second": 11.237,
+    "violations": [
+     "latin_letters"
+    ],
+    "wrong_language": true,
+    "digits": 0,
+    "bracket_refs": 0,
+    "latin_words": 156
+   },
+   "rate_outlier": true
+  },
+  {
+   "key": "9f0750af",
+   "kind": "lesson_attachment",
+   "language": "ar",
+   "render_policy": "legacy",
+   "verification": false,
+   "stream": {
+    "codec": "mp3",
+    "sample_rate": 24000,
+    "layout": "mono",
+    "bitrate_kbps": 96
+   },
+   "measure": {
+    "duration_s": 63.072,
+    "sample_rate": 24000,
+    "channels": 1,
+    "integrated_lufs": -14.883,
+    "true_peak_dbtp": -1.043,
+    "peak_dbfs": -1.148,
+    "rms_dbfs": -14.189,
+    "noise_floor_dbfs": -31.657,
+    "clipped_samples": 0,
+    "clipped_runs": 0,
+    "leading_silence_s": 0.12,
+    "trailing_silence_s": 0.1,
+    "longest_internal_silence_s": 0.68,
+    "silent": false
+   },
+   "app_profile": {
+    "passed": false,
+    "violations": [
+     "loudness_out_of_range"
+    ]
+   },
+   "acx_profile": {
+    "passed": false,
+    "violations": [
+     "rms_out_of_range",
+     "peak_too_high",
+     "noise_floor_too_high",
+     "sample_rate_mismatch",
+     "mp3_format"
+    ]
+   },
+   "app_after_single_gain": {
+    "passed": true,
+    "violations": [],
+    "gain_db": -1.12,
+    "integrated_lufs": -16.0,
+    "true_peak_dbtp": -2.16
+   },
+   "ffmpeg_ebur128": {
+    "integrated_lufs": -14.9,
+    "true_peak_dbtp": -1.0
+   },
+   "text": {
+    "chars": 478,
+    "chars_per_second": 7.579,
+    "violations": [],
+    "wrong_language": false,
+    "digits": 0,
+    "bracket_refs": 0,
+    "latin_words": 0
+   },
+   "rate_outlier": false
+  },
+  {
+   "key": "a827616f",
+   "kind": "lesson_source_text",
+   "language": "ar",
+   "render_policy": "legacy",
+   "verification": false,
+   "stream": {
+    "codec": "mp3",
+    "sample_rate": 24000,
+    "layout": "mono",
+    "bitrate_kbps": 96
+   },
+   "measure": {
+    "duration_s": 1176.288,
+    "sample_rate": 24000,
+    "channels": 1,
+    "integrated_lufs": -14.964,
+    "true_peak_dbtp": -0.822,
+    "peak_dbfs": -0.844,
+    "rms_dbfs": -14.31,
+    "noise_floor_dbfs": -82.954,
+    "clipped_samples": 0,
+    "clipped_runs": 0,
+    "leading_silence_s": 0.1,
+    "trailing_silence_s": 0.1,
+    "longest_internal_silence_s": 0.96,
+    "silent": false
+   },
+   "app_profile": {
+    "passed": false,
+    "violations": [
+     "loudness_out_of_range",
+     "true_peak_too_high"
+    ]
+   },
+   "acx_profile": {
+    "passed": false,
+    "violations": [
+     "rms_out_of_range",
+     "peak_too_high",
+     "sample_rate_mismatch",
+     "mp3_format"
+    ]
+   },
+   "app_after_single_gain": {
+    "passed": true,
+    "violations": [],
+    "gain_db": -1.04,
+    "integrated_lufs": -16.0,
+    "true_peak_dbtp": -1.858
+   },
+   "ffmpeg_ebur128": {
+    "integrated_lufs": -15.0,
+    "true_peak_dbtp": -0.8
+   },
+   "text": {
+    "chars": 8864,
+    "chars_per_second": 7.536,
+    "violations": [
+     "raw_digit",
+     "latin_letters"
+    ],
+    "wrong_language": false,
+    "digits": 35,
+    "bracket_refs": 0,
+    "latin_words": 21
+   },
+   "rate_outlier": false
+  },
+  {
+   "key": "b1da8353",
+   "kind": "lesson_attachment",
+   "language": "ar",
+   "render_policy": "legacy",
+   "verification": false,
+   "stream": {
+    "codec": "mp3",
+    "sample_rate": 24000,
+    "layout": "mono",
+    "bitrate_kbps": 96
+   },
+   "measure": {
+    "duration_s": 142.488,
+    "sample_rate": 24000,
+    "channels": 1,
+    "integrated_lufs": -15.011,
+    "true_peak_dbtp": -1.149,
+    "peak_dbfs": -1.159,
+    "rms_dbfs": -14.353,
+    "noise_floor_dbfs": -71.126,
+    "clipped_samples": 0,
+    "clipped_runs": 0,
+    "leading_silence_s": 0.1,
+    "trailing_silence_s": 0.12,
+    "longest_internal_silence_s": 0.72,
+    "silent": false
+   },
+   "app_profile": {
+    "passed": true,
+    "violations": []
+   },
+   "acx_profile": {
+    "passed": false,
+    "violations": [
+     "rms_out_of_range",
+     "peak_too_high",
+     "sample_rate_mismatch",
+     "mp3_format"
+    ]
+   },
+   "app_after_single_gain": {
+    "passed": true,
+    "violations": [],
+    "gain_db": -0.99,
+    "integrated_lufs": -16.0,
+    "true_peak_dbtp": -2.137
+   },
+   "ffmpeg_ebur128": {
+    "integrated_lufs": -15.0,
+    "true_peak_dbtp": -1.2
+   },
+   "text": {
+    "chars": 1120,
+    "chars_per_second": 7.86,
+    "violations": [
+     "latin_letters"
+    ],
+    "wrong_language": false,
+    "digits": 0,
+    "bracket_refs": 0,
+    "latin_words": 3
+   },
+   "rate_outlier": false
+  },
+  {
+   "key": "e60ca49c",
+   "kind": "lesson_source_text",
+   "language": "ar",
+   "render_policy": "sentence-aware-boundaries-v4-short-arabic-terminal",
+   "verification": false,
+   "stream": {
+    "codec": "mp3",
+    "sample_rate": 24000,
+    "layout": "mono",
+    "bitrate_kbps": 96
+   },
+   "measure": {
+    "duration_s": 364.872,
+    "sample_rate": 24000,
+    "channels": 1,
+    "integrated_lufs": -15.002,
+    "true_peak_dbtp": -0.733,
+    "peak_dbfs": -0.745,
+    "rms_dbfs": -14.301,
+    "noise_floor_dbfs": -76.524,
+    "clipped_samples": 0,
+    "clipped_runs": 0,
+    "leading_silence_s": 0.12,
+    "trailing_silence_s": 0.12,
+    "longest_internal_silence_s": 1.08,
+    "silent": false
+   },
+   "app_profile": {
+    "passed": false,
+    "violations": [
+     "true_peak_too_high"
+    ]
+   },
+   "acx_profile": {
+    "passed": false,
+    "violations": [
+     "rms_out_of_range",
+     "peak_too_high",
+     "sample_rate_mismatch",
+     "mp3_format"
+    ]
+   },
+   "app_after_single_gain": {
+    "passed": true,
+    "violations": [],
+    "gain_db": -1.0,
+    "integrated_lufs": -16.0,
+    "true_peak_dbtp": -1.732
+   },
+   "ffmpeg_ebur128": {
+    "integrated_lufs": -15.0,
+    "true_peak_dbtp": -0.7
+   },
+   "text": {
+    "chars": 2542,
+    "chars_per_second": 6.967,
+    "violations": [
+     "raw_digit",
+     "bracket_reference"
+    ],
+    "wrong_language": false,
+    "digits": 27,
+    "bracket_refs": 6,
+    "latin_words": 0
+   },
+   "rate_outlier": false
+  },
+  {
+   "key": "f9f37f64",
+   "kind": "lesson_attachment",
+   "language": "ar",
+   "render_policy": "legacy",
+   "verification": false,
+   "stream": {
+    "codec": "mp3",
+    "sample_rate": 24000,
+    "layout": "mono",
+    "bitrate_kbps": 96
+   },
+   "measure": {
+    "duration_s": 126.36,
+    "sample_rate": 24000,
+    "channels": 1,
+    "integrated_lufs": -14.976,
+    "true_peak_dbtp": -0.838,
+    "peak_dbfs": -0.859,
+    "rms_dbfs": -14.313,
+    "noise_floor_dbfs": -71.842,
+    "clipped_samples": 0,
+    "clipped_runs": 0,
+    "leading_silence_s": 0.08,
+    "trailing_silence_s": 0.16,
+    "longest_internal_silence_s": 0.62,
+    "silent": false
+   },
+   "app_profile": {
+    "passed": false,
+    "violations": [
+     "loudness_out_of_range",
+     "true_peak_too_high"
+    ]
+   },
+   "acx_profile": {
+    "passed": false,
+    "violations": [
+     "rms_out_of_range",
+     "peak_too_high",
+     "sample_rate_mismatch",
+     "mp3_format"
+    ]
+   },
+   "app_after_single_gain": {
+    "passed": true,
+    "violations": [],
+    "gain_db": -1.02,
+    "integrated_lufs": -16.0,
+    "true_peak_dbtp": -1.861
+   },
+   "ffmpeg_ebur128": {
+    "integrated_lufs": -15.0,
+    "true_peak_dbtp": -0.8
+   },
+   "text": {
+    "chars": 992,
+    "chars_per_second": 7.851,
+    "violations": [
+     "raw_digit"
+    ],
+    "wrong_language": false,
+    "digits": 8,
+    "bracket_refs": 0,
+    "latin_words": 0
+   },
+   "rate_outlier": false
+  }
+ ]
+}

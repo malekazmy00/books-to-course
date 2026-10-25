@@ -4,8 +4,9 @@ New names only; ``GenerateMP3Workflow`` and its activity are untouched.
 
     speech_v2_prepare              accepted translate-book assembly (registry) + its unit results
                                    (digest re-checked) + approved termbase -> ``speech-text``
-                                   artifact (SpeechTextDocument + bounded plan) -> gate
-                                   ``speech.text-frontend`` -> accepted | rejected
+                                   artifact (SpeechTextDocument + bounded plan) -> gates
+                                   ``speech.text-frontend`` and ``speech.reading-quality``
+                                   (phrase limits, pause plan, speakable text) -> accepted | rejected
     speech_v2_synthesize_segments  one bounded batch of segments -> content-addressed
                                    ``speech-segment-audio`` artifacts (WAV + per-segment QA);
                                    a retry renders only what is missing; a segment that fails QA
@@ -67,6 +68,7 @@ class GenerateSpeechV2Input(BaseModel):
     assembly_ref: dict[str, Any]  # accepted translate-book assembly
     termbase_ref: dict[str, Any] | None = None  # book-termbase-approved snapshot (pronunciation lexicon)
     lexicon_overrides: dict[str, str] = {}  # reviewed speech lexicon: Latin source form -> Arabic spoken form
+    engine_profile: str = "fasih-xtts"  # b2c_speech.text.ENGINE_PROFILES: phrase limits of the TTS engine
     language: Literal["ar"] = "ar"
     loudness_profile: str = DEFAULT_LOUDNESS_PROFILE
     voice_id: str = "default"
@@ -187,6 +189,12 @@ def text_policy() -> GatePolicy:
     return GatePolicy("speech.text-frontend", "deterministic", {**SPEECH_TEXT_GATE, "frontend": FRONTEND_VERSION})
 
 
+def reading_policy(profile: str) -> GatePolicy:
+    from b2c_speech.text import READING_QUALITY_GATE, engine_profile
+    return GatePolicy("speech.reading-quality", "deterministic",
+                      {**READING_QUALITY_GATE, "profile": engine_profile(profile).definition()})
+
+
 def segment_policy(sample_rate: int) -> GatePolicy:
     from b2c_speech.audio import SegmentLimits
     return GatePolicy("speech.segment-qa", "deterministic",
@@ -277,13 +285,18 @@ class SpeechV2Activities:
     @activity.defn(name="speech_v2_prepare")
     def prepare(self, inp: GenerateSpeechV2Input) -> SpeechPrepared:
         from b2c_speech.audio import profile_by_name
-        from b2c_speech.text import FRONTEND_VERSION, NotSpeechReady, build_speech_text, evaluate_speech_text
+        from b2c_speech.text import (FRONTEND_VERSION, NotSpeechReady, build_speech_text, engine_profile,
+                                     evaluate_reading_quality, evaluate_speech_text)
 
         from .translate_book import UnitsCache, translation_results_digest
         try:
             profile_by_name(inp.loudness_profile)
         except ValueError as exc:
             raise _fail(str(exc), "UnknownLoudnessProfile") from exc
+        try:
+            engine_profile(inp.engine_profile)
+        except ValueError as exc:
+            raise _fail(str(exc), "UnknownEngineProfile") from exc
         assembly = _scoped(inp.assembly_ref, bucket=self.store.bucket, course_id=inp.course_id,
                            stage=ASSEMBLY_STAGE, label="assembly_ref")
         if self.promotion is None:
@@ -307,14 +320,15 @@ class SpeechV2Activities:
             book_id = units[0].book_id if units else ""
             lexicon, termbase_ref = self._lexicon(inp, book_id)
             config = {"frontend": FRONTEND_VERSION, "lexicon_digest": lexicon.digest,
-                      "limits": inp.limits.model_dump(mode="json"), "language": inp.language}
+                      "limits": inp.limits.model_dump(mode="json"), "language": inp.language,
+                      "engine_profile": engine_profile(inp.engine_profile).definition()}
             inputs = [assembly] + ([termbase_ref] if termbase_ref else [])
             key = stage_key(SPEECH_TEXT_STAGE, FRONTEND_VERSION, [r.sha256 for r in inputs], config)
 
             def compute() -> dict[str, bytes]:
                 try:
                     doc = build_speech_text(units, translations, book_id=book_id, source=assembly, lexicon=lexicon,
-                                            language=inp.language)
+                                            language=inp.language, profile=inp.engine_profile)
                 except NotSpeechReady as exc:
                     raise _fail(str(exc), "NotSpeechReady") from exc
                 plan = plan_tracks(doc, inp.limits)
@@ -324,15 +338,20 @@ class SpeechV2Activities:
             ref, hit = self.store.get_or_compute(inp.course_id, SPEECH_TEXT_STAGE, key, compute)
             doc = self._doc(ref)
             plan = SpeechPlan.model_validate_json(self.store.read(ref, "speech-plan.json"))
-            passed, metrics = evaluate_speech_text(doc)
-            policy = text_policy()
-            record = self.promotion.record_candidate(inp.course_id, ref, required_gates=[policy.gate_id],
+            text_passed, metrics = evaluate_speech_text(doc)
+            reading_passed, reading = evaluate_reading_quality(doc, inp.engine_profile)
+            policy, reading_gate = text_policy(), reading_policy(inp.engine_profile)
+            record = self.promotion.record_candidate(inp.course_id, ref,
+                                                     required_gates=[policy.gate_id, reading_gate.gate_id],
                                                      inputs=inputs, config=config,
                                                      identities=[ProducerIdentity(role="tool", model_id="b2c-speech-tn",
                                                                                   revision=FRONTEND_VERSION)])
             if record.status == "candidate":
-                self._gate(inp.course_id, ref, policy, passed, metrics, "speech-text.json")
+                self._gate(inp.course_id, ref, policy, text_passed, metrics, "speech-text.json")
+                self._gate(inp.course_id, ref, reading_gate, reading_passed, reading, "speech-text.json")
                 record = self.promotion.settle(inp.course_id, ref)
+            passed = text_passed and reading_passed
+            metrics = {**metrics, "reading_quality": reading}
         return SpeechPrepared(speech_text_ref=ref.model_dump(mode="json"), status=record.status, gate_passed=passed,
                               gate_metrics=metrics, plan=plan, cache_hit=hit)
 

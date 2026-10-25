@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 from .lexicon import PronunciationLexicon, spell_acronym, transliterate_latin
 from .numbers import MAX_CARDINAL, cardinal, decade, ordinal, roman_to_int
 
-NORMALIZER_VERSION = "ar-tn-1"
+NORMALIZER_VERSION = "ar-tn-2"
 
 AR = "\u0621-\u064a\u0671-\u06d3"  # Arabic letters (incl. the tatweel)
 AR_LETTERS = "\u0621-\u063a\u0641-\u064a\u0671-\u06d3"  # without the tatweel
@@ -77,10 +77,20 @@ _SYMBOLS = [
     (re.compile(r"\s*&\s*"), " و", "symbol"),
     (re.compile(r"\.{3}|…"), ".", "symbol"),
     (re.compile(r"[«»“”„\"‘’']"), "", "quotes_removed"),
+    (re.compile(r"\s*×\s*"), " في ", "symbol"),  # 3×4 -> ثلاثة في أربعة (dimensions, products)
     (re.compile(r"[\[\]{}()*#_|~^=<>+\\$%\-]|٪"), " ", "symbol"),
 ]
 _LATIN_LETTER = re.compile(r"[A-Za-z]")
 _ARABIC_LETTER = re.compile(rf"[{AR}]")
+# A Latin-only parenthetical that is a citation, not a term: (Gramsci, 1971: 23), (Smith et al.)
+_CITATION = re.compile(r"\d|,|:|\bet al\b|\bpp?\.", re.IGNORECASE)
+_ACRONYM_GLOSS = re.compile(r"(?:[A-Z]\.?){2,6}s?")
+# Quotations: a long quotation is set off by short breaks (as a narrator does); a short quoted term
+# or scare quote is read inline. Threshold in words.
+_QUOTE_SPANS = (re.compile(r"«([^«»]*)»"), re.compile(r"“([^“”]*)”"), re.compile(r'"([^"]*)"'))
+QUOTE_BREAK_MIN_WORDS = 4
+# What a voice can speak: Arabic letters, tashkeel, spaces and Arabic prosodic punctuation.
+_UNSPEAKABLE = re.compile(r"[^\u0621-\u063a\u0641-\u064a\u0671-\u06d3\u064b-\u0652\u0670\s.،؛:!؟]")
 
 
 @dataclass
@@ -89,6 +99,7 @@ class Normalized:
     rules: list[str] = field(default_factory=list)
     lexicon_hits: list[str] = field(default_factory=list)
     lexicon_misses: list[str] = field(default_factory=list)
+    unvoiced_glosses: list[str] = field(default_factory=list)  # original terms left unspoken (no reviewed form)
 
     def note(self, rule: str) -> None:
         if rule not in self.rules:
@@ -129,7 +140,34 @@ def _numeric_words(number: str, case: str) -> str:
     return _decimal_words(number, case) if "." in number else _number_words(number, case)
 
 
-def _remove_unspoken(out: Normalized, structure: str) -> None:
+def _gloss(out: Normalized, inner: str, lexicon: PronunciationLexicon, seen: set[str]) -> str:
+    """A Latin-only parenthetical: the original term next to its Arabic rendering («الهيمنة (hegemony)»).
+
+    Voiced once per document after a short break when its pronunciation is known for sure: a
+    reviewed speech-lexicon entry, or an acronym spelled with letter names. Never guessed from
+    spelling (an English word read by Arabic grapheme rules is noise); a citation is not spoken.
+    """
+    term = re.sub(r"\s+", " ", inner).strip()
+    if _CITATION.search(term):
+        out.note("latin_citation_removed")
+        return ""
+    key = term.casefold()
+    if key in seen:
+        out.note("latin_gloss_repeat_removed")
+        return ""
+    spoken = lexicon.pronunciation(term)
+    if spoken is None and _ACRONYM_GLOSS.fullmatch(term):
+        spoken = spell_acronym(re.sub(r"[^A-Z]", "", term))
+    if not spoken:
+        out.unvoiced_glosses.append(term)
+        out.note("latin_gloss_unvoiced")
+        return ""
+    seen.add(key)
+    out.note("latin_gloss_voiced")
+    return "، " + spoken + "، "
+
+
+def _remove_unspoken(out: Normalized, structure: str, lexicon: PronunciationLexicon, seen: set[str]) -> None:
     _sub(out, _URL, "", "url_removed")
     _sub(out, _DEFINITE_DIGIT, "", "definite_number")  # الـ19 -> 19, before marker detection
     if any(ch in out.text for ch in _SUPERSCRIPTS):
@@ -141,16 +179,14 @@ def _remove_unspoken(out: Normalized, structure: str) -> None:
     def latin_bracket(match: re.Match[str]) -> str:
         inner = match.group(1)
         if _LATIN_LETTER.search(inner) and not _ARABIC_LETTER.search(inner):
-            out.note("latin_parenthetical_removed")  # e.g. an acronym gloss: "... المتنافسة [ACH]"
-            return ""
+            return _gloss(out, inner, lexicon, seen)  # e.g. an acronym gloss: "... المتنافسة [ACH]"
         return match.group(0)
     out.text = _LATIN_BRACKET.sub(latin_bracket, out.text)
 
     def paren(match: re.Match[str]) -> str:
         inner = match.group(1)
         if _LATIN_LETTER.search(inner) and not _ARABIC_LETTER.search(inner):
-            out.note("latin_parenthetical_removed")
-            return ""
+            return _gloss(out, inner, lexicon, seen)
         if re.fullmatch(rf"\s*(?:انظر\s+)?(?<![{AR}])صص?\.?\s*\d[\d\s\-–،,]*", inner):
             out.note("page_reference_removed")
             return ""
@@ -160,7 +196,13 @@ def _remove_unspoken(out: Normalized, structure: str) -> None:
             return ""
         return "، " + inner + "، "  # keep the content, spoken as a parenthetical pause
 
-    out.text = _PAREN.sub(paren, out.text)
+    for depth in range(8):  # innermost first, so nested parentheses become nested breaks, not stray symbols
+        new = _PAREN.sub(paren, out.text)
+        if new == out.text:
+            break
+        if depth:
+            out.note("nested_parentheses")
+        out.text = new
     _sub(out, _PAGE_REF, "", "page_reference_removed")
     _sub(out, _GLUED_MARKER, "", "footnote_marker_removed")
     if structure == "heading":
@@ -274,22 +316,63 @@ def _expand_numbers(out: Normalized) -> None:
     out.text = _INTEGER.sub(integer, out.text)
 
 
+def _quotes(out: Normalized) -> None:
+    def quote(match: re.Match[str]) -> str:
+        inner = match.group(1).strip()
+        if len(inner.split()) >= QUOTE_BREAK_MIN_WORDS:
+            out.note("quote_break")
+            return "، " + inner + "، "
+        return inner
+    for pattern in _QUOTE_SPANS:
+        new = pattern.sub(quote, out.text)
+        if new != out.text:
+            out.text = new
+            out.note("quotes_removed")
+
+
 def _clean(out: Normalized) -> None:
+    _quotes(out)
     for pattern, repl, rule in _SYMBOLS:
         _sub(out, pattern, repl, rule)
     text = re.sub(rf"(?<![{AR_LETTERS}])([لبك])ـ\s*", r"\1", out.text)  # "لـ سي" -> "لسي"
     text = text.replace("ـ", "")
+    arabic_punct = text.replace(",", "،").replace(";", "؛").replace("?", "؟")  # no Latin is left to need them
+    if arabic_punct != text:
+        text = arabic_punct
+        out.note("arabic_punctuation")
+    collapsed = re.sub(r"([!؟.])(?:\s*\1)+", r"\1", text)
+    if collapsed != text:
+        text = collapsed
+        out.note("repeated_punctuation")
+    speakable = _UNSPEAKABLE.sub(" ", text)
+    if speakable != text:
+        text = speakable
+        out.note("unspeakable_removed")
     text = re.sub(r"\s+", " ", text)
     text = re.sub(r"\s+([.،؛:!?؟,])", r"\1", text)
     text = re.sub(r"([،؛,:])(?:\s*[،؛,:])+", r"\1", text)
     text = re.sub(r"[،؛,:]\s*([.!?؟])", r"\1", text)
     text = re.sub(r"^[\s.،؛,:!?؟]+", "", text)
+    text = re.sub(rf"([.،؛:!؟])(?=[{AR_LETTERS}])", r"\1 ", text)
     out.text = text.strip()
 
 
-def normalize_text(text: str, *, lexicon: PronunciationLexicon | None = None,
-                   structure: str = "paragraph") -> Normalized:
-    """Spoken form of one span of accepted Arabic text."""
+def _terminate(out: Normalized) -> None:
+    """End every spoken unit with sentence punctuation: the voice then closes with a final fall."""
+    text = re.sub(r"[،؛,\s]+$", "", out.text)
+    if text and text[-1] not in ".!؟:":
+        text += "."
+        out.note("final_punctuation_added")
+    out.text = text
+
+
+def normalize_text(text: str, *, lexicon: PronunciationLexicon | None = None, structure: str = "paragraph",
+                   seen_glosses: set[str] | None = None, terminal: bool = False) -> Normalized:
+    """Spoken form of one span of accepted Arabic text.
+
+    ``seen_glosses`` is shared across the units of one document so an original term in
+    parentheses is voiced at its first mention only; ``terminal`` closes the span with a stop.
+    """
     lexicon = lexicon or PronunciationLexicon()
     out = Normalized(text=unicodedata.normalize("NFC", text))
     unified = out.text.translate(_DIGIT_MAP)
@@ -299,13 +382,15 @@ def normalize_text(text: str, *, lexicon: PronunciationLexicon | None = None,
         out.text = unified
         out.note("digits_unified")
     out.text = re.sub(r"[\r\n\t]+", " ", out.text)
-    _remove_unspoken(out, structure)
+    _remove_unspoken(out, structure, lexicon, seen_glosses if seen_glosses is not None else set())
     for pattern, repl, rule in _ABBREVIATIONS:
         _sub(out, pattern, repl, rule)
     _expand_ordinals(out)
     _expand_latin(out, lexicon)
     _expand_numbers(out)
     _clean(out)
+    if terminal:
+        _terminate(out)
     return out
 
 

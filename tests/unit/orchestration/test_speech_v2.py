@@ -151,13 +151,16 @@ def test_prepare_builds_traced_speech_text_from_the_accepted_assembly(store, res
     assert prepared.status == "accepted" and prepared.gate_passed
     doc = a._doc(ArtifactRef.model_validate(prepared.speech_text_ref))
     spoken = {s.unit_ids[0]: s.spoken_text for s in doc.segments}
-    assert spoken["bk:u00000"] == "الفصل الأول: الهيمنة"
+    assert spoken["bk:u00000"] == "الفصل الأول: الهيمنة."  # a heading closes with a stop (final fall)
     assert spoken["bk:u00001"] == "كتب غرامشي في عام ألف وتسعمئة وتسعة وعشرين عن الهيمنة."
     assert "ثلاثة فاصلة خمسة بالمئة" in spoken["bk:u00002"] and "القرن العشرين" in spoken["bk:u00002"]
     assert {e.unit_id: e.reason for e in doc.excluded} == {"bk:u00003": "not_spoken_kind:footnote"}
     record = promo.require_accepted("c1", ArtifactRef.model_validate(prepared.speech_text_ref))
     assert [r.stage for r in record.inputs] == ["translate-book", "book-termbase-approved"]
     assert record.latest_gate_results()["speech.text-frontend"].metrics["lexicon_hits"] == 1
+    reading = record.latest_gate_results()["speech.reading-quality"]
+    assert reading.passed and reading.metrics["pause_plan_errors"] == [] and reading.metrics["phrases_over_limit"] == 0
+    assert doc.segments[0].boundary_after == "heading" and doc.segments[-1].boundary_after == "paragraph"
     assert prepared.plan.total_segments == len(doc.segments) and len(prepared.plan.tracks) == 1
     again = a.prepare(speech_input(out, termbase_ref=termbase_ref(store).model_dump(mode="json")))
     assert again.cache_hit and again.speech_text_ref == prepared.speech_text_ref

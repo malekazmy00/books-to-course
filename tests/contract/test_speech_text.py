@@ -71,3 +71,26 @@ def test_document_needs_segments():
 def test_pause_bounded():
     with pytest.raises(ValidationError):
         seg(0, pause_after_ms=60_000)
+
+
+# SCHEMA 1.14.0: prosodic boundary plan + unvoiced original terms (speech readability proposal)
+def test_schema_version_bumped_for_boundary_plan():
+    assert tuple(int(x) for x in c.SCHEMA_VERSION.split(".")) >= (1, 14, 0)
+
+
+def test_segment_boundary_plan_round_trips():
+    s = seg(0, boundary_after="section", break_after="x-strong", pause_after_ms=1200,
+            unvoiced_glosses=["hegemony"])
+    again = c.SpeechSegment.model_validate_json(s.model_dump_json())
+    assert again == s and again.boundary_after == "section" and again.break_after == "x-strong"
+
+
+def test_segment_boundary_plan_is_optional_for_older_documents():
+    s = seg(0)
+    assert s.boundary_after is None and s.break_after is None and s.unvoiced_glosses == []
+
+
+@pytest.mark.parametrize("field,value", [("boundary_after", "chapter"), ("break_after", "loud")])
+def test_segment_boundary_values_are_closed(field, value):
+    with pytest.raises(ValidationError):
+        seg(0, **{field: value})

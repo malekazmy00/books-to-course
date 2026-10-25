@@ -15,7 +15,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-SCHEMA_VERSION = "1.13.0"
+SCHEMA_VERSION = "1.14.0"
 
 
 class Contract(BaseModel):
@@ -1236,6 +1236,10 @@ class AudioAsset(Contract):
 # text made deterministically from ACCEPTED translation units, split into TTS segments, each one
 # traced to the units it was made from (audit 07 C3: per-segment status and provenance).
 SpeechStructure = Literal["heading", "paragraph", "list_item", "caption", "question", "answer"]
+# SCHEMA 1.14.0: the prosodic boundary after a segment (speech readability proposal 2026-10-25). The
+# break strength is SSML 1.1's; ``pause_after_ms`` is its realized silence for engines without SSML.
+SpeechBoundary = Literal["phrase", "sentence", "list_item", "paragraph", "heading", "section"]
+SpeechBreakStrength = Literal["none", "x-weak", "weak", "medium", "strong", "x-strong"]
 
 
 class SpeechSegment(Contract):
@@ -1250,6 +1254,9 @@ class SpeechSegment(Contract):
     lexicon_hits: list[str] = []  # Latin source forms replaced from the pronunciation lexicon
     lexicon_misses: list[str] = []  # Latin words spoken through the documented fallback (not in lexicon)
     pause_after_ms: int = Field(ge=0, le=5000)
+    boundary_after: SpeechBoundary | None = None  # None: made before 1.14.0 (no boundary plan)
+    break_after: SpeechBreakStrength | None = None
+    unvoiced_glosses: list[str] = []  # parenthesised original (Latin) terms not voiced: no reviewed pronunciation
 
     @field_validator("spoken_text", "source_text")
     @classmethod

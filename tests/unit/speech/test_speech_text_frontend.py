@@ -85,7 +85,8 @@ GOLDEN = [
     ("انظر الشكل 1.6 أدناه", "انظر الشكل واحد نقطة ستة أدناه"),
     ("3.6 جعل استخدام التقنيات عادة", "جعل استخدام التقنيات عادة"),
     ("المعرف LCCN 2019033477 هنا", "المعرف إل سي سي إن اثنان صفر واحد تسعة صفر ثلاثة ثلاثة أربعة سبعة سبعة هنا"),
-    ("وتحليل الفرضيات المتنافسة [ACH]، ورسم الخرائط", "وتحليل الفرضيات المتنافسة، ورسم الخرائط"),
+    # an acronym gloss is spelled at its first mention (speech readability proposal 2026-10-25; it was dropped)
+    ("وتحليل الفرضيات المتنافسة [ACH]، ورسم الخرائط", "وتحليل الفرضيات المتنافسة، إيه سي إتش، ورسم الخرائط"),
     ("مستكشف التناقضات™ وحقوق © محفوظة", "مستكشف التناقضات وحقوق محفوظة"),
     ("في 11 سبتمبر 2001 وقعت", "في الحادي عشر من سبتمبر ألفين وواحد وقعت"),
     ("العصف الذهني العنقودي (الفصل 6).", "العصف الذهني العنقودي، الفصل السادس."),
@@ -191,9 +192,9 @@ def test_builder_traces_segments_to_units_and_strips_restored_markers():
     translations = {"bk:u00001": accepted(1, "الفصل 1"), "bk:u00002": accepted(2, "في عام 2011 قال ذلك. 7"),
                     "bk:u00003": accepted(3, "حاشية."), "bk:u00004": accepted(4, "", decision="dropped")}
     doc = build_speech_text(units, translations, book_id="bk", source=SOURCE, lexicon=LEX)
-    assert doc.frontend_version == FRONTEND_VERSION and doc.lexicon_digest == LEX.digest
+    assert doc.frontend_version == f"{FRONTEND_VERSION}-fasih-xtts" and doc.lexicon_digest == LEX.digest
     assert [s.unit_ids for s in doc.segments] == [["bk:u00001"], ["bk:u00002"]]
-    assert doc.segments[0].structure == "heading" and doc.segments[0].spoken_text == "الفصل الأول"
+    assert doc.segments[0].structure == "heading" and doc.segments[0].spoken_text == "الفصل الأول."
     assert doc.segments[0].pause_after_ms > doc.segments[1].pause_after_ms > 0
     assert doc.segments[1].spoken_text == "في عام ألفين وأحد عشر قال ذلك."
     assert "footnote_marker_removed" in doc.segments[1].rules_applied

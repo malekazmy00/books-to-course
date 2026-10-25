@@ -118,5 +118,17 @@ class PronunciationLexicon:
                 return spoken
         return None
 
+    def pronunciation(self, surface: str) -> str | None:
+        """The reviewed spoken form (an ``override`` entry, PLS 1.0 ``<alias>`` in effect) or None.
+
+        Termbase entries map a source term to its Arabic TRANSLATION; next to that translation
+        («الهيمنة (hegemony)») only a reviewed pronunciation of the original may be voiced.
+        """
+        key = _key(surface)
+        for source, spoken, origin in self.entries:
+            if source == key:
+                return spoken if origin == "override" else None
+        return None
+
 
 __all__ = ["LETTER_NAMES", "PronunciationLexicon", "spell_acronym", "transliterate_latin"]

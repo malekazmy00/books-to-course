@@ -199,7 +199,7 @@ def test_split_sentences(text, expected):
 def test_references_use_the_rule_renderer_by_default():
     engine = FakeEngine([])
     out = translator(engine).translate(unit("Ibid., 55.", kind="reference")).translation
-    assert "المرجع نفسه" in out.target_text and "55" in out.target_text
+    assert out.target_text == "Ibid., 55."  # D-048: a foreign reference stays verbatim (ACRPS)
     assert out.origin == "rule" and engine.requests == []
 
 

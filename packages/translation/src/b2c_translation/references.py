@@ -18,9 +18,10 @@ Sources for the Arabic forms (checked 2026-10-24):
   in the ACRPS guide (it prescribes short-form repeats instead of op. cit.); they are the
   forms commonly used in Arabic university citation guides and are marked as such below.
 
-Note: ACRPS itself keeps connectives of *foreign-language* notes in the foreign language
-(``Ibid., p. number``). The brief for D-028 asks for Arabic connectives so the course reads
-as Arabic; ``render_reference(..., translate_connectives=False)`` gives the ACRPS-strict form.
+Policy (owner, 2026-10-25, D-048): follow the practice of established Arabic academic translation
+(ACRPS): a *foreign-language* note keeps its connectives in its own language (``Ibid., p. number``),
+so a reference unit is copied verbatim (``render_reference_unit``). The Arabic connective table
+below stays available (``translate_connectives=True``) for references written in Arabic.
 """
 from __future__ import annotations
 
@@ -99,7 +100,7 @@ def render_reference(source_text: str, *, translate_connectives: bool = True) ->
     return re.sub(r"\x00(\d+)\x00", lambda m: protected[int(m.group(1))], text)
 
 
-def render_reference_unit(unit: TranslationUnit, *, translate_connectives: bool = True) -> str:
+def render_reference_unit(unit: TranslationUnit, *, translate_connectives: bool = False) -> str:
     if unit.kind != "reference":
         raise ValueError(f"unit {unit.unit_id} is {unit.kind!r}, not 'reference'")
     return render_reference(unit.source_text, translate_connectives=translate_connectives)

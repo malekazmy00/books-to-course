@@ -56,7 +56,8 @@ def test_idempotent():
 def test_unit_rendering_requires_reference_kind():
     u = TranslationUnit(unit_id="b:u00001", book_id="b", block_ids=["b:1:0"], kind="reference",
                         source_text="Ibid., 55.", pages=[1], section_path=[])
-    assert render_reference_unit(u) == "المرجع نفسه، 55."
+    assert render_reference_unit(u) == "Ibid., 55."  # D-048: foreign references stay verbatim (ACRPS)
+    assert render_reference_unit(u, translate_connectives=True) == "المرجع نفسه، 55."
     prose = u.model_copy(update={"kind": "prose"})
     with pytest.raises(ValueError):
         render_reference_unit(prose)

@@ -253,3 +253,9 @@ async def test_workflow_per_episode_en_then_ar(wf_env):
                 **refs, episodes=[0, 5, 8], termbase_ref={}, engine_profile="fake"), id="wf-e", task_queue="e")
     assert calls == [("en", 0), ("ar", 0, 0), ("en", 5), ("en", 8), ("ar", 8, 8)]
     assert out["episodes"]["05"]["ar"] == {"skipped": "the English script is not accepted"}
+
+
+def test_audio_title_drops_section_numbers():
+    assert ep.audio_title("1.1 Our Vision") == "Our Vision"
+    assert ep.audio_title("Chapter 2 Two Types\nof Thinking") == "Two Types of Thinking"
+    assert ep.audio_title("Preface") == "Preface"

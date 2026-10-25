@@ -154,13 +154,19 @@ class BookView:
     def source(self, lesson) -> LessonSource:
         blocks = tuple(SourceBlock(b.block_id, b.type, b.text, b.pages) for b in self.index.lesson_blocks()
                        if self.index.lesson_of.get(b.idx) is lesson)
-        return LessonSource(lesson.lesson_id, self.episode_of[lesson.lesson_id], " ".join(lesson.title.split()), blocks)
+        return LessonSource(lesson.lesson_id, self.episode_of[lesson.lesson_id], audio_title(lesson.title), blocks)
 
     def book_text(self, lesson, positions: Mapping[str, int]) -> BookTextRef:
         units = [u for u in self.units if u.kind not in NOT_SPOKEN_KINDS and u.block_ids[0] in positions
                  and lesson.start <= positions[u.block_ids[0]] <= lesson.end]
         blocks = list(dict.fromkeys(b for u in units for b in u.block_ids))
         return BookTextRef(block_ids=tuple(blocks), unit_ids=tuple(u.unit_id for u in units))
+
+
+def audio_title(title: str) -> str:
+    """One line, without the chapter/section numbering (as ``LessonV2.episode_title``, D-036 (3))."""
+    clean = " ".join(title.replace("™", "").replace("®", "").split())
+    return re.sub(r"^(?:chapter\s+)?\d+(?:\.\d+)*\.?\s+", "", clean, flags=re.I) or clean
 
 
 def term_infos(layer: ConceptLayer, lesson_id: str) -> list[TermInfo]:
@@ -518,5 +524,5 @@ def episodes_workflow_id(course_id: str, run_id: str, episodes: Sequence[int]) -
 
 __all__ = ["AR_ACTIVITY", "AR_STAGE", "BookView", "BuildEpisodeScriptsInput", "BuildEpisodeScriptsWorkflow", "EN_ACTIVITY",
            "EN_STAGE", "EpisodeActivities", "EpisodeRefs", "EpisodeScriptARInput", "EpisodeScriptENInput",
-           "FIRST_MENTION_GATE_ID", "TRANSLATION_GATE_ID", "WORKFLOW_NAME", "episodes_workflow_id", "evaluate_ar_script",
+           "FIRST_MENTION_GATE_ID", "TRANSLATION_GATE_ID", "WORKFLOW_NAME", "audio_title", "episodes_workflow_id", "evaluate_ar_script",
            "term_infos"]

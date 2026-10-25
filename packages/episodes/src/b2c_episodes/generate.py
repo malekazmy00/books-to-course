@@ -258,7 +258,7 @@ def _short_definition(t: TermInfo) -> tuple[str, list[ScriptSource]] | None:
 
 
 def _attribution(claim: DossierClaim, dossier: KnowledgeDossier | None) -> str:
-    if claim.attributed_to:
+    if claim.status == "attributed" and claim.attributed_to:  # a viewpoint: name who holds it
         return claim.attributed_to
     names = []
     if dossier is not None:

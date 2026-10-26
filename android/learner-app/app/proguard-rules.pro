@@ -8,4 +8,5 @@
 -keep,includedescriptorclasses class com.book2course.learner.data.api.**$$serializer { *; }
 # Retrofit service interfaces are used through reflection.
 -keep,allowobfuscation interface com.book2course.learner.data.api.LearnerApi
+-keep,allowobfuscation interface com.book2course.learner.data.api.OperatorApi
 -keepattributes Signature, Exceptions

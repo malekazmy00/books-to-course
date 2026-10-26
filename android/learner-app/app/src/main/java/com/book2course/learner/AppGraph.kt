@@ -3,8 +3,10 @@ package com.book2course.learner
 import android.app.Application
 import android.content.Context
 import com.book2course.learner.data.LearnerRepository
+import com.book2course.learner.data.OperatorRepository
 import com.book2course.learner.data.api.AuthInterceptor
 import com.book2course.learner.data.api.LearnerApi
+import com.book2course.learner.data.api.OperatorApi
 import com.book2course.learner.data.api.httpClient
 import com.book2course.learner.data.config.KeystoreTokenCipher
 import com.book2course.learner.data.config.ServerConfig
@@ -44,6 +46,18 @@ class AppGraph(context: Context) {
         LearnerApi.create(config.baseUrl, httpClient(AuthInterceptor({ config.host }, { config.token })))
 
     val repository = LearnerRepository(::api, ResponseCache(File(context.filesDir, "api-cache")))
+
+    private var operatorClient: Pair<String, OperatorApi>? = null
+
+    /** The read-only operator API on the same server, with the same token (section «المراحل والتقدم»). */
+    @Synchronized
+    fun operatorApi(): OperatorApi? {
+        val config = serverConfig.config.value ?: return null
+        operatorClient?.let { (url, client) -> if (url == config.baseUrl) return client }
+        return OperatorApi.create(config.baseUrl, httpClient).also { operatorClient = config.baseUrl to it }
+    }
+
+    val operatorRepository = OperatorRepository(::operatorApi, ResponseCache(File(context.filesDir, "operator-cache")))
     val episodeFiles = EpisodeFiles(File(context.filesDir, "episodes"))
     val downloadStates = DownloadStates(episodeFiles)
     val downloader = EpisodeDownloader(httpClient, episodeFiles)

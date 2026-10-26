@@ -10,6 +10,7 @@ plugins {
 // The tailnet API origin (D-030) may be preset at build time; the learner can change it in setup.
 val defaultApiBaseUrl: String = System.getenv("B2C_API_BASE_URL") ?: ""
 val learnerOpenApi = rootProject.file("../../docs/api/learner-v3.openapi.json")
+val operatorOpenApi = rootProject.file("../../docs/api/operator-v3.openapi.json")
 
 // Robolectric downloads its Android framework jar at test time with its own HTTP client, which
 // cannot reach Maven from this build host. Resolve it through Gradle instead (cached like any
@@ -47,8 +48,8 @@ android {
         applicationId = "com.book2course.learner"
         minSdk = 24
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.1.2"
+        versionCode = 4
+        versionName = "0.2.0"
         buildConfigField("String", "DEFAULT_API_BASE_URL", "\"" + defaultApiBaseUrl.replace("\"", "") + "\"")
         // Must match LearnerApi.CLIENT_VERSION and the server's min_client_version contract.
         buildConfigField("int", "CLIENT_VERSION", "1")
@@ -110,6 +111,7 @@ android {
             isIncludeAndroidResources = true
             all {
                 it.systemProperty("b2c.learnerOpenApi", learnerOpenApi.absolutePath)
+                it.systemProperty("b2c.operatorOpenApi", operatorOpenApi.absolutePath)
                 it.systemProperty("robolectric.logging", "stdout")
                 it.systemProperty("robolectric.offline", "true")
                 it.systemProperty("robolectric.dependency.dir", robolectricDepsDir.get().asFile.absolutePath)

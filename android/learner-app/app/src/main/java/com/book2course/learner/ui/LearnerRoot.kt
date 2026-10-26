@@ -16,6 +16,25 @@ import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.Timeline
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Text
+import androidx.compose.ui.res.stringResource
+import androidx.navigation.NavDestination
+import androidx.navigation.NavDestination.Companion.hasRoute
+import com.book2course.learner.R
+import com.book2course.learner.ui.operator.AutoRefresh
+import com.book2course.learner.ui.operator.BookStagesScreen
+import com.book2course.learner.ui.operator.BookStagesViewModel
+import com.book2course.learner.ui.operator.OperatorLibraryScreen
+import com.book2course.learner.ui.operator.OperatorLibraryViewModel
+import com.book2course.learner.ui.operator.StageDetailScreen
+import com.book2course.learner.ui.operator.StageDetailViewModel
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -64,6 +83,9 @@ import kotlinx.serialization.Serializable
 @Serializable data class CourseRoute(val courseId: String, val title: String)
 @Serializable data class PlayerRoute(val courseId: String, val number: Int, val label: String, val title: String)
 @Serializable data class ConceptsRoute(val courseId: String)
+@Serializable data object OperatorLibraryRoute
+@Serializable data class BookStagesRoute(val courseId: String, val bookId: String, val title: String)
+@Serializable data class StageDetailRoute(val courseId: String, val bookId: String, val stageId: String, val title: String)
 
 private const val NAV_MS = 320
 
@@ -95,6 +117,16 @@ fun LearnerRoot(graph: AppGraph) {
                         onOpen = { nav.navigate(PlayerRoute(current.key.courseId, current.key.number, current.label, current.title)) },
                         onToggle = graph.playback::toggle)
                 }
+                val destination = entry?.destination
+                val onLearn = destination?.hasRoute(LibraryRoute::class) == true
+                val onStages = destination?.hasRoute(OperatorLibraryRoute::class) == true
+                if (onLearn || onStages) {
+                    SectionTabs(
+                        learnSelected = onLearn,
+                        onLearn = { nav.switchTab(LibraryRoute) },
+                        onStages = { nav.switchTab(OperatorLibraryRoute) },
+                    )
+                }
                 Spacer(Modifier.navigationBarsPadding())
             }
         }
@@ -106,10 +138,23 @@ private fun LearnerNavHost(graph: AppGraph, nav: NavHostController, start: Any, 
     NavHost(
         navController = nav, startDestination = start, modifier = Modifier.fillMaxSize(),
         // Start/End follow the layout direction, so "forward" slides the RTL way.
-        enterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(NAV_MS)) + fadeIn(tween(NAV_MS)) },
-        exitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(NAV_MS)) + fadeOut(tween(NAV_MS)) },
-        popEnterTransition = { slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(NAV_MS)) + fadeIn(tween(NAV_MS)) },
-        popExitTransition = { slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(NAV_MS)) + fadeOut(tween(NAV_MS)) },
+        // Switching between the two bottom tabs cross-fades instead of sliding.
+        enterTransition = {
+            if (isTabSwitch(initialState.destination, targetState.destination)) fadeIn(tween(NAV_MS))
+            else slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(NAV_MS)) + fadeIn(tween(NAV_MS))
+        },
+        exitTransition = {
+            if (isTabSwitch(initialState.destination, targetState.destination)) fadeOut(tween(NAV_MS))
+            else slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Start, tween(NAV_MS)) + fadeOut(tween(NAV_MS))
+        },
+        popEnterTransition = {
+            if (isTabSwitch(initialState.destination, targetState.destination)) fadeIn(tween(NAV_MS))
+            else slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(NAV_MS)) + fadeIn(tween(NAV_MS))
+        },
+        popExitTransition = {
+            if (isTabSwitch(initialState.destination, targetState.destination)) fadeOut(tween(NAV_MS))
+            else slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.End, tween(NAV_MS)) + fadeOut(tween(NAV_MS))
+        },
     ) {
         composable<SetupRoute> {
             Animated(this) {
@@ -121,6 +166,7 @@ private fun LearnerNavHost(graph: AppGraph, nav: NavHostController, start: Any, 
                         save = { config ->
                             graph.serverConfig.save(config)
                             graph.repository.clearCache()
+                            graph.operatorRepository.clearCache()
                         },
                     )
                 }
@@ -219,6 +265,45 @@ private fun LearnerNavHost(graph: AppGraph, nav: NavHostController, start: Any, 
                 )
             }
         }
+        composable<OperatorLibraryRoute> {
+            Animated(this) {
+                val vm = viewModel { OperatorLibraryViewModel(graph.operatorRepository) }
+                val ui by vm.ui.collectAsStateWithLifecycle()
+                AutoRefresh(onTick = vm::refreshSilently)
+                OperatorLibraryScreen(
+                    ui = ui,
+                    onOpenBook = { nav.navigate(BookStagesRoute(it.courseId, it.bookId, it.title)) },
+                    onRefresh = vm::refresh,
+                    onSettings = { nav.navigate(SettingsRoute) },
+                )
+            }
+        }
+        composable<BookStagesRoute> { backStack ->
+            Animated(this) {
+                val route = backStack.toRoute<BookStagesRoute>()
+                val vm = viewModel(key = "stages/${route.courseId}/${route.bookId}") {
+                    BookStagesViewModel(graph.operatorRepository, route.courseId, route.bookId)
+                }
+                val ui by vm.ui.collectAsStateWithLifecycle()
+                AutoRefresh(onTick = vm::refreshSilently)
+                BookStagesScreen(
+                    ui = ui, titleFallback = route.title, onBack = { nav.popBackStack() },
+                    onOpenStage = { nav.navigate(StageDetailRoute(route.courseId, route.bookId, it.stageId, it.title)) },
+                    onRefresh = vm::refresh,
+                )
+            }
+        }
+        composable<StageDetailRoute> { backStack ->
+            Animated(this) {
+                val route = backStack.toRoute<StageDetailRoute>()
+                val vm = viewModel(key = "stage/${route.courseId}/${route.bookId}/${route.stageId}") {
+                    StageDetailViewModel(graph.operatorRepository, route.courseId, route.bookId, route.stageId)
+                }
+                val ui by vm.ui.collectAsStateWithLifecycle()
+                AutoRefresh(onTick = vm::refreshSilently)
+                StageDetailScreen(ui = ui, titleFallback = route.title, onBack = { nav.popBackStack() }, onRefresh = vm::refresh)
+            }
+        }
         composable<SettingsRoute> {
             Animated(this) {
                 val learner by graph.localStore.state.collectAsStateWithLifecycle()
@@ -234,6 +319,37 @@ private fun LearnerNavHost(graph: AppGraph, nav: NavHostController, start: Any, 
                 )
             }
         }
+    }
+}
+
+private fun isTabSwitch(from: NavDestination, to: NavDestination): Boolean {
+    fun top(d: NavDestination) = d.hasRoute(LibraryRoute::class) || d.hasRoute(OperatorLibraryRoute::class)
+    return top(from) && top(to)
+}
+
+/** Bottom-tab navigation: one copy of each tab, its back stack kept and restored. */
+private fun NavHostController.switchTab(route: Any) {
+    navigate(route) {
+        popUpTo(LibraryRoute) { saveState = true }
+        launchSingleTop = true
+        restoreState = true
+    }
+}
+
+/** The two sections of the one app: learning (unchanged) and the read-only stages and progress. */
+@Composable
+fun SectionTabs(learnSelected: Boolean, onLearn: () -> Unit, onStages: () -> Unit) {
+    NavigationBar(windowInsets = WindowInsets(0)) {
+        NavigationBarItem(
+            selected = learnSelected, onClick = onLearn,
+            icon = { Icon(Icons.Filled.Headphones, contentDescription = null) },
+            label = { Text(stringResource(R.string.tab_learn)) },
+        )
+        NavigationBarItem(
+            selected = !learnSelected, onClick = onStages,
+            icon = { Icon(Icons.Filled.Timeline, contentDescription = null) },
+            label = { Text(stringResource(R.string.tab_stages)) },
+        )
     }
 }
 

@@ -4,7 +4,7 @@ Kotlin + Jetpack Compose + Media3 client for learners. Arabic and RTL first, and
 
 - Design: `docs/proposals/2026-10-25-learner-app.md`.
 - Evaluation of the old app: `docs/audits/2026-10-25-android-ux.md`.
-- Operator functions stay in `android/operator-app` for now.
+- Since 0.2.0 the app has a second bottom tab, «المراحل» (stages and progress): a **read-only** view of every book's stages on the new path, from `/v3/operator` (contract `docs/api/operator-v3.openapi.json`, design and old-app inventory `docs/proposals/2026-10-26-operator-section.md`). It uses the same server and token. Actions (upload, start, pause, export) stay in `android/operator-app` until the owner approves them for this app.
 
 ## Build
 
@@ -72,13 +72,13 @@ The API is tailnet-only (D-030). On first start, the app asks for the server's H
 
 | Path | Contents |
 |---|---|
-| `data/api` | Typed Retrofit client and models (mirrors the OpenAPI document; `OpenApiConformanceTest` checks it) |
+| `data/api` | Typed Retrofit clients and models: `LearnerApi` and the read-only `OperatorApi` (mirror the OpenAPI documents; `OpenApiConformanceTest` and `OperatorOpenApiConformanceTest` check them) |
 | `data/LearnerRepository.kt` | Cache-first loading (`Loadable`), ETag revalidation |
 | `data/local` | Learner state on the device: progress, bookmarks and notes, revealed answers, settings; plus the response cache |
 | `data/download` | Offline episodes (WorkManager → app-private storage) |
 | `playback` | `PlaybackService` (Media3 `MediaSessionService`), `MediaControllerConnection`, and `PlaybackCoordinator` (resume, progress, sleep timer, section skips, pause before answers) |
 | `domain/Timeline.kt` | Section and segment navigation, spoken durations |
-| `ui` | Compose screens: setup, library, course, player (transcript, sections, terms, questions, bookmarks), concepts, settings |
+| `ui` | Compose screens: setup, library, course, player (transcript, sections, terms, questions, bookmarks), concepts, settings; `ui/operator`: books, stages of a book, stage detail (read-only, `/v3/operator`, auto-refresh every 15 s while visible) |
 
 ## Android 7 (API 24 / 25)
 

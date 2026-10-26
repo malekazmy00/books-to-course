@@ -1,0 +1,1145 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Book2Course Operator API",
+    "description": "Read-only stages and progress of every book on the new path (tailnet-only, bearer token, D-030). No route changes anything.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/v3/operator/meta": {
+      "get": {
+        "tags": [
+          "operator"
+        ],
+        "summary": "Operator Meta",
+        "operationId": "operator_meta_v3_operator_meta_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OperatorMeta"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v3/operator/books": {
+      "get": {
+        "tags": [
+          "operator"
+        ],
+        "summary": "Operator Books",
+        "operationId": "operator_books_v3_operator_books_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookList"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v3/operator/courses/{course_id}/books/{book_id}/stages": {
+      "get": {
+        "tags": [
+          "operator"
+        ],
+        "summary": "Operator Book Stages",
+        "operationId": "operator_book_stages_v3_operator_courses__course_id__books__book_id__stages_get",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Course Id"
+            }
+          },
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BookStages"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v3/operator/courses/{course_id}/books/{book_id}/stages/{stage_id}": {
+      "get": {
+        "tags": [
+          "operator"
+        ],
+        "summary": "Operator Stage Detail",
+        "operationId": "operator_stage_detail_v3_operator_courses__course_id__books__book_id__stages__stage_id__get",
+        "parameters": [
+          {
+            "name": "course_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Course Id"
+            }
+          },
+          {
+            "name": "book_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Book Id"
+            }
+          },
+          {
+            "name": "stage_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Stage Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StageDetail"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "BookList": {
+        "properties": {
+          "books": {
+            "items": {
+              "$ref": "#/components/schemas/BookSummary"
+            },
+            "type": "array",
+            "title": "Books"
+          },
+          "generated_at": {
+            "type": "string",
+            "title": "Generated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "books",
+          "generated_at"
+        ],
+        "title": "BookList"
+      },
+      "BookStages": {
+        "properties": {
+          "course_id": {
+            "type": "string",
+            "title": "Course Id"
+          },
+          "book_id": {
+            "type": "string",
+            "title": "Book Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/Stage"
+            },
+            "type": "array",
+            "title": "Stages"
+          },
+          "generated_at": {
+            "type": "string",
+            "title": "Generated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "course_id",
+          "book_id",
+          "title",
+          "stages",
+          "generated_at"
+        ],
+        "title": "BookStages"
+      },
+      "BookSummary": {
+        "properties": {
+          "course_id": {
+            "type": "string",
+            "title": "Course Id"
+          },
+          "book_id": {
+            "type": "string",
+            "title": "Book Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "short_id": {
+            "type": "string",
+            "title": "Short Id"
+          },
+          "file_sha256": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File Sha256"
+          },
+          "uploaded_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Uploaded At"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "current_stage": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "extraction",
+                  "outline",
+                  "termbase",
+                  "translation",
+                  "translator_notes",
+                  "knowledge",
+                  "episodes",
+                  "audio",
+                  "mp3"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Stage"
+          },
+          "current_stage_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Stage Title"
+          },
+          "current_status": {
+            "type": "string",
+            "enum": [
+              "not_started",
+              "running",
+              "completed",
+              "failed",
+              "waiting"
+            ],
+            "title": "Current Status"
+          },
+          "overall_percent": {
+            "type": "number",
+            "title": "Overall Percent"
+          },
+          "completed_stages": {
+            "type": "integer",
+            "title": "Completed Stages"
+          },
+          "stage_count": {
+            "type": "integer",
+            "title": "Stage Count"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "course_id",
+          "book_id",
+          "title",
+          "display_name",
+          "short_id",
+          "current_status",
+          "overall_percent",
+          "completed_stages",
+          "stage_count"
+        ],
+        "title": "BookSummary"
+      },
+      "GateInfo": {
+        "properties": {
+          "gate_id": {
+            "type": "string",
+            "title": "Gate Id"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "passed": {
+            "type": "boolean",
+            "title": "Passed"
+          },
+          "decider": {
+            "type": "string",
+            "title": "Decider"
+          },
+          "decided_by": {
+            "type": "string",
+            "title": "Decided By"
+          },
+          "decided_at": {
+            "type": "string",
+            "title": "Decided At"
+          },
+          "metrics": {
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "object",
+            "title": "Metrics",
+            "default": {}
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "gate_id",
+          "kind",
+          "passed",
+          "decider",
+          "decided_by",
+          "decided_at"
+        ],
+        "title": "GateInfo"
+      },
+      "GateSummary": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "passed",
+              "failed",
+              "pending",
+              "none"
+            ],
+            "title": "State"
+          },
+          "record_status": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "candidate",
+                  "accepted",
+                  "rejected",
+                  "quarantined"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Record Status"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/GateInfo"
+            },
+            "type": "array",
+            "title": "Results",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "GateSummary"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "OperatorMeta": {
+        "properties": {
+          "api_version": {
+            "type": "string",
+            "title": "Api Version"
+          },
+          "min_client_version": {
+            "type": "integer",
+            "title": "Min Client Version"
+          },
+          "cache_ttl_s": {
+            "type": "integer",
+            "title": "Cache Ttl S",
+            "description": "server-side cache of every response, seconds"
+          },
+          "refresh_interval_s": {
+            "type": "integer",
+            "title": "Refresh Interval S",
+            "description": "suggested client auto-refresh while visible, seconds"
+          },
+          "stages": {
+            "items": {
+              "$ref": "#/components/schemas/StageInfo"
+            },
+            "type": "array",
+            "title": "Stages"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "api_version",
+          "min_client_version",
+          "cache_ttl_s",
+          "refresh_interval_s",
+          "stages"
+        ],
+        "title": "OperatorMeta"
+      },
+      "OutputInfo": {
+        "properties": {
+          "stage": {
+            "type": "string",
+            "title": "Stage"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key",
+            "description": "first 16 characters of the artifact key"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "status_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Reason"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "status_changed_at": {
+            "type": "string",
+            "title": "Status Changed At"
+          },
+          "gates": {
+            "items": {
+              "$ref": "#/components/schemas/GateInfo"
+            },
+            "type": "array",
+            "title": "Gates",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "stage",
+          "key",
+          "status",
+          "created_at",
+          "status_changed_at"
+        ],
+        "title": "OutputInfo"
+      },
+      "Rejection": {
+        "properties": {
+          "subject": {
+            "type": "string",
+            "title": "Subject"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "subject",
+          "reason"
+        ],
+        "title": "Rejection"
+      },
+      "RunInfo": {
+        "properties": {
+          "run_id": {
+            "type": "string",
+            "title": "Run Id"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          },
+          "unit_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit Count"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Counts"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/StageProgress"
+          },
+          "workflow": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "run_id",
+          "created_at",
+          "updated_at",
+          "counts",
+          "progress"
+        ],
+        "title": "RunInfo"
+      },
+      "Stage": {
+        "properties": {
+          "stage_id": {
+            "type": "string",
+            "enum": [
+              "extraction",
+              "outline",
+              "termbase",
+              "translation",
+              "translator_notes",
+              "knowledge",
+              "episodes",
+              "audio",
+              "mp3"
+            ],
+            "title": "Stage Id"
+          },
+          "order": {
+            "type": "integer",
+            "title": "Order"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_started",
+              "running",
+              "completed",
+              "failed",
+              "waiting"
+            ],
+            "title": "Status"
+          },
+          "status_text": {
+            "type": "string",
+            "title": "Status Text"
+          },
+          "progress": {
+            "$ref": "#/components/schemas/StageProgress"
+          },
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Counts",
+            "default": {}
+          },
+          "gate": {
+            "$ref": "#/components/schemas/GateSummary"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "workflow": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/WorkflowInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "stage_id",
+          "order",
+          "title",
+          "status",
+          "status_text",
+          "progress",
+          "gate"
+        ],
+        "title": "Stage"
+      },
+      "StageDetail": {
+        "properties": {
+          "course_id": {
+            "type": "string",
+            "title": "Course Id"
+          },
+          "book_id": {
+            "type": "string",
+            "title": "Book Id"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/Stage"
+          },
+          "outputs": {
+            "items": {
+              "$ref": "#/components/schemas/OutputInfo"
+            },
+            "type": "array",
+            "title": "Outputs",
+            "default": []
+          },
+          "runs": {
+            "items": {
+              "$ref": "#/components/schemas/RunInfo"
+            },
+            "type": "array",
+            "title": "Runs",
+            "default": []
+          },
+          "recent_units": {
+            "items": {
+              "$ref": "#/components/schemas/UnitSample"
+            },
+            "type": "array",
+            "title": "Recent Units",
+            "default": []
+          },
+          "translator_notes": {
+            "items": {
+              "$ref": "#/components/schemas/UnitSample"
+            },
+            "type": "array",
+            "title": "Translator Notes",
+            "default": []
+          },
+          "rejections": {
+            "items": {
+              "$ref": "#/components/schemas/Rejection"
+            },
+            "type": "array",
+            "title": "Rejections",
+            "default": []
+          },
+          "generated_at": {
+            "type": "string",
+            "title": "Generated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "course_id",
+          "book_id",
+          "stage",
+          "generated_at"
+        ],
+        "title": "StageDetail"
+      },
+      "StageInfo": {
+        "properties": {
+          "stage_id": {
+            "type": "string",
+            "enum": [
+              "extraction",
+              "outline",
+              "termbase",
+              "translation",
+              "translator_notes",
+              "knowledge",
+              "episodes",
+              "audio",
+              "mp3"
+            ],
+            "title": "Stage Id"
+          },
+          "order": {
+            "type": "integer",
+            "title": "Order"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "registry_stages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Registry Stages",
+            "description": "stage-output registry stages this stage reads"
+          },
+          "depends_on": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "extraction",
+                "outline",
+                "termbase",
+                "translation",
+                "translator_notes",
+                "knowledge",
+                "episodes",
+                "audio",
+                "mp3"
+              ]
+            },
+            "type": "array",
+            "title": "Depends On"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "stage_id",
+          "order",
+          "title",
+          "registry_stages",
+          "depends_on"
+        ],
+        "title": "StageInfo"
+      },
+      "StageProgress": {
+        "properties": {
+          "done": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Done"
+          },
+          "total": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total"
+          },
+          "percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Percent"
+          },
+          "rate_per_hour": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rate Per Hour",
+            "description": "units decided in the last hour"
+          },
+          "eta_s": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eta S",
+            "description": "expected remaining seconds at rate_per_hour"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "StageProgress"
+      },
+      "UnitSample": {
+        "properties": {
+          "unit_id": {
+            "type": "string",
+            "title": "Unit Id"
+          },
+          "seq": {
+            "type": "integer",
+            "title": "Seq"
+          },
+          "decision": {
+            "type": "string",
+            "title": "Decision"
+          },
+          "source_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Text"
+          },
+          "target_text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Text"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons",
+            "default": []
+          },
+          "updated_at": {
+            "type": "string",
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "unit_id",
+          "seq",
+          "decision",
+          "updated_at"
+        ],
+        "title": "UnitSample"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "WorkflowInfo": {
+        "properties": {
+          "workflow_id": {
+            "type": "string",
+            "title": "Workflow Id"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "running",
+              "completed",
+              "failed",
+              "unknown"
+            ],
+            "title": "State"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Temporal status name, e.g. RUNNING, COMPLETED, FAILED"
+          },
+          "current_activity": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Activity"
+          },
+          "activity_attempt": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Activity Attempt"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At"
+          },
+          "closed_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closed At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "workflow_id",
+          "state",
+          "status"
+        ],
+        "title": "WorkflowInfo"
+      }
+    },
+    "securitySchemes": {
+      "bearerToken": {
+        "type": "http",
+        "scheme": "bearer"
+      }
+    }
+  },
+  "security": [
+    {
+      "bearerToken": []
+    }
+  ]
+}

@@ -22,6 +22,7 @@ from temporalio.contrib.pydantic import pydantic_data_converter
 from b2c_api.course_library import course_library_router
 from b2c_api.deps import ApiContext
 from b2c_api.learner import learner_router
+from b2c_api.operator import operator_router
 from b2c_api.model_lifecycle import ModelLifecycle, configured_providers, lifecycle_router
 from b2c_api.result_exports import result_exports_router
 from b2c_api.routers.audio import audio_router
@@ -59,6 +60,8 @@ def create_app(
     learner_authenticator: Callable[[Request], Any] | None = None,
     model_lifecycle: ModelLifecycle | None = None,
     stage_registry: Any | None = None,
+    operator_reader: Any | None = None,
+    operator_monotonic: Callable[[], float] | None = None,
 ) -> FastAPI:
     settings = settings or Settings()
     @asynccontextmanager
@@ -106,6 +109,8 @@ def create_app(
     app.state.srs_store = srs_store
     app.state.learner_authenticator = learner_authenticator
     app.state.stage_registry = stage_registry
+    app.state.operator_reader = operator_reader
+    app.state.operator_monotonic = operator_monotonic
     ctx = ApiContext(app, settings, temporal_connect)
 
     async def model_worker_queue_ready(provider) -> bool:
@@ -153,6 +158,7 @@ def create_app(
     serving_router(ctx, app)
     app.include_router(stage_outputs_router(ctx))
     app.include_router(learner_router(ctx))
+    app.include_router(operator_router(ctx))
     return app
 
 

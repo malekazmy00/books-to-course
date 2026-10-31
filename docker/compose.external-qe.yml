@@ -28,3 +28,8 @@ services:
         target: /run/secrets/oxionai_api_key_2
         read_only: true
         bind: {create_host_path: false}
+      - type: bind
+        source: ${B2C_INCEPTION_KEY2_HOST_FILE:-/root/.config/book2course/inception-labs-api-key-2}
+        target: /run/secrets/inception_api_key_2
+        read_only: true
+        bind: {create_host_path: false}

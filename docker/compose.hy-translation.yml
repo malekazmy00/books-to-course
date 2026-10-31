@@ -148,6 +148,7 @@ services:
     profiles: [hy-translation]
     extends:
       service: hy-translation-worker
+    image: b2c-hy-worker:terminology-repair-20261013
     environment:
       B2C_LLM_BASE_URL: http://hy-translation-proxy:3007/v1
 

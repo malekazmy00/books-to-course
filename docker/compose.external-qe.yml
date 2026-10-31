@@ -1,6 +1,7 @@
 # Opt-in external semantic QE for development (D-029): the worker may call OpenRouter for the
 # QE profile `deepseek-mqm` (main judge) and Inception for `mercury2-mqm` (second judge of the
-# escalation ladder); docker/translation-profiles.json. Translation stays local (Gemma 4).
+# escalation ladder), and Oxion AI for `oxion-deepseek-pro-mqm` (stronger judge; free plan 0.5M
+# tokens/month, its reasoning cannot be disabled); docker/translation-profiles.json. Translation stays local (Gemma 4).
 # Choice measured on planted errors: eval/reports/judge-bakeoff-2026-10-31.md.
 # Enable explicitly:  make up EXTERNAL_QE=1 PROFILES=gemma4
 services:
@@ -15,5 +16,10 @@ services:
       - type: bind
         source: ${B2C_INCEPTION_KEY_HOST_FILE:-/root/.config/book2course/inception-labs-api-key}
         target: /run/secrets/inception_api_key
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${B2C_OXIONAI_KEY_HOST_FILE:-/root/.config/book2course/oxionai-api-key}
+        target: /run/secrets/oxionai_api_key
         read_only: true
         bind: {create_host_path: false}

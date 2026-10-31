@@ -179,6 +179,18 @@ The B2C worker mounts the pinned local CAMeL-Lab QALB14 NoPnx/Pnx models and rea
 - مفتاح منفصل لكل خدمة: LightRAG API key، وLangfuse keys، وPostgres passwords.
 - VERIFY: لو مشروع تاني بيستخدم Infisical، **ممنوع** نستخدمه أو نعدّل فيه من غير قرار صريح.
 
+### مفاتيح مزودي النماذج الخارجية (D-029، 2026-10-31)
+
+الملفات خارج المستودع، بصلاحية `0400`، وتُركّب للقراءة فقط عبر `docker/compose.external-qe.yml`. لا تُكتب قيمها في git ولا في السجلات.
+
+| المزود | الملف | الاستعمال | ملاحظة |
+|---|---|---|---|
+| OpenRouter | `/root/.config/book2course/openrouter-api-key` | `deepseek-mqm`، المحكّم الرئيسي (D-050) | مدفوع بالاستهلاك، بكلفة صغيرة جدًا |
+| Inception (Mercury) | `/root/.config/book2course/inception-labs-api-key` | `mercury2-mqm`، المحكّم الثاني | حد معدل: HTTP 429 عند التوازي، فيُستعمل بطلب كل 1.5 ث تقريبًا |
+| Oxion AI | `/root/.config/book2course/oxionai-api-key` | `oxion-deepseek-pro-mqm`، المحكّم الأقوى | الخطة المجانية 0.5M token شهريًا و80 طلبًا في الدقيقة، والرصيد الفارغ يعيد 402 لا فاتورة. المزود يضيف system prompt خفيًا (~300 token لكل طلب)، ولا يسمح بتعطيل الـ reasoning |
+| CodeCraft | `/root/.config/book2course/codecraft-api-key` | لا شيء بعد | الكتالوج نفسه، وكان في صيانة يوم 2026-10-31 |
+| TokenRouter، وTop Tools AI | `/root/.config/book2course/{tokenrouter,top-tools-ai}-api-key` | لا شيء | — |
+
 ## 8. Windows reboot and B2C startup ordering (2026-10-05)
 - `B2C-Data-Disk-Mount` runs at the signed-in user's logon with highest privilege and attaches only `F:\wsl-b2c\b2c-data.vhdx`; it verifies `/mnt/wsl/b2cdata/.b2c-data-disk` and `models/` and never formats the disk.
 - `B2C-Stack-Start` runs one minute after logon as the signed-in user. It waits up to 15 minutes for the verified mount and Docker, checks the mount again with `scripts/data-disk.sh check`, then runs only Compose project `b2c` from `/root/projects/book2course`. It does not build images or remove orphan containers.

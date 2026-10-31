@@ -63,6 +63,22 @@
       "max_tokens": 2048,
       "timeout_s": 180,
       "reasoning_effort": null
+    },
+    {
+      "id": "oxion-deepseek-pro-mqm",
+      "kind": "llm_judge",
+      "provider": "oxionai",
+      "base_url": "https://oxionai.com/v1",
+      "model_id": "deepseek-v4-pro-0813",
+      "revision": null,
+      "allow_remote": true,
+      "api_key_file": "/run/secrets/oxionai_api_key",
+      "prompt_version": "qe-mqm-v1",
+      "max_critical": 0,
+      "max_major": 0,
+      "max_tokens": 4096,
+      "timeout_s": 300,
+      "reasoning_effort": null
     }
   ]
 }

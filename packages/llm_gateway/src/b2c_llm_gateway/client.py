@@ -15,6 +15,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
+from collections.abc import Sequence
 from typing import Any, TypeVar
 from urllib.parse import urlparse
 
@@ -119,7 +120,9 @@ class LLMGateway:
                  api_key: str | None = None, request_budget: Any | None = None,
                  free_daily_limit: int = 40, free_min_interval_s: float = 6.0,
                  page_batch_max_chars: int = 24000, page_batch_max_pages: int = 10,
-                 reasoning_effort: str | None = None) -> None:
+                 reasoning_effort: str | None = None, fallback_api_keys: Sequence[str] = ()) -> None:
+        if fallback_api_keys and not api_key:
+            raise ValueError("backup API keys need a primary API key")
         host = urlparse(base_url).hostname or ""
         is_local = _is_local(host)
         if not is_local and not allow_remote:
@@ -154,6 +157,8 @@ class LLMGateway:
             "cost_reported_calls": 0,
         }
         headers = {"Authorization": f"Bearer {api_key}"} if not is_local else {}
+        # Backup keys of the same account kind: HTTP 402 (empty balance) moves to the next one.
+        self._backup_keys = [k for k in fallback_api_keys if k] if not is_local else []
         self._http = httpx.Client(timeout=timeout_s, transport=transport, headers=headers)
         self._tracer = trace.get_tracer("b2c_llm_gateway", tracer_provider=tracer_provider)
 
@@ -201,6 +206,9 @@ class LLMGateway:
                     continue
                 raise OpenRouterRateLimited(
                     "OpenRouter free-model request was rate-limited; request stopped without fallback")
+            if r.status_code == 402 and self._backup_keys:
+                self._http.headers["Authorization"] = f"Bearer {self._backup_keys.pop(0)}"
+                return self._post(body)
             if r.status_code in {408, 500, 502, 504}:
                 # These responses may arrive after upstream inference has begun.
                 # Defer to translation-level recovery, which can split the source.

@@ -11,7 +11,7 @@ from b2c_translation.qa.estimators import LLMJudge
 
 from b2c_orchestration.translation_profiles import (EngineProfile, ProfileRuntime, QEProfile,
                                                     TranslationProfiles, UnknownProfile,
-                                                    load_translation_profiles)
+                                                    builtin_profiles, load_translation_profiles)
 
 SETTINGS = SimpleNamespace(llm_base_url="http://llm:8080/v1", llm_model_id="local-gemma",
                            llm_allow_remote=False, llm_api_key_file="", llm_reasoning_effort=None)
@@ -187,3 +187,76 @@ def test_term_proposer_needs_a_local_chat_profile_and_stays_out_of_the_fingerpri
     off = TranslationProfiles(engines={"x": EngineProfile(**base)})
     on = TranslationProfiles(engines={"x": EngineProfile(**base, propose_terms=True)})
     assert off.fingerprint("x", None) == on.fingerprint("x", None)
+
+
+def test_backup_key_files_are_secrets_out_of_the_fingerprint():
+    base = QEProfile(id="ox", kind="llm_judge", provider="oxionai", base_url="https://oxionai.com/v1",
+                     model_id="deepseek-v4-pro-0813", prompt_version="qe-mqm-v1", allow_remote=True,
+                     api_key_file="/run/secrets/a")
+    more = base.model_copy(update={"api_key_files": ["/run/secrets/b"]})
+    assert "api_key_files" not in more.fingerprint_payload()
+    assert more.fingerprint_payload() == base.fingerprint_payload()
+
+
+def test_worker_gateway_factory_passes_backup_keys(tmp_path, monkeypatch):
+    import b2c_orchestration.worker as worker_mod
+    (tmp_path / "a").write_text("k1\n")
+    (tmp_path / "b").write_text("k2\n")
+    seen = {}
+
+    class FakeGateway:
+        def __init__(self, base_url, model_id, **kw):
+            seen.update(kw)
+
+    monkeypatch.setattr(worker_mod, "LLMGateway", FakeGateway)
+    profile = QEProfile(id="ox", kind="llm_judge", provider="oxionai", base_url="https://oxionai.com/v1",
+                        model_id="m", prompt_version="qe-mqm-v1", allow_remote=True,
+                        api_key_file=str(tmp_path / "a"), api_key_files=[str(tmp_path / "b")])
+    worker_mod.translation_gateway_factory(None)(profile)
+    assert seen["api_key"] == "k1" and seen["fallback_api_keys"] == ["k2"]
+
+
+# ------------------------------------------------------------------ escalation ladder (D-033, D-050)
+def _judge(pid, model):
+    return QEProfile(id=pid, kind="llm_judge", provider="p", base_url="https://x.example/v1", model_id=model,
+                     prompt_version="qe-mqm-v1", allow_remote=True, api_key_file="/k")
+
+
+def _ladder_profiles(**ladder_kw):
+    from b2c_orchestration.translation_profiles import TranslationProfiles
+    ladder = QEProfile(id="ladder", kind="ladder", judges=["a", "b"], tiebreak="c", **ladder_kw)
+    return TranslationProfiles(engines=builtin_profiles(SETTINGS, {}),
+                               qe={"a": _judge("a", "deepseek"), "b": _judge("b", "mercury"),
+                                   "c": _judge("c", "pro"), "ladder": ladder})
+
+
+def test_ladder_profile_needs_two_judges_and_no_gateway_fields():
+    with pytest.raises(ValueError):
+        QEProfile(id="l", kind="ladder", judges=["a"])
+    with pytest.raises(ValueError):
+        QEProfile(id="l", kind="ladder", judges=["a", "b"], model_id="m")
+
+
+def test_ladder_fingerprint_follows_its_judges():
+    base = _ladder_profiles()
+    fp = base.fingerprint("hy-mt2", "ladder")
+    changed = base.model_copy(update={"qe": {**base.qe, "b": _judge("b", "mercury-3")}})
+    assert changed.fingerprint("hy-mt2", "ladder") != fp
+
+
+def test_runtime_builds_the_ladder_and_votes_terms_with_the_first_judge():
+    from b2c_translation.qa.estimators import LadderJudge
+    made = []
+    runtime = ProfileRuntime(_ladder_profiles(), gateway_factory=lambda p: made.append(p.id) or object())
+    est = runtime.estimator("ladder")
+    assert isinstance(est, LadderJudge) and est.tiebreak is not None
+    assert [j.name for j in est.judges] == ["llm_mqm:qe-mqm-v1", "llm_mqm:qe-mqm-v1"]
+    assert runtime.term_voter("ladder") is runtime.term_voter("a")
+    assert made.count("a") == 2 and set(made) == {"a", "b", "c"}   # one estimator gateway + one voter gateway
+
+
+def test_unknown_ladder_judge_is_rejected():
+    from b2c_orchestration.translation_profiles import TranslationProfiles
+    with pytest.raises(ValueError):
+        TranslationProfiles(engines=builtin_profiles(SETTINGS, {}),
+                            qe={"ladder": QEProfile(id="ladder", kind="ladder", judges=["a", "zz"])})

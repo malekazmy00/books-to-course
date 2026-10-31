@@ -49,13 +49,16 @@ log = get_logger("b2c.worker")
 def translation_gateway_factory(cache, *, capture_content: bool = False):
     """llm_gateway client per translation/QE profile (rule 5); local unless the profile opts in."""
     def make(profile):
+        from pathlib import Path
         api_key = None
         if profile.api_key_file:
-            from pathlib import Path
             api_key = Path(profile.api_key_file).read_text(encoding="utf-8").strip() or None
+        backups = [k for k in (Path(f).read_text(encoding="utf-8").strip()
+                               for f in getattr(profile, "api_key_files", [])) if k] if api_key else []
         return LLMGateway(profile.base_url, profile.model_id, cache=cache, timeout_s=profile.timeout_s,
                           allow_remote=profile.allow_remote, api_key=api_key,
-                          reasoning_effort=profile.reasoning_effort, capture_content=capture_content)
+                          reasoning_effort=profile.reasoning_effort, capture_content=capture_content,
+                          fallback_api_keys=backups)
     return make
 
 
@@ -69,7 +72,7 @@ class _UnavailableProfiles:
     def fingerprint(self, *_args):
         raise UnknownProfile(f"translation profiles unavailable: {self.reason}")
 
-    engine = estimator = term_proposer = termhood_classifier = fingerprint
+    engine = estimator = term_proposer = termhood_classifier = term_voter = fingerprint
 
 
 def translate_book_worker(client, s, *, store, cache, executor) -> Worker:

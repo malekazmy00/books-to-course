@@ -21,7 +21,7 @@ from typing import Any, get_args
 from b2c_contracts import QACategory, QAIssue, QEResult, Severity, TranslationUnit
 
 from ..engines.base import TextCompletionGateway
-from .types import QEOutcome
+from .types import QEOutcome, QualityEstimator
 
 MQM_CATEGORIES: tuple[str, ...] = get_args(QACategory)
 MQM_SEVERITIES: tuple[str, ...] = get_args(Severity)
@@ -143,6 +143,64 @@ class LLMJudge:
         result = QEResult(deterministic_pass=False, llm_mqm=mqm,
                           route="auto_accept" if passed else "retranslate")
         return QEOutcome(passed=passed, result=result, issues=issues)
+
+
+# ------------------------------------------------------------------ escalation ladder (D-033)
+def _vote(outcome: QEOutcome) -> bool | None:
+    """True/False for a verdict; None when the judge was unavailable or its output invalid."""
+    if any(i.check_id.startswith("llm_judge_") for i in outcome.issues):
+        return None
+    return outcome.passed
+
+
+class LadderJudge:
+    """Two judges of different model families vote; agreement decides (learning-companion §5).
+
+    A disagreement or a missing vote goes to the ``tiebreak`` judge; a doubt it cannot resolve
+    fails closed (route ``human_review``), so after repair the unit becomes a translator note
+    (D-040) rather than a silent acceptance. Every vote is kept in ``llm_mqm["votes"]``.
+    """
+
+    def __init__(self, judges: list[QualityEstimator], *, tiebreak: QualityEstimator | None = None) -> None:
+        if len(judges) != 2:
+            raise ValueError("the ladder needs exactly two judges")
+        self.judges, self.tiebreak = judges, tiebreak
+
+    @property
+    def name(self) -> str:
+        names = [j.name for j in self.judges] + ([self.tiebreak.name] if self.tiebreak else [])
+        return "ladder:" + "+".join(names)
+
+    def estimate(self, unit: TranslationUnit, target: str) -> QEOutcome:
+        outcomes = [(j, j.estimate(unit, target)) for j in self.judges]
+        votes = [_vote(o) for _, o in outcomes]
+        if votes[0] is not None and votes[0] == votes[1]:
+            return self._outcome(votes[0], "agreement", outcomes)
+        if self.tiebreak is not None:
+            tie = self.tiebreak.estimate(unit, target)
+            outcomes.append((self.tiebreak, tie))
+            votes.append(_vote(tie))
+            # a verdict needs two agreeing votes: one judge alone never decides
+            for verdict in (True, False):
+                if votes.count(verdict) >= 2:
+                    return self._outcome(verdict, "tiebreak", outcomes)
+        return self._outcome(None, "unresolved", outcomes)
+
+    @staticmethod
+    def _outcome(passed: bool | None, decided_by: str, outcomes: list) -> QEOutcome:
+        record = [{"judge": j.name, "passed": _vote(o), "mqm": o.result.llm_mqm} for j, o in outcomes]
+        mqm = {"decided_by": decided_by, "votes": record}
+        if passed is None:
+            issue = QAIssue(check_id="llm_judge_ladder_unresolved", category="other", severity="major",
+                            origin="qe", evidence={"reason": "the judges disagree or are unavailable"})
+            return QEOutcome(passed=False, result=QEResult(deterministic_pass=False, llm_mqm=mqm,
+                                                           route="human_review"), issues=[issue])
+        if passed:
+            return QEOutcome(passed=True, result=QEResult(deterministic_pass=False, llm_mqm=mqm,
+                                                          route="auto_accept"))
+        issues = [i for _, o in outcomes if _vote(o) is False for i in o.issues]
+        return QEOutcome(passed=False, result=QEResult(deterministic_pass=False, llm_mqm=mqm, route="retranslate"),
+                         issues=issues)
 
 
 # ------------------------------------------------------------------ COMET-Kiwi

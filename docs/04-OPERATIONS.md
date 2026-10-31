@@ -181,13 +181,13 @@ The B2C worker mounts the pinned local CAMeL-Lab QALB14 NoPnx/Pnx models and rea
 
 ### مفاتيح مزودي النماذج الخارجية (D-029، 2026-10-31)
 
-الملفات خارج المستودع، بصلاحية `0400`، وتُركّب للقراءة فقط عبر `docker/compose.external-qe.yml`. لا تُكتب قيمها في git ولا في السجلات.
+الملفات خارج المستودع، بصلاحية `0400` ومملوكة لـ `10001:10001` (مستخدم العامل)، وتُركّب للقراءة فقط عبر `docker/compose.external-qe.yml`. لا تُكتب قيمها في git ولا في السجلات.
 
 | المزود | الملف | الاستعمال | ملاحظة |
 |---|---|---|---|
 | OpenRouter | `/root/.config/book2course/openrouter-api-key` | `deepseek-mqm`، المحكّم الرئيسي (D-050) | مدفوع بالاستهلاك، بكلفة صغيرة جدًا |
 | Inception (Mercury) | `/root/.config/book2course/inception-labs-api-key` | `mercury2-mqm`، المحكّم الثاني | حد معدل: HTTP 429 عند التوازي، فيُستعمل بطلب كل 1.5 ث تقريبًا |
-| Oxion AI | `/root/.config/book2course/oxionai-api-key` | `oxion-deepseek-pro-mqm`، المحكّم الأقوى | الخطة المجانية 0.5M token شهريًا و80 طلبًا في الدقيقة، والرصيد الفارغ يعيد 402 لا فاتورة. المزود يضيف system prompt خفيًا (~300 token لكل طلب)، ولا يسمح بتعطيل الـ reasoning |
+| Oxion AI | `/root/.config/book2course/oxionai-api-key`، ومعه احتياطي `oxionai-api-key-2` | `oxion-deepseek-pro-mqm`، محكّم الحسم في `ladder-mqm` (D-051)؛ عند HTTP 402 ينتقل إلى الاحتياطي | الخطة المجانية 0.5M token شهريًا و80 طلبًا في الدقيقة، والرصيد الفارغ يعيد 402 لا فاتورة. المزود يضيف system prompt خفيًا (~300 token لكل طلب)، ولا يسمح بتعطيل الـ reasoning |
 | CodeCraft | `/root/.config/book2course/codecraft-api-key` | لا شيء بعد | الكتالوج نفسه، وكان في صيانة يوم 2026-10-31 |
 | TokenRouter، وTop Tools AI | `/root/.config/book2course/{tokenrouter,top-tools-ai}-api-key` | لا شيء | — |
 

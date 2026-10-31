@@ -36,7 +36,7 @@ from b2c_translation.engines.mt import PlainMTEngine
 from b2c_translation.prompts import language_name
 from b2c_translation.termbase.vote import TermVoter
 from b2c_translation.qa import QualityEstimator
-from b2c_translation.qa.estimators import CometKiwiEstimator, LLMJudge
+from b2c_translation.qa.estimators import CometKiwiEstimator, LadderJudge, LLMJudge
 from b2c_translation.termbase import GatewayTermProposer, Proposal, TermCandidate, TermhoodClassifier
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -52,7 +52,7 @@ HY_MT2_REVISION = "9a341cd1b679d3efd23b46e847b01745a71ed792"
 # Not part of the fingerprint: secrets/transport, and the termbase proposer and termhood
 # classifier switches (they only add proposals / suggestions for a reviewer; what translation
 # uses is the approved-termbase digest).
-_SECRET_OR_TRANSPORT = {"api_key_file", "timeout_s", "propose_terms", "classify_termhood"}
+_SECRET_OR_TRANSPORT = {"api_key_file", "api_key_files", "timeout_s", "propose_terms", "classify_termhood"}
 
 
 class UnknownProfile(LookupError):
@@ -76,6 +76,8 @@ class _GatewayFields(BaseModel):
     revision: str | None = None
     allow_remote: bool = False      # remote endpoints need explicit opt-in + a key file (D-004/D-022)
     api_key_file: str = ""
+    # backup keys of the same provider, used in order when a key's balance is empty (HTTP 402)
+    api_key_files: list[str] = []
     timeout_s: float = Field(default=900.0, gt=0, le=3600)
     reasoning_effort: str | None = None
 
@@ -125,7 +127,10 @@ class EngineProfile(_GatewayFields, _Profile):
 
 
 class QEProfile(_GatewayFields, _Profile):
-    kind: Literal["llm_judge", "cometkiwi"]
+    kind: Literal["llm_judge", "cometkiwi", "ladder"]
+    # ladder (D-033, D-050): two llm_judge profiles of different model families, and a tie-break
+    judges: list[str] = []
+    tiebreak: str | None = None
     # llm_judge
     prompt_version: str | None = None
     max_critical: int = Field(default=0, ge=0)
@@ -143,6 +148,13 @@ class QEProfile(_GatewayFields, _Profile):
             raise ValueError("an llm_judge profile needs provider, base_url, model_id and prompt_version")
         if self.kind == "cometkiwi" and (not self.model_path or self.threshold is None):
             raise ValueError("a cometkiwi profile needs model_path and a calibrated threshold")
+        if self.kind == "ladder":
+            if len(self.judges) != 2 or len(set(self.judges)) != 2 or self.tiebreak in self.judges:
+                raise ValueError("a ladder names two distinct judges and a tie-break other than them")
+            if self.provider or self.base_url or self.model_id or self.api_key_file:
+                raise ValueError("a ladder has no gateway of its own: it composes judge profiles")
+        elif self.judges or self.tiebreak:
+            raise ValueError("judges/tiebreak apply to ladder profiles only")
         return self
 
 
@@ -151,6 +163,24 @@ class TranslationProfiles(BaseModel):
 
     engines: dict[str, EngineProfile]
     qe: dict[str, QEProfile] = {}
+
+    @model_validator(mode="after")
+    def _ladders_name_judges(self) -> "TranslationProfiles":
+        for profile in self.qe.values():
+            if profile.kind != "ladder":
+                continue
+            for ref in [*profile.judges, *([profile.tiebreak] if profile.tiebreak else [])]:
+                judge = self.qe.get(ref)
+                if judge is None or judge.kind != "llm_judge":
+                    raise ValueError(f"ladder {profile.id!r}: {ref!r} is not an llm_judge QE profile")
+        return self
+
+    def _qe_payload(self, profile: QEProfile) -> dict[str, Any]:
+        payload = profile.fingerprint_payload()
+        if profile.kind == "ladder":  # the ladder is what its judges are
+            payload["judges"] = [self.qe[j].fingerprint_payload() for j in profile.judges]
+            payload["tiebreak"] = None if not profile.tiebreak else self.qe[profile.tiebreak].fingerprint_payload()
+        return payload
 
     def engine(self, profile_id: str) -> EngineProfile:
         try:
@@ -169,7 +199,7 @@ class TranslationProfiles(BaseModel):
     def fingerprint(self, engine_profile: str, qe_profile: str | None) -> str:
         quality = self.quality(qe_profile)
         payload = {"engine": self.engine(engine_profile).fingerprint_payload(),
-                   "qe": None if quality is None else quality.fingerprint_payload()}
+                   "qe": None if quality is None else self._qe_payload(quality)}
         raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
@@ -232,7 +262,7 @@ class ProfileRuntime:
         self._proposers: dict[str, GatewayTermProposer | None] = {}
         self._classifiers: dict[str, TermhoodClassifier | None] = {}
         self._voters: dict[str, TermVoter | None] = {}
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()  # a ladder builds its judges' estimators under the lock
 
     def fingerprint(self, engine_profile: str, qe_profile: str | None) -> str:
         return self.profiles.fingerprint(engine_profile, qe_profile)
@@ -281,8 +311,11 @@ class ProfileRuntime:
             if profile_id not in self._voters:
                 profile = self.profiles.quality(profile_id)
                 assert profile is not None
-                self._voters[profile_id] = (TermVoter(self._gateway_factory(profile))
-                                            if profile.kind == "llm_judge" else None)
+                if profile.kind == "ladder":  # terms are voted by the ladder's first judge
+                    self._voters[profile_id] = self.term_voter(profile.judges[0])
+                else:
+                    self._voters[profile_id] = (TermVoter(self._gateway_factory(profile))
+                                                if profile.kind == "llm_judge" else None)
             return self._voters[profile_id]
 
     def estimator(self, profile_id: str | None, *, source_language: str = "en",
@@ -294,8 +327,14 @@ class ProfileRuntime:
             if key not in self._estimators:
                 profile = self.profiles.quality(profile_id)
                 assert profile is not None
-                if profile.kind == "llm_judge":
-                    estimator: QualityEstimator = LLMJudge(
+                if profile.kind == "ladder":
+                    estimator: QualityEstimator = LadderJudge(
+                        [self.estimator(j, source_language=source_language, target_language=target_language)
+                         for j in profile.judges],
+                        tiebreak=None if not profile.tiebreak else self.estimator(
+                            profile.tiebreak, source_language=source_language, target_language=target_language))
+                elif profile.kind == "llm_judge":
+                    estimator = LLMJudge(
                         self._gateway_factory(profile), prompt_version=profile.prompt_version or "",
                         max_critical=profile.max_critical, max_major=profile.max_major,
                         max_minor=profile.max_minor, max_tokens=profile.max_tokens,

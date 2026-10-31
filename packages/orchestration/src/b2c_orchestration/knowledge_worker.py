@@ -1,6 +1,14 @@
-"""Knowledge worker: BookKnowledgeWorkflow and its two activities on their own task queue.
+"""Companion worker (knowledge queue): the stages CoursePipelineWorkflow runs after translation.
 
-Not part of ``worker.py`` and not started by compose: run it explicitly
+    BookKnowledgeWorkflow             knowledge research + concept layer (EN, D-034/D-035)
+    BuildFigureDescriptionsWorkflow   figure/table descriptions for listening (D-044)
+    BuildEpisodeScriptsWorkflow       episode scripts, EN then AR (D-036..D-038)
+
+The generator of figures and episodes is the extractor role; the episode validator is the judge
+role (another model family). Their Arabic translation uses the translation profiles of the worker
+(B2C_TRANSLATION_PROFILES_FILE), the book run's stored results and the translation memory.
+
+Not part of ``worker.py``; compose runs it as ``companion-worker`` (docker/compose.companion.yml), or run it explicitly
 (``uv run b2c-knowledge-worker`` / ``python -m b2c_orchestration.knowledge_worker``) when knowledge
 research should run. Model roles come from the environment; remote endpoints need explicit opt-in
 and a key file outside the repository (D-029, CLAUDE.md rule 6). The citation judge must be from a
@@ -34,6 +42,8 @@ from b2c_research.providers import standard_providers
 from b2c_research.sources import PaidSearchAPI, SearchNotConfigured, SearxngSearch
 from temporalio.worker import Worker
 
+from .episodes import BuildEpisodeScriptsWorkflow, EpisodeActivities
+from .figures import BuildFigureDescriptionsWorkflow, FigureActivities, figure_activities
 from .knowledge import BookKnowledgeWorkflow, KnowledgeActivities
 from .promotion import PromotionService
 from .queues import KNOWLEDGE, max_concurrent_activities
@@ -90,6 +100,37 @@ def build_activities(*, store: Any, cache: Any, promotion: PromotionService | No
                                providers=providers, promotion=promotion, prov=prov, web_enabled=web is not None)
 
 
+def _episode_role(role: ModelRole) -> Any:
+    from b2c_episodes import ModelRole as EpisodeRole
+    return EpisodeRole(role.llm, role.identity, role.family)
+
+
+def build_companion(*, store: Any, cache: Any, promotion: PromotionService | None, prov: Any | None = None,
+                    env: Mapping[str, str] | None = None, transport: Any = None, runtime: Any = None,
+                    memory: Any = None, result_store: Any = None) -> tuple[list[Any], list[Any]]:
+    """Workflows and activities of the companion queue (knowledge, figures, episode scripts)."""
+    env = os.environ if env is None else env
+    knowledge = build_activities(store=store, cache=cache, promotion=promotion, prov=prov, env=env,
+                                 transport=transport)
+    generator = _episode_role(model_role("extractor", cache=cache, env=env, role="generator"))
+    judge = _episode_role(model_role("judge", cache=cache, env=env, role="validator"))
+    figures = FigureActivities(artifact_store=store, generator=generator, runtime=runtime, memory=memory,
+                               promotion=promotion)
+
+    def results(run_id: str) -> dict[str, Any]:
+        return {r.unit_id: r.translation for r in result_store.fetch_run(run_id)}
+
+    def drafts(run_id: str) -> dict[str, Any]:
+        return {r.unit_id: r.drafts for r in result_store.fetch_run(run_id)}
+
+    episodes = EpisodeActivities(artifact_store=store, generator=generator, judge=judge, runtime=runtime,
+                                 memory=memory, book_results=results, book_drafts=drafts, promotion=promotion)
+    workflows = [BookKnowledgeWorkflow, BuildFigureDescriptionsWorkflow, BuildEpisodeScriptsWorkflow]
+    activities = [knowledge.research, knowledge.concepts, *figure_activities(figures), episodes.build_en,
+                  episodes.translate]
+    return workflows, activities
+
+
 async def run_knowledge_worker() -> None:
     s = Settings()
     configure_logging(s.log_level)
@@ -101,15 +142,24 @@ async def run_knowledge_worker() -> None:
     cache.migrate()
     store = ArtifactStore.from_settings(s, recorder=prov)
     store.ensure_bucket()
-    acts = build_activities(store=store, cache=cache, prov=prov,
-                            promotion=PromotionService(StageOutputRegistry(s.pg_dsn), code_revision=code_revision()))
+    from b2c_translation.memory import TranslationMemory
+
+    from .translation_profiles import ProfileRuntime, load_translation_profiles
+    from .translation_store import TranslationResultStore
+    from .worker import translation_gateway_factory
+    runtime = ProfileRuntime(load_translation_profiles(s), gateway_factory=translation_gateway_factory(
+        cache, capture_content=s.llm_capture_content))
+    workflows, activities = build_companion(
+        store=store, cache=cache, prov=prov, runtime=runtime, memory=TranslationMemory(s.pg_dsn),
+        result_store=TranslationResultStore(s.pg_dsn),
+        promotion=PromotionService(StageOutputRegistry(s.pg_dsn), code_revision=code_revision()))
     client = await connect(s)
     queue = os.getenv(PREFIX + "TASK_QUEUE", KNOWLEDGE)
-    worker = Worker(client, task_queue=queue, workflows=[BookKnowledgeWorkflow],
-                    activities=[acts.research, acts.concepts],
+    worker = Worker(client, task_queue=queue, workflows=workflows, activities=activities,
                     activity_executor=ThreadPoolExecutor(max_workers=max_concurrent_activities(KNOWLEDGE)),
                     max_concurrent_activities=max_concurrent_activities(KNOWLEDGE))
-    log.info("knowledge worker started", extra={"pid": os.getpid(), "queue": queue})
+    log.info("companion worker started", extra={"pid": os.getpid(), "queue": queue,
+                                                "workflows": [w.__name__ for w in workflows]})
     try:
         await worker.run()
     finally:

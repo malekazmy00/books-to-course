@@ -355,3 +355,15 @@ def test_assemble_counts_units_without_a_result_as_pending(artifacts, results):
     out = acts.assemble(AssembleTranslationInput(run_id=translation_run_id(inp), course_id="c1",
                                                  units_ref=prepared.units_ref))
     assert out.counts["pending"] == 3 and out.counts["accepted"] == 2
+
+
+def test_prepare_accepts_the_ingest_v2_parse_through_its_v1_projection(artifacts, results):
+    """The course pipeline translates the ingest v2 parse (R3): its artifact carries parsed-book.json,
+    the v1 projection of parsed-book-v2.json, so units come from the same ParsedBook contract."""
+    v2 = artifacts.put("c1", "ingest-parse-v2", "e" * 64,
+                       {"parsed-book.json": parsed_book().model_dump_json().encode(),
+                        "parsed-book-v2.json": b"{}"})
+    acts = activities(artifacts, results)
+    from_v2 = prepare(acts, book_input(v2))
+    from_v1 = prepare(acts, book_input(parsed_ref(artifacts)))
+    assert from_v2.unit_ids == from_v1.unit_ids and from_v2.book_id == "bk"

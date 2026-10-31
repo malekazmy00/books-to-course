@@ -63,6 +63,8 @@ with workflow.unsafe.imports_passed_through():
     from .translation_store import DECISIONS, TranslationResultStore
 
 PARSED_STAGE = "ingest-parse-pdf"
+# ingest v2 (R3) stores parsed-book.json, the v1 projection of parsed-book-v2.json, beside it
+PARSED_STAGES = (PARSED_STAGE, "ingest-parse-v2")
 UNITS_STAGE = "translation-units"
 ASSEMBLY_STAGE = "translate-book"
 NOTES_STAGE = "translator-notes"
@@ -276,13 +278,15 @@ def _fail(message: str, error_type: str) -> ApplicationError:
     return ApplicationError(message, type=error_type, non_retryable=True)
 
 
-def _scoped_ref(raw: dict[str, Any], *, bucket: str, course_id: str, stage: str) -> ArtifactRef:
+def _scoped_ref(raw: dict[str, Any], *, bucket: str, course_id: str, stage: str | tuple[str, ...]) -> ArtifactRef:
+    stages = (stage,) if isinstance(stage, str) else stage
     try:
         ref = ArtifactRef.model_validate(raw)
     except ValueError as exc:
         raise _fail("artifact reference is malformed", "InvalidTranslationSource") from exc
-    if ref.stage != stage or not ref.uri.startswith(f"s3://{bucket}/{course_id}/{stage}/"):
-        raise _fail(f"artifact is not a {stage} artifact of course {course_id}", "InvalidTranslationSource")
+    if ref.stage not in stages or not ref.uri.startswith(f"s3://{bucket}/{course_id}/{ref.stage}/"):
+        raise _fail(f"artifact is not a {' or '.join(stages)} artifact of course {course_id}",
+                    "InvalidTranslationSource")
     return ref
 
 
@@ -354,7 +358,7 @@ class TranslateBookActivities:
     def prepare(self, inp: PrepareUnitsInput) -> PreparedUnits:
         book = inp.inp
         source = _scoped_ref(book.source_artifact_ref, bucket=self.artifact_store.bucket,
-                             course_id=book.course_id, stage=PARSED_STAGE)
+                             course_id=book.course_id, stage=PARSED_STAGES)
         with activity_heartbeats("prepare_translation_units"):
             parsed = ParsedBook.model_validate_json(self.artifact_store.read(source, "parsed-book.json"))
             key = units_stage_key(source.sha256, book.max_unit_chars)

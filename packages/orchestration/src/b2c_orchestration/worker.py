@@ -32,6 +32,7 @@ from .speech_v2 import FasihSynthesizer, GenerateSpeechV2Workflow, SpeechV2Activ
 from .episode_mp3 import EncodeEpisodeMp3Workflow, EpisodeMp3Activities, episode_mp3_activities
 from .ingest import IngestPDFActivities, IngestPDFWorkflow, OutlineActivities
 from .ingest_v2 import IngestPDFV2Workflow, IngestV2Activities, ingest_v2_activities
+from .course_pipeline import CoursePipelineWorkflow
 from .outline_v2 import OutlineV2Activities
 from .qa import CourseQAActivities, GenerateCourseQAWorkflow
 from .translation import TranslationActivities, TranslateContentWorkflow, RetranslateSegmentWorkflow
@@ -208,7 +209,7 @@ async def run_worker() -> None:
     executor = ThreadPoolExecutor(max_workers=sum(max_concurrent_activities(q)
                                                   for q in (LIGHT, HEAVY, IO, TRANSLATE_BOOK)))
     workers = [
-        Worker(client, task_queue=LIGHT, workflows=[HelloPipeline, IngestPDFWorkflow, IngestPDFV2Workflow, IndexApprovedBookWorkflow], activities=[acts.finalize, outline_acts.build, index_acts.index_approved_book],
+        Worker(client, task_queue=LIGHT, workflows=[HelloPipeline, IngestPDFWorkflow, IngestPDFV2Workflow, IndexApprovedBookWorkflow, CoursePipelineWorkflow], activities=[acts.finalize, outline_acts.build, index_acts.index_approved_book],
                activity_executor=executor, max_concurrent_activities=max_concurrent_activities(LIGHT)),
         Worker(client, task_queue=HEAVY, workflows=[GenerateCourseQAWorkflow, TranslateContentWorkflow, RetranslateSegmentWorkflow, GenerateMP3Workflow],
                # outline_acts.build stays on LIGHT too, for histories scheduled

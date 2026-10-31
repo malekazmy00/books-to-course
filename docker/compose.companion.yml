@@ -1,0 +1,54 @@
+# Companion worker (queue `knowledge`): knowledge research, figure descriptions and episode scripts,
+# the stages CoursePipelineWorkflow runs after translation (docs/00-RESEARCH-CHARTER.md §4).
+# Same image and base settings as `worker`; command `b2c-knowledge-worker`.
+# Model roles (D-029 development exception, D-050): generator DeepSeek V4 Flash via OpenRouter,
+# validator/judge Mercury 2 via Inception (another family). Their Arabic translation uses the
+# translation profiles file (engine Gemma 4 local, QE ladder).
+# Enable explicitly with the external QE overlay:
+#   ... -f docker/compose.external-qe.yml -f docker/compose.companion.yml up -d --no-deps companion-worker
+services:
+  companion-worker:
+    extends: {file: compose.yml, service: worker}
+    # the current code image of `worker` (compose.qa-local.yml builds it); never built from here
+    image: b2c-worker:fixes-20261012
+    command: ["b2c-knowledge-worker"]
+    environment:
+      B2C_TRANSLATION_PROFILES_FILE: /etc/b2c/translation-profiles.json
+      B2C_KNOWLEDGE_EXTRACTOR_BASE_URL: https://openrouter.ai/api/v1
+      B2C_KNOWLEDGE_EXTRACTOR_MODEL_ID: deepseek/deepseek-v4-flash-0731
+      B2C_KNOWLEDGE_EXTRACTOR_FAMILY: deepseek
+      B2C_KNOWLEDGE_EXTRACTOR_ALLOW_REMOTE: "1"
+      B2C_KNOWLEDGE_EXTRACTOR_API_KEY_FILE: /run/secrets/openrouter_api_key
+      B2C_KNOWLEDGE_EXTRACTOR_REASONING_EFFORT: none
+      B2C_KNOWLEDGE_JUDGE_BASE_URL: https://api.inceptionlabs.ai/v1
+      B2C_KNOWLEDGE_JUDGE_MODEL_ID: mercury-2
+      B2C_KNOWLEDGE_JUDGE_FAMILY: inception
+      B2C_KNOWLEDGE_JUDGE_ALLOW_REMOTE: "1"
+      B2C_KNOWLEDGE_JUDGE_API_KEY_FILE: /run/secrets/inception_api_key
+      B2C_KNOWLEDGE_TASK_QUEUE: knowledge
+    networks: [b2c_internal, b2c_edge]
+    volumes:
+      - ./translation-profiles.json:/etc/b2c/translation-profiles.json:ro
+      - type: bind
+        source: ${B2C_OPENROUTER_KEY_HOST_FILE:-/root/.config/book2course/openrouter-api-key}
+        target: /run/secrets/openrouter_api_key
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${B2C_INCEPTION_KEY_HOST_FILE:-/root/.config/book2course/inception-labs-api-key}
+        target: /run/secrets/inception_api_key
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${B2C_OXIONAI_KEY_HOST_FILE:-/root/.config/book2course/oxionai-api-key}
+        target: /run/secrets/oxionai_api_key
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${B2C_OXIONAI_KEY2_HOST_FILE:-/root/.config/book2course/oxionai-api-key-2}
+        target: /run/secrets/oxionai_api_key_2
+        read_only: true
+        bind: {create_host_path: false}
+    mem_limit: 4g
+    cpus: 2
+    cpu_shares: 512

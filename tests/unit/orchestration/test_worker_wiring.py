@@ -156,3 +156,11 @@ def test_translation_gateway_factory_stays_local_by_default():
     assert local.model_id == "m"
     with pytest.raises(CloudProviderNotAllowed):
         make(EngineProfile(id="y", kind="chat", provider="p", base_url="https://api.example.com/v1", model_id="m"))
+
+
+def test_course_pipeline_is_registered_on_the_light_queue():
+    import inspect
+
+    src = inspect.getsource(worker_mod.run_worker)
+    light = next(line for line in src.splitlines() if "task_queue=LIGHT" in line)
+    assert "CoursePipelineWorkflow" in light

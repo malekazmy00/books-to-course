@@ -4,9 +4,11 @@ import android.app.Application
 import android.content.Context
 import com.book2course.learner.data.LearnerRepository
 import com.book2course.learner.data.OperatorRepository
+import com.book2course.learner.data.WorkflowActionsRepository
 import com.book2course.learner.data.api.AuthInterceptor
 import com.book2course.learner.data.api.LearnerApi
 import com.book2course.learner.data.api.OperatorApi
+import com.book2course.learner.data.api.WorkflowActionsApi
 import com.book2course.learner.data.api.httpClient
 import com.book2course.learner.data.config.KeystoreTokenCipher
 import com.book2course.learner.data.config.ServerConfig
@@ -48,6 +50,7 @@ class AppGraph(context: Context) {
     val repository = LearnerRepository(::api, ResponseCache(File(context.filesDir, "api-cache")))
 
     private var operatorClient: Pair<String, OperatorApi>? = null
+    private var actionsClient: Pair<String, WorkflowActionsApi>? = null
 
     /** The read-only operator API on the same server, with the same token (section «المراحل والتقدم»). */
     @Synchronized
@@ -58,6 +61,17 @@ class AppGraph(context: Context) {
     }
 
     val operatorRepository = OperatorRepository(::operatorApi, ResponseCache(File(context.filesDir, "operator-cache")))
+
+    /** Explicit controls and downloads, separate from the read-only progress repository. */
+    @Synchronized
+    fun workflowActionsApi(): WorkflowActionsApi? {
+        val config = serverConfig.config.value ?: return null
+        actionsClient?.let { (url, client) -> if (url == config.baseUrl) return client }
+        return WorkflowActionsApi.create(config.baseUrl, httpClient).also { actionsClient = config.baseUrl to it }
+    }
+
+    val workflowActionsRepository = WorkflowActionsRepository(::workflowActionsApi)
+
     val episodeFiles = EpisodeFiles(File(context.filesDir, "episodes"))
     val downloadStates = DownloadStates(episodeFiles)
     val downloader = EpisodeDownloader(httpClient, episodeFiles)

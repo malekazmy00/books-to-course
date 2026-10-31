@@ -41,6 +41,7 @@ fun SettingsScreen(
     onChange: ((LearnerSettings) -> LearnerSettings) -> Unit,
     onDeleteDownloads: () -> Unit,
     onChangeServer: () -> Unit,
+    onOpenOperator: () -> Unit,
     onBack: () -> Unit,
 ) {
     LearnerScaffold(title = stringResource(R.string.settings_title), onBack = onBack) {
@@ -75,6 +76,10 @@ fun SettingsScreen(
             OutlinedButton(onClick = onDeleteDownloads, enabled = storageBytes > 0, modifier = Modifier.heightIn(min = 48.dp)) {
                 Text(stringResource(R.string.settings_delete_downloads))
             }
+            HorizontalDivider()
+            Heading("إدارة المعالجة")
+            Text("إعداد المراحل والنماذج، اختيار ناتج كل كتاب، متابعة الأعمال، بدء المراحل، الإيقاف الآمن والاستئناف والتصدير.")
+            OutlinedButton(onClick = onOpenOperator, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("فتح لوحة التشغيل الكاملة") }
             HorizontalDivider()
             Heading(stringResource(R.string.settings_server))
             OutlinedButton(onClick = onChangeServer, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.settings_change_server)) }

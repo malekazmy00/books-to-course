@@ -4,7 +4,7 @@ Kotlin + Jetpack Compose + Media3 client for learners. Arabic and RTL first, and
 
 - Design: `docs/proposals/2026-10-25-learner-app.md`.
 - Evaluation of the old app: `docs/audits/2026-10-25-android-ux.md`.
-- Since 0.2.0 the app has a second bottom tab, «المراحل» (stages and progress): a **read-only** view of every book's stages on the new path, from `/v3/operator` (contract `docs/api/operator-v3.openapi.json`, design and old-app inventory `docs/proposals/2026-10-26-operator-section.md`). It uses the same server and token. Actions (upload, start, pause, export) stay in `android/operator-app` until the owner approves them for this app.
+- The «المراحل» tab reads stage/progress data only from `/v3/operator`. Mutating controls use a separate `WorkflowActionsApi` and repository, authenticated against the same configured B2C server/token: pause after checkpoint, resume/retry using saved state, ZIP exports, and starting a book translation from a completed OCR artifact. Translation start requires an explicit source language, checks the book registry and OCR output, and refuses to duplicate an existing or ambiguous run. The separate client is an app-side safety boundary; it is not a second server or a separate credential. Other not-started stages remain disabled with their prerequisite explained until their exact source/approval inputs and matching start route are available. Never mark a stage started only from a UI click.
 
 ## Build
 
@@ -101,7 +101,7 @@ The API is tailnet-only (D-030). On first start, the app asks for the server's H
 Tailscale Serve uses a Let's Encrypt certificate. On 2026-10-25 it sent this chain: `leaf ← YE1 ← Root YE ← ISRG Root X2 (cross-signed by X1)`. Android 7.0 trusts neither root:
 
 - ISRG Root X1 is in the Android store only from 7.1.1, and X2 only from Android 14 (letsencrypt.org, "Certificate Compatibility").
-- Older Android validated through the cross-sign of X1 by DST Root CA X3. That cross-sign expired on **2024-09-30** (letsencrypt.org, "Shortening the Let's Encrypt Chain of Trust", 2023-07-10).
+- Older Android validated through the cross-sign of X1 by DST Root CA X3. That cross-sign expired on **2024-09-30** (letsencrypt.org, "Shortening the Let's Encrypt Chain of Trust", 20.3.17-10).
 
 So `res/xml/network_security_config.xml` (release and debug) keeps the system store and adds the two roots as trust anchors:
 
@@ -126,3 +126,7 @@ The new roots Root YE and YR are not bundled: the default chains end in X1 or X2
 - One episode's JSON (transcript and sections) is held in memory at a time.
 
 No measurement on a real device was made.
+
+
+## Embedded processing console (0.3.1)
+The learner APK includes the full operator console under Settings > Open full processing console. It provides workflow/model settings, book and course selection, stage controls, monitoring, and exports. Build and emulator evidence: ../../eval/reports/learner-operator-embedded-2026-10-27.md.

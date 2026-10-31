@@ -6,6 +6,9 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
+import android.content.ContentResolver
+import android.net.Uri
+import com.book2course.learner.data.WorkflowActionsRepository
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewModelScope
@@ -85,4 +88,65 @@ fun AutoRefresh(intervalMs: Long = AUTO_REFRESH_MS, onTick: () -> Unit) {
             }
         }
     }
+}
+
+
+enum class StageAction { PAUSE, RESUME_OR_RETRY }
+
+data class StageActionUi(val busy: Boolean = false, val message: String? = null, val error: Boolean = false)
+
+class StageActionsViewModel(
+    private val repository: WorkflowActionsRepository,
+    private val contentResolver: ContentResolver,
+) : ViewModel() {
+    private val _state = MutableStateFlow(StageActionUi())
+    val state: StateFlow<StageActionUi> = _state.asStateFlow()
+
+    fun control(action: StageAction, courseId: String, bookId: String, workflowId: String) {
+        if (_state.value.busy) return
+        viewModelScope.launch {
+            _state.value = StageActionUi(busy = true)
+            try {
+                val message = when (action) {
+                    StageAction.PAUSE -> repository.pause(workflowId)
+                    StageAction.RESUME_OR_RETRY -> repository.resumeOrRetry(courseId, bookId, workflowId)
+                }
+                _state.value = StageActionUi(message = message)
+            } catch (e: Exception) {
+                _state.value = StageActionUi(message = e.message ?: "تعذر تنفيذ الطلب.", error = true)
+            }
+        }
+    }
+
+    fun startBookTranslation(courseId: String, bookId: String, sourceLanguage: String, targetLanguage: String, onStarted: () -> Unit) {
+        if (_state.value.busy) return
+        viewModelScope.launch {
+            _state.value = StageActionUi(busy = true)
+            try {
+                val message = repository.startBookTranslation(courseId, bookId, sourceLanguage, targetLanguage)
+                _state.value = StageActionUi(message = message)
+                onStarted()
+            } catch (e: Exception) {
+                _state.value = StageActionUi(message = e.message ?: "تعذر بدء الترجمة.", error = true)
+            }
+        }
+    }
+
+    fun export(courseId: String, workflowId: String?, audio: Boolean, destination: Uri) {
+        if (_state.value.busy) return
+        viewModelScope.launch {
+            _state.value = StageActionUi(busy = true)
+            try {
+                val message = if (audio) {
+                    val id = workflowId ?: throw IllegalStateException("لا يوجد مسار صوت مرتبط بهذه المرحلة.")
+                    repository.exportAudio(courseId, id, contentResolver, destination)
+                } else repository.exportResults(courseId, contentResolver, destination)
+                _state.value = StageActionUi(message = message)
+            } catch (e: Exception) {
+                _state.value = StageActionUi(message = e.message ?: "تعذر حفظ التصدير.", error = true)
+            }
+        }
+    }
+
+    fun clearMessage() { _state.value = _state.value.copy(message = null, error = false) }
 }

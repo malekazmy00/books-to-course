@@ -35,6 +35,7 @@ import com.book2course.learner.ui.operator.OperatorLibraryScreen
 import com.book2course.learner.ui.operator.OperatorLibraryViewModel
 import com.book2course.learner.ui.operator.StageDetailScreen
 import com.book2course.learner.ui.operator.StageDetailViewModel
+import com.book2course.learner.ui.operator.StageActionsViewModel
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
@@ -42,6 +43,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -296,16 +298,38 @@ private fun LearnerNavHost(graph: AppGraph, nav: NavHostController, start: Any, 
         composable<StageDetailRoute> { backStack ->
             Animated(this) {
                 val route = backStack.toRoute<StageDetailRoute>()
+                val context = LocalContext.current
                 val vm = viewModel(key = "stage/${route.courseId}/${route.bookId}/${route.stageId}") {
                     StageDetailViewModel(graph.operatorRepository, route.courseId, route.bookId, route.stageId)
                 }
+                val actionsVm = viewModel(key = "stage-actions/${route.courseId}/${route.bookId}/${route.stageId}") {
+                    StageActionsViewModel(graph.workflowActionsRepository, context.contentResolver)
+                }
                 val ui by vm.ui.collectAsStateWithLifecycle()
+                val actions by actionsVm.state.collectAsStateWithLifecycle()
                 AutoRefresh(onTick = vm::refreshSilently)
-                StageDetailScreen(ui = ui, titleFallback = route.title, onBack = { nav.popBackStack() }, onRefresh = vm::refresh)
+                StageDetailScreen(
+                    ui = ui, titleFallback = route.title, onBack = { nav.popBackStack() }, onRefresh = vm::refresh,
+                    actionUi = actions,
+                    onControl = { action ->
+                        val workflow = ui.data?.stage?.workflow?.workflowId.orEmpty()
+                        actionsVm.control(action, route.courseId, route.bookId, workflow)
+                    },
+                    onExport = { uri, audio ->
+                        val detail = ui.data
+                        if (detail != null) actionsVm.export(
+                            route.courseId, detail.stage.workflow?.workflowId, audio, uri,
+                        )
+                    },
+                    onStartTranslation = { source, target ->
+                        actionsVm.startBookTranslation(route.courseId, route.bookId, source, target, vm::refresh)
+                    },
+                )
             }
         }
         composable<SettingsRoute> {
             Animated(this) {
+                val context = LocalContext.current
                 val learner by graph.localStore.state.collectAsStateWithLifecycle()
                 val states by graph.downloadStates.states.collectAsStateWithLifecycle()
                 val bytes by produceState(0L, states) { value = withContext(Dispatchers.IO) { graph.episodeFiles.totalBytes() } }
@@ -315,6 +339,7 @@ private fun LearnerNavHost(graph: AppGraph, nav: NavHostController, start: Any, 
                     onChange = { t -> scope.launch { graph.localStore.updateSettings(t) } },
                     onDeleteDownloads = graph.downloads::deleteAll,
                     onChangeServer = { nav.navigate(SetupRoute) },
+                    onOpenOperator = { context.startActivity(android.content.Intent(context, com.book2course.operator.MainActivity::class.java)) },
                     onBack = { nav.popBackStack() },
                 )
             }

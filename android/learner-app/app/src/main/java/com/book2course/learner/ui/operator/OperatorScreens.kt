@@ -32,22 +32,31 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import android.net.Uri
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -76,6 +85,8 @@ import com.book2course.learner.data.api.StageDetail
 import com.book2course.learner.data.api.StageStatuses
 import com.book2course.learner.data.api.UnitSample
 import com.book2course.learner.data.api.WorkflowInfo
+import com.book2course.learner.ui.operator.StageAction
+import com.book2course.learner.ui.operator.StageActionUi
 import com.book2course.learner.domain.agoText
 import com.book2course.learner.domain.etaSpoken
 import com.book2course.learner.domain.etaText
@@ -493,15 +504,130 @@ fun StageDetailScreen(
     titleFallback: String,
     onBack: () -> Unit,
     onRefresh: () -> Unit,
+    actionUi: StageActionUi = StageActionUi(),
+    onControl: (StageAction) -> Unit = {},
+    onExport: (Uri, Boolean) -> Unit = { _, _ -> },
+    onStartTranslation: (String, String) -> Unit = { _, _ -> },
     nowMs: Long = now(),
 ) {
     val data = ui.data
+    var confirmAction by remember { mutableStateOf<StageAction?>(null) }
+    var exportIsAudio by remember { mutableStateOf(false) }
+    var showTranslationStart by remember { mutableStateOf(false) }
+    var sourceLanguage by remember { mutableStateOf("en") }
+    val createZip = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) onExport(uri, exportIsAudio)
+    }
+    if (confirmAction != null && data != null) {
+        val action = confirmAction!!
+        val title = if (action == StageAction.PAUSE) "إيقاف مؤقت آمن" else "استئناف من الحفظ"
+        val message = if (action == StageAction.PAUSE)
+            "سيُطلب من العامل التوقف بعد تسجيل نقطة الحفظ الحالية. لن يُقطع الجزء الجاري."
+        else "سيفحص التطبيق حالة المسار ونقاط الحفظ أولًا، ثم يطلب استكمال غير المحفوظ فقط. لن يبدأ عند غياب بيانات استئناف آمنة."
+        AlertDialog(onDismissRequest = { confirmAction = null }, title = { Text(title) }, text = { Text(message) },
+            confirmButton = { TextButton(onClick = { confirmAction = null; onControl(action) }) { Text("تأكيد") } },
+            dismissButton = { TextButton(onClick = { confirmAction = null }) { Text("إلغاء") } })
+    }
+    if (showTranslationStart && data != null) {
+        val targetLanguage = if (sourceLanguage == "en") "ar" else "en"
+        AlertDialog(
+            onDismissRequest = { showTranslationStart = false },
+            title = { Text("بدء ترجمة متن الكتاب") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("اختر لغة النص المستخرج؛ سيُرسل طلب واحد إلى العامل بعد التحقق من اكتمال OCR وعدم وجود ترجمة محفوظة.")
+                    listOf("en" to "النص الأصلي إنجليزي", "ar" to "النص الأصلي عربي").forEach { (code, label) ->
+                        Row(Modifier.fillMaxWidth().clickable { sourceLanguage = code }, verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = sourceLanguage == code, onClick = { sourceLanguage = code })
+                            Text(label)
+                        }
+                    }
+                    Text("اللغة الناتجة: ${if (targetLanguage == "ar") "العربية" else "الإنجليزية"}")
+                }
+            },
+            confirmButton = { TextButton(onClick = { showTranslationStart = false; onStartTranslation(sourceLanguage, targetLanguage) }) { Text("بدء الترجمة") } },
+            dismissButton = { TextButton(onClick = { showTranslationStart = false }) { Text("إلغاء") } },
+        )
+    }
     LearnerScaffold(title = data?.stage?.title ?: titleFallback, onBack = onBack) {
         RefreshBar(ui.userRefreshing && data != null)
         operatorError(ui.loadable.error, data != null, onRefresh)
         PullToRefreshBox(isRefreshing = ui.showRefreshing, onRefresh = onRefresh, modifier = Modifier.fillMaxSize()) {
             LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxSize()) {
-                if (data != null) detailItems(data, nowMs)
+                if (data != null) {
+                    item(key = "controls") {
+                        StageControlsCard(
+                            detail = data, actionUi = actionUi,
+                            onPause = { confirmAction = StageAction.PAUSE },
+                            onResume = { confirmAction = StageAction.RESUME_OR_RETRY },
+                            onStartTranslation = { showTranslationStart = true },
+                            onExportResults = {
+                                exportIsAudio = false
+                                createZip.launch("${data.courseId}-results.zip")
+                            },
+                            onExportAudio = {
+                                exportIsAudio = true
+                                createZip.launch("${data.courseId}-audio.zip")
+                            },
+                        )
+                    }
+                    detailItems(data, nowMs)
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun StageControlsCard(
+    detail: StageDetail,
+    actionUi: StageActionUi,
+    onPause: () -> Unit,
+    onResume: () -> Unit,
+    onStartTranslation: () -> Unit,
+    onExportResults: () -> Unit,
+    onExportAudio: () -> Unit,
+) {
+    val stage = detail.stage
+    val workflowId = stage.workflow?.workflowId
+    val isAudio = stage.stageId.contains("audio", true) || workflowId?.startsWith("b2c-mp3-") == true
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("التحكم في المرحلة", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            if (workflowId == null) {
+                if (stage.stageId == "translation" && stage.status in setOf(StageStatuses.NOT_STARTED, StageStatuses.FAILED)) {
+                    Text("يمكن بدء ترجمة المتن من النص المستخرج. سيفحص التطبيق اكتمال OCR ويمنع تكرار تشغيل محفوظ.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Button(onClick = onStartTranslation, enabled = !actionUi.busy) { Text("بدء ترجمة الكتاب") }
+                } else {
+                    Text("لا يوجد تشغيل محفوظ لهذه المرحلة. البدء يحتاج مدخلات أو اعتمادًا سابقًا غير متاح هنا؛ لن يُرسل طلب غير مكتمل.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            } else {
+                if (stage.status == StageStatuses.RUNNING) {
+                    Button(onClick = onPause, enabled = !actionUi.busy) { Text("إيقاف مؤقت بعد الحفظ") }
+                }
+                val retryable = stage.status == StageStatuses.FAILED || stage.status == StageStatuses.RUNNING ||
+                    (stage.counts["rejected"] ?: 0) > 0 || (stage.counts["failed"] ?: 0) > 0
+                if (retryable) {
+                    Button(onClick = onResume, enabled = !actionUi.busy) {
+                        val failedOnly = stage.status == StageStatuses.FAILED ||
+                            (stage.counts["rejected"] ?: 0) > 0 || (stage.counts["failed"] ?: 0) > 0
+                        Text(if (failedOnly) "إعادة معالجة غير المحفوظ/الفاشل" else "استئناف من آخر حفظ")
+                    }
+                }
+            }
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Button(onClick = onExportResults, enabled = !actionUi.busy) { Text("تصدير نتائج المقرر ZIP") }
+                if (isAudio && workflowId != null) {
+                    Button(onClick = onExportAudio, enabled = !actionUi.busy) { Text("تصدير صوت هذه المرحلة ZIP") }
+                }
+            }
+            if (actionUi.busy) Text("جارٍ تنفيذ الطلب…", color = MaterialTheme.colorScheme.tertiary)
+            actionUi.message?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall,
+                    color = if (actionUi.error) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
             }
         }
     }

@@ -117,6 +117,41 @@ class OperatorScreensTest {
     }
 
     @Test
+    fun notStartedTranslationExposesStartActionAndAsksForSourceLanguage() {
+        var started: Pair<String, String>? = null
+        val detail = OperatorFixtures.detail.copy(
+            stage = OperatorFixtures.detail.stage.copy(status = "not_started", statusText = "لم تبدأ", workflow = null),
+        )
+        setRtl {
+            StageDetailScreen(OperatorUi(Loadable(detail)), titleFallback = "x", onBack = {}, onRefresh = {},
+                onStartTranslation = { source, target -> started = source to target }, nowMs = now)
+        }
+        rule.onNodeWithText("بدء ترجمة الكتاب").assertIsDisplayed().performClick()
+        rule.onNodeWithText("النص الأصلي إنجليزي").assertIsDisplayed()
+        rule.onNodeWithText("بدء الترجمة").performClick()
+        assertEquals("en" to "ar", started)
+    }
+
+    @Test
+    fun runningTranslationWithoutWorkflowDoesNotExposeStartAction() {
+        val detail = OperatorFixtures.detail.copy(
+            stage = OperatorFixtures.detail.stage.copy(status = "running", workflow = null),
+        )
+        setRtl {
+            StageDetailScreen(OperatorUi(Loadable(detail)), titleFallback = "x", onBack = {}, onRefresh = {}, nowMs = now)
+        }
+        rule.onAllNodes(androidx.compose.ui.test.hasText("بدء ترجمة الكتاب")).fetchSemanticsNodes().let { assertTrue(it.isEmpty()) }
+    }
+
+    @Test
+    fun runningTranslationDoesNotExposeDuplicateStartAction() {
+        setRtl {
+            StageDetailScreen(OperatorUi(Loadable(OperatorFixtures.detail)), titleFallback = "x", onBack = {}, onRefresh = {}, nowMs = now)
+        }
+        rule.onAllNodes(androidx.compose.ui.test.hasText("بدء ترجمة الكتاب")).fetchSemanticsNodes().let { assertTrue(it.isEmpty()) }
+    }
+
+    @Test
     fun `the bottom tabs name both sections and mark the current one`() {
         var stages = 0
         setRtl { SectionTabs(learnSelected = true, onLearn = {}, onStages = { stages++ }) }

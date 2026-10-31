@@ -17,9 +17,9 @@ from temporalio.worker import Worker
 from b2c_orchestration import translate_book as tb
 from b2c_orchestration.translate_book import (AssembleBookTranslationWorkflow, AssembleTranslationInput, AssemblyResult,
                                               BatchOutcome, BuildTermbaseInput, CheckTermbaseInput, PreparedUnits,
-                                              PrepareUnitsInput, TermbaseApproval, TermbaseBuild, TermbaseGate,
-                                              TranslateBookInput, TranslateBookWorkflow, TranslateUnitBatchInput,
-                                              TranslatorNotesResult, translation_run_id)
+                                              PrepareUnitsInput, ReviewTermbaseInput, TermbaseApproval, TermbaseBuild,
+                                              TermbaseGate, TermbaseReview, TranslateBookInput, TranslateBookWorkflow,
+                                              TranslateUnitBatchInput, TranslatorNotesResult, translation_run_id)
 from b2c_orchestration.translation import TranslateContentWorkflow
 
 REF = {"stage": "ingest-parse-pdf", "key": "b" * 64, "uri": f"s3://artifacts/c1/ingest-parse-pdf/{'b' * 64}/",
@@ -86,6 +86,12 @@ class Recorder:
                 return TermbaseGate(open=False, counts=counts)
             return TermbaseGate(open=True, counts=counts, snapshot=APPROVED_REF, digest=DIGEST, locked_terms=2)
 
+        @activity.defn(name="review_book_termbase")
+        async def review(inp: ReviewTermbaseInput) -> TermbaseReview:
+            self.calls.append(("review_termbase", inp))
+            return TermbaseReview(counts={"locked": 2, "hint": 1, "rejected": 0, "judge_unavailable": 0},
+                                  artifact={"stage": "book-termbase-votes"}, judge_profile=inp.judge_profile)
+
         @activity.defn(name="translate_unit_batch")
         async def batch(inp: TranslateUnitBatchInput) -> BatchOutcome:
             self.calls.append(("batch", inp))
@@ -106,7 +112,7 @@ class Recorder:
             self.calls.append(("notes", inp))
             return TranslatorNotesResult(artifact={"stage": "translator-notes"}, counts={"annotated": 7},
                                          results_digest="e" * 64, cache_hit=False, status="accepted")
-        return [prepare, build, check, batch, assemble, notes]
+        return [prepare, build, check, review, batch, assemble, notes]
 
 
 async def run_workflow(env, recorder, inp):
@@ -296,3 +302,48 @@ async def test_histories_from_before_the_termbase_step_still_replay(env):
     history = await handle.fetch_history()
     await Replayer(workflows=[TranslateBookWorkflow],
                    data_converter=pydantic_data_converter).replay_workflow(history)
+
+
+# ------------------------------------------------------------------ termbase review by model vote (D-033)
+async def test_with_a_judge_the_termbase_is_reviewed_by_models_and_translation_starts(env):
+    recorder = Recorder(gates=[3, 0])
+    result = await run_workflow(env, recorder, book_input(qe_profile="deepseek-mqm", termbase_min_frequency=2))
+    kinds = [k for k, _ in recorder.calls]
+    assert kinds[:5] == ["prepare", "build_termbase", "check_termbase", "review_termbase", "check_termbase"]
+    assert kinds[-2:] == ["assemble", "notes"] and "batch" in kinds
+    review = recorder.calls[3][1]
+    assert review.judge_profile == "deepseek-mqm" and review.min_frequency == 2 and review.book_id == "bk"
+    assert result["termbase"]["digest"] == DIGEST
+
+
+async def test_model_review_runs_once_then_falls_back_to_the_signal(env):
+    recorder = Recorder(gates=[3, 1, 0])
+    queue = f"tb-{uuid.uuid4().hex}"
+    async with Worker(env.client, task_queue=queue, workflows=[TranslateBookWorkflow],
+                      activities=recorder.activities()):
+        handle = await env.client.start_workflow(TranslateBookWorkflow.run, book_input(qe_profile="deepseek-mqm"),
+                                                 id=f"wf-{uuid.uuid4().hex}", task_queue=queue)
+        state = await wait_for_phase(handle, "awaiting_approval", checks=2, recorder=recorder)
+        assert state["model_review"]["locked"] == 2
+        await handle.signal(tb.TERMBASE_SIGNAL, TermbaseApproval(reviewer_id="aly"))
+        await handle.result()
+    assert [k for k, _ in recorder.calls].count("review_termbase") == 1
+
+
+async def test_signal_mode_or_no_judge_keeps_waiting_for_the_signal(env):
+    for inp in (book_input(qe_profile="deepseek-mqm", termbase_review="signal"), book_input(qe_profile=None)):
+        recorder = Recorder(gates=[2, 0])
+        queue = f"tb-{uuid.uuid4().hex}"
+        async with Worker(env.client, task_queue=queue, workflows=[TranslateBookWorkflow],
+                          activities=recorder.activities()):
+            handle = await env.client.start_workflow(TranslateBookWorkflow.run, inp, id=f"wf-{uuid.uuid4().hex}",
+                                                     task_queue=queue)
+            await wait_for_phase(handle, "awaiting_approval", checks=1, recorder=recorder)
+            await handle.signal(tb.TERMBASE_SIGNAL, TermbaseApproval(reviewer_id="aly"))
+            await handle.result()
+        assert "review_termbase" not in [k for k, _ in recorder.calls]
+
+
+def test_model_review_is_the_default_and_not_part_of_the_run_id():
+    assert book_input().termbase_review == "models"
+    assert translation_run_id(book_input(termbase_review="signal")) == translation_run_id(book_input())

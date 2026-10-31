@@ -47,6 +47,22 @@
       "max_tokens": 1024,
       "timeout_s": 300,
       "reasoning_effort": "none"
+    },
+    {
+      "id": "mercury2-mqm",
+      "kind": "llm_judge",
+      "provider": "inceptionlabs",
+      "base_url": "https://api.inceptionlabs.ai/v1",
+      "model_id": "mercury-2",
+      "revision": null,
+      "allow_remote": true,
+      "api_key_file": "/run/secrets/inception_api_key",
+      "prompt_version": "qe-mqm-v1",
+      "max_critical": 0,
+      "max_major": 0,
+      "max_tokens": 2048,
+      "timeout_s": 180,
+      "reasoning_effort": null
     }
   ]
 }

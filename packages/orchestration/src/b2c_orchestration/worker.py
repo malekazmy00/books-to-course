@@ -88,7 +88,8 @@ def translate_book_worker(client, s, *, store, cache, executor) -> Worker:
                                    promotion=PromotionService(StageOutputRegistry(s.pg_dsn), code_revision=code_revision()))
     return Worker(client, task_queue=TRANSLATE_BOOK,
                   workflows=[TranslateBookWorkflow, AssembleBookTranslationWorkflow],
-                  activities=[acts.prepare, acts.build_termbase, acts.check_termbase, acts.translate_batch,
+                  activities=[acts.prepare, acts.build_termbase, acts.check_termbase, acts.review_termbase,
+                              acts.translate_batch,
                               acts.assemble, acts.translator_notes],
                   activity_executor=executor, max_concurrent_activities=max_concurrent_activities(TRANSLATE_BOOK))
 

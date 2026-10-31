@@ -34,6 +34,7 @@ from b2c_translation.engines import EngineCapabilities, TextCompletionGateway, T
 from b2c_translation.engines.chat import ChatEngine
 from b2c_translation.engines.mt import PlainMTEngine
 from b2c_translation.prompts import language_name
+from b2c_translation.termbase.vote import TermVoter
 from b2c_translation.qa import QualityEstimator
 from b2c_translation.qa.estimators import CometKiwiEstimator, LLMJudge
 from b2c_translation.termbase import GatewayTermProposer, Proposal, TermCandidate, TermhoodClassifier
@@ -230,6 +231,7 @@ class ProfileRuntime:
         self._estimators: dict[tuple[str, str, str], QualityEstimator] = {}
         self._proposers: dict[str, GatewayTermProposer | None] = {}
         self._classifiers: dict[str, TermhoodClassifier | None] = {}
+        self._voters: dict[str, TermVoter | None] = {}
         self._lock = threading.Lock()
 
     def fingerprint(self, engine_profile: str, qe_profile: str | None) -> str:
@@ -272,6 +274,16 @@ class ProfileRuntime:
                                                     book_text_allowed=not profile.allow_remote)
                 self._classifiers[profile_id] = classifier
             return self._classifiers[profile_id]
+
+    def term_voter(self, profile_id: str) -> TermVoter | None:
+        """The termbase voter of an ``llm_judge`` QE profile (D-033), or None for other QE kinds."""
+        with self._lock:
+            if profile_id not in self._voters:
+                profile = self.profiles.quality(profile_id)
+                assert profile is not None
+                self._voters[profile_id] = (TermVoter(self._gateway_factory(profile))
+                                            if profile.kind == "llm_judge" else None)
+            return self._voters[profile_id]
 
     def estimator(self, profile_id: str | None, *, source_language: str = "en",
                   target_language: str = "ar") -> QualityEstimator | None:

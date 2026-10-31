@@ -8,8 +8,13 @@ A new workflow type with new activity names, registered beside the old
                                 review state in Postgres (``termbase_store``); human decisions survive
     check_book_termbase         approval gate; when open, freezes the APPROVED entries as an artifact
                                 (stage "book-termbase-approved") whose digest every batch carries
+    review_book_termbase        (D-033) when the gate is closed and a QE judge is set: each blocking
+                                pending entry is decided once by model vote (termbase_review.
+                                review_by_models); decisions are stored as evidence (stage
+                                "book-termbase-votes")
     (signal termbase_approved)  with ``require_approved_termbase`` the workflow waits here until no
-                                pending entry at or above ``termbase_min_frequency`` is left
+                                pending entry at or above ``termbase_min_frequency`` is left (only
+                                when no model review ran or it left something pending)
     translate_unit_batch  x N   one bounded batch of units; each unit result is upserted into
                                 Postgres as soon as it is decided (a crash loses at most one unit)
     assemble_translation        accepted/dropped text per block -> artifact (stage "translate-book")
@@ -52,7 +57,7 @@ with workflow.unsafe.imports_passed_through():
     from .heartbeat import LONG_ACTIVITY_HEARTBEAT_TIMEOUT, activity_heartbeats
     from .promotion import PromotionService
     from .retry import DEFAULT_RETRY
-    from .termbase_review import approved_digest, approved_snapshot, gate_counts
+    from .termbase_review import approved_digest, approved_snapshot, gate_counts, review_by_models
     from .termbase_store import TermbaseScope, TermbaseStore
     from .translation_profiles import PROFILE_ID_PATTERN, UnknownProfile
     from .translation_store import DECISIONS, TranslationResultStore
@@ -66,6 +71,8 @@ TERMBASE_STAGE = "book-termbase"
 TERMBASE_APPROVED_STAGE = "book-termbase-approved"
 TERMBASE_STAGE_VERSION = "book-termbase-2026-10-24.1"
 TERMBASE_PATCH = "book-termbase-gate-v1"
+TERMBASE_VOTE_PATCH = "book-termbase-model-vote-v1"
+TERMBASE_VOTES_STAGE = "book-termbase-votes"
 TERMBASE_SIGNAL = "termbase_approved"
 TERMBASE_QUERY = "termbase_state"
 DIGEST_PATTERN = r"^(|[0-9a-f]{64})$"
@@ -105,6 +112,9 @@ class TranslateBookInput(BaseModel):
     require_approved_termbase: bool = True
     termbase_min_frequency: int = Field(default=1, ge=1, le=1000)
     contextual_glossary: ContextualGlossary | None = None
+    # D-033: no person in the line. "models": pending entries are decided by the QE judge's vote;
+    # "signal": wait for a reviewer's signal (the pre-D-033 behaviour). Not part of the run id.
+    termbase_review: Literal["models", "signal"] = "models"
 
     @model_validator(mode="after")
     def _languages_differ(self) -> "TranslateBookInput":
@@ -168,6 +178,22 @@ class CheckTermbaseInput(BaseModel):
     target_language: Literal["en", "ar"]
     min_frequency: int = Field(default=1, ge=1, le=1000)
     require_approved: bool = True
+
+
+class ReviewTermbaseInput(BaseModel):
+    run_id: str = Field(pattern=RUN_ID_PATTERN)
+    course_id: str = Field(pattern=COURSE_ID_PATTERN)
+    book_id: str = Field(min_length=1, max_length=120)
+    source_language: Literal["en", "ar"]
+    target_language: Literal["en", "ar"]
+    min_frequency: int = Field(default=1, ge=1, le=1000)
+    judge_profile: str = Field(pattern=PROFILE_ID_PATTERN)
+
+
+class TermbaseReview(BaseModel):
+    counts: dict[str, int]
+    artifact: dict[str, Any] | None = None
+    judge_profile: str
 
 
 class TermbaseGate(BaseModel):
@@ -447,6 +473,34 @@ class TranslateBookActivities:
         return TermbaseGate(open=True, counts=counts.as_json(), snapshot=ref.model_dump(mode="json"), digest=digest,
                             locked_terms=len(snapshot.locked_terms()), entities=len(snapshot.entity_table()))
 
+    @activity.defn(name="review_book_termbase")
+    def review_termbase(self, inp: ReviewTermbaseInput) -> TermbaseReview:
+        """Decide every blocking pending entry by the vote of the QE judge (D-033; a judge of
+        another model family than the engine). Decisions are stored as an evidence artifact."""
+        store = self._termbase_store()
+        voter_for = getattr(self.runtime, "term_voter", None)
+        try:
+            voter = voter_for(inp.judge_profile) if voter_for is not None else None
+        except UnknownProfile as exc:
+            raise _fail(str(exc), "UnknownTranslationProfile") from exc
+        if voter is None:
+            raise _fail(f"profile {inp.judge_profile!r} cannot vote on terms (an llm_judge QE profile is needed)",
+                        "TermVoterNotConfigured")
+        scope = TermbaseScope(inp.course_id, inp.book_id, inp.source_language, inp.target_language)
+        with activity_heartbeats("review_book_termbase"):
+            report = review_by_models(store, scope, voter, min_frequency=inp.min_frequency, clock=self.clock)
+        if not report["decisions"]:
+            return TermbaseReview(counts=report["counts"], judge_profile=inp.judge_profile)
+        document = json.dumps({"run_id": inp.run_id, "book_id": inp.book_id, "judge_profile": inp.judge_profile,
+                               "min_frequency": inp.min_frequency, **report}, ensure_ascii=False, indent=1)
+        digest = hashlib.sha256(document.encode("utf-8")).hexdigest()
+        key = stage_key(TERMBASE_VOTES_STAGE, TERMBASE_STAGE_VERSION, [digest],
+                        {"book_id": inp.book_id, "judge_profile": inp.judge_profile})
+        ref, _ = self.artifact_store.get_or_compute(inp.course_id, TERMBASE_VOTES_STAGE, key,
+                                                    lambda: {"votes.json": document.encode("utf-8")})
+        return TermbaseReview(counts=report["counts"], artifact=ref.model_dump(mode="json"),
+                              judge_profile=inp.judge_profile)
+
     def _approved_termbase(self, inp: TranslateUnitBatchInput, book_id: str) -> BookTermbase | None:
         if inp.termbase_ref is None:
             if inp.termbase_digest:
@@ -699,6 +753,7 @@ class TranslateBookWorkflow:
                                    source_language=inp.source_language, target_language=inp.target_language,
                                    min_frequency=inp.termbase_min_frequency,
                                    require_approved=inp.require_approved_termbase)
+        reviewed = False
         while True:
             seen = len(self._approvals)
             gate: TermbaseGate = await workflow.execute_activity(
@@ -708,6 +763,18 @@ class TranslateBookWorkflow:
                 self._termbase.update(phase="approved", approved_ref=gate.snapshot, digest=gate.digest,
                                       locked_terms=gate.locked_terms, entities=gate.entities)
                 return gate
+            if (not reviewed and inp.termbase_review == "models" and inp.qe_profile is not None
+                    and workflow.patched(TERMBASE_VOTE_PATCH)):
+                reviewed = True
+                self._termbase["phase"] = "model_review"
+                review: TermbaseReview = await workflow.execute_activity(
+                    "review_book_termbase",
+                    ReviewTermbaseInput(run_id=run_id, course_id=inp.course_id, book_id=built.book_id,
+                                        source_language=inp.source_language, target_language=inp.target_language,
+                                        min_frequency=inp.termbase_min_frequency, judge_profile=inp.qe_profile),
+                    result_type=TermbaseReview, **TERMBASE_OPTIONS)
+                self._termbase.update(model_review=review.counts, votes_ref=review.artifact)
+                continue
             self._termbase["phase"] = "awaiting_approval"
             await workflow.wait_condition(lambda: len(self._approvals) > seen)
 
@@ -766,7 +833,7 @@ class AssembleBookTranslationWorkflow:
 __all__ = ["ASSEMBLY_STAGE", "NOTES_PATCH", "NOTES_STAGE", "TranslatorNotesResult", "AssembleBookTranslationWorkflow", "AssembleTranslationInput", "AssemblyResult",
            "BatchOutcome", "BuildTermbaseInput", "CheckTermbaseInput", "PrepareUnitsInput", "PreparedUnits", "TranslateBookActivities", "TranslateBookInput",
            "TERMBASE_APPROVED_STAGE", "TERMBASE_PATCH", "TERMBASE_QUERY", "TERMBASE_SIGNAL", "TERMBASE_STAGE",
-           "TermbaseApproval", "TermbaseBuild", "TermbaseGate",
-           "TranslateBookWorkflow", "TranslateUnitBatchInput", "translation_results_digest", "UNITS_BUILDER_VERSION", "UNITS_STAGE", "UnitsCache",
+           "ReviewTermbaseInput", "TERMBASE_VOTE_PATCH", "TERMBASE_VOTES_STAGE", "TermbaseApproval",
+           "TermbaseBuild", "TermbaseGate", "TermbaseReview", "TranslateBookWorkflow", "TranslateUnitBatchInput", "translation_results_digest", "UNITS_BUILDER_VERSION", "UNITS_STAGE", "UnitsCache",
            "assembly_workflow_id", "draft_record", "translate_book_workflow_id", "translation_run_id",
            "units_stage_key"]

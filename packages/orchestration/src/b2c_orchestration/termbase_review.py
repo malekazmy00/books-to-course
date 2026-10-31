@@ -23,9 +23,11 @@ import unicodedata
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Any
 
 from b2c_translation.termbase import BookTermbase, TermbaseError
 from b2c_translation.termbase.model import source_key, target_key
+from b2c_translation.termbase.vote import TermDecision, decide, reviewer_id
 
 from .termbase_store import StoredTermEntry, TermbaseScope, TermbaseStore
 
@@ -162,6 +164,69 @@ def gate_counts(entries: Sequence[StoredTermEntry], min_frequency: int) -> GateC
         approved_hint=sum(1 for e in entries if e.status == "approved" and e.tier == "hint"))
 
 
+# ------------------------------------------------------------------ review by model vote (D-033)
+UNAVAILABLE_REVIEWER = "ai-vote-unavailable"
+
+
+def _blocking(entry: StoredTermEntry, min_frequency: int) -> bool:
+    return (entry.status == "pending" and entry.present and entry.frequency >= min_frequency
+            and entry.candidate.termhood != "dropped")
+
+
+def _apply(store: TermbaseStore, scope: TermbaseScope, entry: StoredTermEntry, decision: TermDecision,
+           reviewer: str, clock: Callable[[], datetime]) -> TermDecision:
+    """Write one decision. A target the G3 rules refuse as locked (shared with another entry) is
+    kept as a shared hint; one they refuse altogether falls back to the best proposal as a hint,
+    else a rejection. Returns what was written."""
+    if decision.action == "reject":
+        reject_term(store, scope, entry.source, reviewer, decision.reason, clock=clock)
+        return decision
+    attempts = [(decision.target, decision.tier, False), (decision.target, "hint", True)]
+    if entry.proposals:
+        attempts.append((entry.proposals[0].target, "hint", True))
+    for target, tier, shared in attempts:
+        try:
+            approve_terms(store, scope, [TermSelection(entry.source, target, tier=tier)], reviewer,
+                          allow_shared_target=shared, clock=clock)
+            return TermDecision("approve", target, tier, decision.agreement, decision.reason)
+        except TermbaseDecisionRejected:
+            continue
+    reason = f"{decision.reason}; no Arabic target passed the termbase rules"
+    reject_term(store, scope, entry.source, reviewer, reason, clock=clock)
+    return TermDecision("reject", None, None, decision.agreement, reason)
+
+
+def review_by_models(store: TermbaseStore, scope: TermbaseScope, voter: Any, *, min_frequency: int,
+                     clock: Callable[[], datetime] = _now) -> dict[str, Any]:
+    """Decide every blocking pending entry by model vote (``b2c_translation.termbase.vote``).
+
+    Entries already decided (by a person or an earlier vote) are left alone. A judge failure
+    never leaves an entry pending: production does not wait on a person (D-033)."""
+    counts = {"locked": 0, "hint": 0, "rejected": 0, "judge_unavailable": 0}
+    decisions = []
+    for entry in sorted(store.entries(scope), key=lambda e: (-e.frequency, e.source_key)):
+        if not _blocking(entry, min_frequency):
+            continue
+        record = entry.record()
+        try:
+            verdict = voter.review(record)
+        except Exception as exc:  # unavailable or invalid vote: decided without it, never left pending
+            verdict, error = None, f"{type(exc).__name__}: {exc}"[:300]
+        else:
+            error = None
+        reviewer = reviewer_id(verdict.model) if verdict is not None else UNAVAILABLE_REVIEWER
+        written = _apply(store, scope, entry, decide(record, verdict), reviewer, clock)
+        if verdict is None:
+            counts["judge_unavailable"] += 1
+        counts["rejected" if written.action == "reject" else written.tier] += 1
+        decisions.append({"source": entry.source, "kind": entry.kind, "frequency": entry.frequency,
+                          "action": written.action, "target": written.target, "tier": written.tier,
+                          "agreement": written.agreement, "reason": written.reason, "reviewer": reviewer,
+                          "judge_tier": None if verdict is None else verdict.tier,
+                          "judge_choice": None if verdict is None else verdict.choice, "error": error})
+    return {"counts": counts, "decisions": decisions}
+
+
 def approved_snapshot(termbase: BookTermbase) -> BookTermbase:
     """Only the approved entries: pending ones are never used, never auto-approved."""
     return termbase.model_copy(update={"entries": [r.model_copy(deep=True) for r in termbase.entries
@@ -183,5 +248,5 @@ def approved_digest(termbase: BookTermbase) -> str:
 
 
 __all__ = ["GateCounts", "MAX_TARGET_CHARS", "TermSelection", "TermbaseDecisionRejected", "TermbaseNotFound",
-           "approve_terms", "approved_digest", "approved_snapshot", "check_arabic_target", "gate_counts",
-           "reject_term"]
+           "UNAVAILABLE_REVIEWER", "approve_terms", "approved_digest", "approved_snapshot", "check_arabic_target",
+           "gate_counts", "reject_term", "review_by_models"]

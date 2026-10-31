@@ -51,7 +51,7 @@ define allow_empty
 	$(1) || { rc=$$?; [ $$rc -eq 5 ] && echo "(no tests yet)" || exit $$rc; }
 endef
 
-.PHONY: help env data-init build up start down ps logs limits budget lint check lint-imports test test-unit test-contract \
+.PHONY: help env data-init build up start down ps logs limits budget budget-live lint check lint-imports test test-unit test-contract \
 	test-golden test-integration test-e2e eval bench-llm
 
 help:
@@ -68,6 +68,9 @@ data-init:           ## once, after the data VHDX is mounted (D-020)
 
 budget:              ## rule 8: fail if the selected profiles exceed the RAM/CPU budget
 	@$(COMPOSE) config --format json | python3 scripts/check-budget.py
+
+budget-live:         ## rule 8 on the live stack: limits of every running b2c container, whatever started it
+	@docker inspect $$(docker ps -q --filter label=com.docker.compose.project=b2c) | python3 scripts/check-budget.py --running
 
 up: env budget       ## build + start (refuses if the dedicated data disk is not mounted)
 	@bash scripts/data-disk.sh check

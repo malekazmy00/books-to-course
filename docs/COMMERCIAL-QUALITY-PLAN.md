@@ -1,5 +1,7 @@
 # Commercial quality and release plan
 
+> **Not applicable (2026-10-31).** The project is non-commercial research (D-001) with no human review in the production line (D-033). Kept for history only; see `docs/00-RESEARCH-CHARTER.md`.
+
 ## Purpose and limits
 
 Use this as a practical quality plan for a potential commercial release. It is aligned with ISO/IEC 25010:2023 product-quality model, ISO/IEC/IEEE 29119 software-testing process/strategy concepts, and NIST SSDF secure-development practices. Alignment is not certification or proof of compliance. A commercial release needs agreed customer requirements, measurable acceptance criteria, and auditable evidence.

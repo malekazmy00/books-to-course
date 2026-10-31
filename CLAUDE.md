@@ -1,19 +1,25 @@
 # CLAUDE.md — book2course
 
 Research (non-commercial) platform that converts books into structured, Arabic-narrated courses.
-Docs are in Arabic with English technical terms. Before every work session, read the delivery plan and current status, then consult the technical sources in this order:
+The research question: how far can AI alone take a learner who does not know the book's language,
+or is blind — **with no human reviewer in the production line** (D-033). Never propose human review,
+human gold sets, or listening panels as gates; use the automatic equivalents in the charter.
+Docs are in Arabic with English technical terms. Before every work session, read in this order:
 
-1. `docs/06-DELIVERY-PLAN.md` — end-to-end product plan, decision method, review cycle, and release gates.
-2. `docs/PROJECT-STATUS.md` — verified current state, evidence, and next actions.
+1. `docs/00-RESEARCH-CHARTER.md` — research question, method (quality without humans), document map, where we stand. **Read first.**
+2. `docs/PROJECT-STATUS.md` — current milestone, state, and next steps (one page).
 3. `docs/00-DECISIONS.md` — decisions (Accepted / Deferred / Open). Do not re-decide Accepted items.
-4. `docs/01-ARCHITECTURE.md` — layers, diagrams, data flow.
+4. `docs/audits/2026-10-24/00-RESTRUCTURE-PLAN.md` as amended by `docs/audits/2026-10-31-restructure-amendment-D033.md` — the work order (R0–R10); stage audits `01..09` hold the evidence.
 5. `docs/02-CONTRACTS.md` + `packages/contracts/src/b2c_contracts/models.py` — source of truth for all data.
 6. `docs/03-TESTING.md` — test catalog (IDs, thresholds).
 7. `docs/04-OPERATIONS.md` — resource budget, shared-server rules, observability.
-8. `docs/05-PHASES.md` — detailed phased plan and gates. This is the implementation work order under the delivery plan.
+8. `docs/01-ARCHITECTURE.md`, `docs/proposals/` — design background.
+
+`docs/06-DELIVERY-PLAN.md` and `docs/05-PHASES.md` are historical as a work order (Phase numbering is kept only for test IDs);
+`docs/COMMERCIAL-QUALITY-PLAN.md` does not apply.
 ## Hard rules
 
-1. **One acceptance gate at a time.** Do not mark phase N+1 complete or release through it until phase N passes and its evidence is recorded. Owner-directed model acquisition, research, and explicitly scoped parallel implementation may proceed without implying a passed gate.
+1. **One acceptance gate at a time.** Do not mark stage N+1 complete or release through it until stage N passes and its evidence is recorded. A capability built behind a disabled switch is "built, not enabled" — it is done only when it runs inside the pipeline on a real book. Owner-directed model acquisition, research, and explicitly scoped parallel implementation may proceed without implying a passed gate.
 2. **Tests first.** For the assigned phase, write the tests listed in `docs/03-TESTING.md` first
    (they must fail), then implement until they pass. Never weaken a test or threshold to make it pass;
    if a threshold looks wrong, stop and report.

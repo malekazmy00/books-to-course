@@ -6,5 +6,5 @@
 - Use scripts/windows/mount-b2c-data.ps1 from an elevated PowerShell to attach the B2C VHDX. Run it with -InstallAutoMount once to install and verify the logon task. Do not format, initialize, or substitute another disk; verify the mountpoint after every WSL/Windows restart.
 - Work only in this repository and its b2c Docker project. Do not inspect, stop, change, or reuse resources belonging to the separate ai company project.
 - Before starting services, confirm the exact B2C mountpoint and validate compose with project name b2c.
-- Before implementation or review, read docs/06-DELIVERY-PLAN.md and docs/PROJECT-STATUS.md; use docs/05-PHASES.md as the detailed work order under the delivery plan.
-- Record phase progress, executed evidence, open issues, and gate decision in eval/reports/phase-N.md. Keep decision history in docs/00-DECISIONS.md and update docs/PROJECT-STATUS.md as the current summary.
+- Before implementation or review, read docs/00-RESEARCH-CHARTER.md first (research question, no human review in the production line per D-033, document map), then docs/PROJECT-STATUS.md. The work order is docs/audits/2026-10-24/00-RESTRUCTURE-PLAN.md as amended by docs/audits/2026-10-31-restructure-amendment-D033.md; docs/06-DELIVERY-PLAN.md and docs/05-PHASES.md are historical.
+- Record executed evidence, open issues, and gate decisions in an Arabic report under eval/reports/. Keep decision history in docs/00-DECISIONS.md and replace (do not append to) docs/PROJECT-STATUS.md as the one-page current summary.

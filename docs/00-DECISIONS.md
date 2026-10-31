@@ -29,7 +29,7 @@
 | D-013 | Orchestration: Temporal | Accepted (Prefect 3 بديل لو فشل Phase 0 gate) |
 | D-014 | Observability: OpenTelemetry + Langfuse v4 + Prometheus/Grafana | Accepted |
 | D-015 | TTS خلف واجهة `TTSProvider` قابلة للتبديل، والمرشحين الستة كلهم مسموحين | Accepted (الاختيار بالقياس في Phase 8) |
-| D-016 | مراجعة الترجمة: QE routing آلي + طابور مراجعة بشري | Accepted (المراجع نفسه: Open) |
+| D-016 | مراجعة الترجمة: QE routing آلي + طابور مراجعة بشري | **Superseded by D-033** (2026-10-25): لا طابور بشري؛ سلّم تصعيد آلي وحواشي عجز |
 | D-017 | نطاق أول تجربة: فصل من كتاب أساسي + فصل من كتاب مساند | Accepted |
 | D-018 | Spaced repetition: py-fsrs (FSRS-6) | Accepted |
 | D-019 | المعالجة بالإنجليزي، والترجمة للعربي الفصحى في النهاية قبل السرد | Accepted |
@@ -182,7 +182,7 @@ WSL2 بيعرض NUMA node واحد، مع إن الجهاز dual-socket. عدد 
 ## البنود المفتوحة (Open)
 | ID | البند | بيتحسم إمتى |
 |---|---|---|
-| O-1 | المراجع البشري للترجمة | قبل Phase 7 |
+| O-1 | المراجع البشري للترجمة | **ملغى بـ D-033** (لا مراجع بشري في خط الإنتاج) |
 | O-2 | نموذج TTS النهائي | Phase 8 |
 | O-3 | النموذج المحلي لكل مهمة | Phase 1، ويتراجع في Phases 4 و5 و7 |
 | O-4 | استخدام API بعدين | بعد نجاح E2E محليًا |

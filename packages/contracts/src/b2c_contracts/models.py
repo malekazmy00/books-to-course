@@ -16,7 +16,7 @@ from typing import Any, Literal
 from pydantic import (BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, field_validator, model_serializer,
                       model_validator)
 
-SCHEMA_VERSION = "1.23.0"
+SCHEMA_VERSION = "1.24.0"
 
 
 class Contract(BaseModel):
@@ -1149,6 +1149,16 @@ class TranslationUnit(Contract):
     prev_unit_id: str | None = None
     next_unit_id: str | None = None
     normalization: list[str] = []  # applied source repairs, e.g. "joined_page_break"
+    # 1.24.0 (D-052): extraction defects of the unit's pages/blocks ("page:<check>", "block:<flag>");
+    # a unit with flags reaches the learner with a translator note (reason "source"), never silently
+    source_flags: list[str] = []
+
+    @model_serializer(mode="wrap")
+    def _serialise_unit(self, handler: SerializerFunctionWrapHandler) -> dict:
+        data = handler(self)
+        if not data.get("source_flags"):
+            data.pop("source_flags", None)  # units without flags keep their bytes
+        return data
 
     @field_validator("source_text")
     @classmethod
@@ -1221,6 +1231,8 @@ BEST_TRANSLATION_LABEL_AR = "ترجمة تقريبية"
 TranslatorNoteReason = Literal[
     "no_translation", "meaning", "completeness", "untranslated", "numbers", "names", "terminology", "wording",
     "unverified",
+    # 1.24.0 (D-052): the original text of the unit was not extracted reliably (ingest findings)
+    "source",
 ]
 _LATIN_LETTER = re.compile(r"[A-Za-z]")
 # critical_meaning: a critical meaning/polarity problem; fabrication_risk: a short source came back

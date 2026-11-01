@@ -28,13 +28,15 @@ from b2c_contracts import (BEST_TRANSLATION_LABEL_AR, TRANSLATOR_NOTE_LEAD_AR, A
                            TranslationUnit, TranslationWithheld, TranslatorNote, TranslatorNoteReason,
                            TranslatorNotesDocument, UnitTranslation)
 
+from .source_quality import SOURCE_ISSUE_ID
+
 NOTES_BUILDER_VERSION = "translator-notes-2026-10-25.2"
 PUBLISHABLE = frozenset({"accepted", "dropped"})
 ANNOTATED = frozenset({"needs_review", "rejected"})
 BLOCKING = frozenset({"major", "critical"})
 
 REASON_PRIORITY: tuple[TranslatorNoteReason, ...] = (
-    "no_translation", "meaning", "completeness", "untranslated", "numbers", "names", "terminology", "wording",
+    "source", "no_translation", "meaning", "completeness", "untranslated", "numbers", "names", "terminology", "wording",
     "unverified",
 )
 CATEGORY_REASON: dict[QACategory, TranslatorNoteReason] = {
@@ -54,6 +56,7 @@ KIND_NOUN: dict[str, str] = {
 }
 DEFAULT_NOUN = "هذه الفقرة"
 REASON_AR: dict[TranslatorNoteReason, str] = {
+    "source": "النص الأصلي في {x} لم يُستخرج من الكتاب بثقة، فقد تتبع الترجمة نصًا معيبًا.",
     "no_translation": "تعذّرت ترجمة {x} ترجمةً موثوقة.",
     "meaning": "قد لا تنقل ترجمة {x} معنى الأصل بدقة.",
     "completeness": "قد تكون ترجمة {x} ناقصة أو زائدة عن الأصل.",
@@ -91,7 +94,8 @@ def withheld_for(unit: TranslationUnit, translation: UnitTranslation) -> Transla
 
 def reasons_for(issues: Iterable[QAIssue]) -> list[TranslatorNoteReason]:
     """Learner reasons from the blocking issues, in priority order; none -> ``unverified``."""
-    found = {CATEGORY_REASON.get(i.category, "wording") for i in issues if i.severity in BLOCKING}
+    found = {"source" if i.check_id == SOURCE_ISSUE_ID else CATEGORY_REASON.get(i.category, "wording")
+             for i in issues if i.severity in BLOCKING}
     return [r for r in REASON_PRIORITY if r in found] or ["unverified"]
 
 

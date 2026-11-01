@@ -32,6 +32,7 @@ import hashlib
 import json
 import threading
 from collections import Counter, OrderedDict
+from dataclasses import replace
 from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal
@@ -42,7 +43,8 @@ from temporalio.common import RetryPolicy
 from temporalio.exceptions import ApplicationError
 
 with workflow.unsafe.imports_passed_through():
-    from b2c_contracts import (ArtifactRef, ParsedBook, ProducerIdentity, QAIssue, TranslationUnit,
+    from b2c_contracts import (ArtifactRef, IngestQualityReport, ParsedBook, ParsedBookV2, ProducerIdentity, QAIssue,
+                               TranslationUnit,
                                TranslatorNotesDocument, UnitTranslation, stage_key)
     from b2c_llm_gateway import InvalidLLMOutput, LLMOutputTruncated, LLMRequestRejected
     from b2c_translation.book_pipeline import Draft, PipelineConfig, UnitResult, UnitTranslator, assemble_blocks
@@ -52,6 +54,7 @@ with workflow.unsafe.imports_passed_through():
     from b2c_translation.termbase import (BookTermbase, GlossarySource, MemoryTermSource, PriorTermbaseSource,
                                           TermbaseError, TransliterationSource)
     from b2c_translation.termbase import build_book_termbase as build_termbase_from_units
+    from b2c_translation.source_quality import flag_units, source_issue, v1_block_flags
     from b2c_translation.units import build_units_with_provenance
 
     from .heartbeat import LONG_ACTIVITY_HEARTBEAT_TIMEOUT, activity_heartbeats
@@ -365,7 +368,8 @@ class TranslateBookActivities:
 
             def compute() -> dict[str, bytes]:
                 build = build_units_with_provenance(parsed, max_unit_chars=book.max_unit_chars)
-                units = [u.model_dump(mode="json") for u in build.units]
+                built = self._flag_source(source, build.units)  # D-052: extraction defects travel on
+                units = [u.model_dump(mode="json") for u in built]
                 meta = {"units_builder_version": UNITS_BUILDER_VERSION, "book_id": parsed.book_id,
                         "source_artifact_ref": source.model_dump(mode="json"),
                         "max_unit_chars": book.max_unit_chars, "unit_count": len(units),
@@ -383,6 +387,21 @@ class TranslateBookActivities:
                                         book_id=parsed.book_id)
         return PreparedUnits(units_ref=ref_json, unit_ids=[u.unit_id for u in units], book_id=parsed.book_id,
                              cache_hit=cache_hit)
+
+    def _flag_source(self, source: ArtifactRef, units: list[TranslationUnit]) -> list[TranslationUnit]:
+        """Units of an ingest v2 parse carry the defects of their pages (failed gate checks) and blocks."""
+        if source.stage != "ingest-parse-v2":
+            return units
+        files = set(self.artifact_store.list_files(source))
+        if "parsed-book-v2.json" not in files:
+            return units
+        try:
+            book = ParsedBookV2.model_validate_json(self.artifact_store.read(source, "parsed-book-v2.json"))
+            report = (IngestQualityReport.model_validate_json(self.artifact_store.read(source, "ingest-quality.json"))
+                      if "ingest-quality.json" in files else None)
+        except ValueError:  # flags are knowledge, not a gate: an unreadable flag file never stops the units
+            return units
+        return flag_units(units, block_flags=v1_block_flags(book), report=report)
 
     # .............................................................. termbase
     def _termbase_store(self) -> TermbaseStore:
@@ -583,6 +602,12 @@ class TranslateBookActivities:
                     result = translator.translate(unit, context_before=before, context_after=after)
                 except DETERMINISTIC_UNIT_ERRORS as exc:
                     result = self._engine_error(unit, translator, exc)
+                if unit.source_flags and result.translation.decision == "accepted":
+                    # D-052: a faithful translation of a defective source still reaches the learner as a
+                    # translator note (reason "source"), never as if the source were sound
+                    result = replace(result, translation=result.translation.model_copy(update={
+                        "decision": "needs_review",
+                        "issues": [*result.translation.issues, source_issue(unit.source_flags)]}))
                 self.result_store.upsert(inp.run_id, unit.book_id, result.translation,
                                          drafts=[draft_record(d) for d in result.drafts],
                                          termbase_digest=inp.termbase_digest)

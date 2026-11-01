@@ -367,3 +367,72 @@ def test_prepare_accepts_the_ingest_v2_parse_through_its_v1_projection(artifacts
     from_v2 = prepare(acts, book_input(v2))
     from_v1 = prepare(acts, book_input(parsed_ref(artifacts)))
     assert from_v2.unit_ids == from_v1.unit_ids and from_v2.book_id == "bk"
+
+
+def v2_source(artifacts, *, flagged_seq=1, accepted=True):
+    """An ingest-parse-v2 artifact whose v1 projection is parsed_book(); one v2 block carries a flag."""
+    from b2c_contracts import BlockV2, IngestQualityReport, PageInfo, ParsedBookV2, QualityCheck
+    v1 = parsed_book()
+    blocks = [BlockV2(block_id=f"bk:b{i:05d}", type="paragraph", zone="body", text=b.text, raw_text=b.text,
+                      refs=list(b.refs), section_path=[], ocr=False,
+                      quality_flags=["letter_spacing_residue"] if i == flagged_seq else [])
+              for i, b in enumerate(v1.blocks)]
+    v2 = ParsedBookV2(book_id="bk", title="T", role="spine", page_count=1, toc_source="headings",
+                      pages=[PageInfo(page_no=1, status="content")], blocks=blocks,
+                      parser={"name": "f", "version": "1"}, normalizer={"name": "n", "version": "1"})
+    check = QualityCheck(name="pages_below_agreement", value=0.0 if accepted else 1.0, op="<=", threshold=0.0,
+                         passed=accepted)
+    other = QualityCheck(name="word_count", value=1.0, op=">=", threshold=1.0, passed=True)
+    report = IngestQualityReport(book_id="bk", report_version="3", metrics={}, checks=[check, other],
+                                 accepted=accepted,
+                                 page_findings={"pages_below_agreement": [] if accepted else [1]})
+    return artifacts.put("c1", "ingest-parse-v2", "e" * 64, {
+        "parsed-book.json": v1.model_dump_json().encode(), "parsed-book-v2.json": v2.model_dump_json().encode(),
+        "ingest-quality.json": report.model_dump_json().encode()})
+
+
+def test_units_of_a_v2_source_carry_its_extraction_flags(artifacts, results):  # D-052 point 4
+    acts = activities(artifacts, results)
+    prepared = prepare(acts, book_input(v2_source(artifacts)))
+    units = {u.unit_id: u for u in acts.units_cache.get(artifacts, ArtifactRef.model_validate(prepared.units_ref))}
+    flagged = {uid: u.source_flags for uid, u in units.items() if u.source_flags}
+    assert list(flagged.values()) == [["block:letter_spacing_residue"]]
+    assert all("bk:1:1" in units[uid].block_ids for uid in flagged)
+
+
+def test_a_refused_parse_flags_the_units_of_its_failed_pages(artifacts, results):
+    acts = activities(artifacts, results)
+    prepared = prepare(acts, book_input(v2_source(artifacts, flagged_seq=-1, accepted=False)))
+    units = acts.units_cache.get(artifacts, ArtifactRef.model_validate(prepared.units_ref))
+    assert units and all(u.source_flags == ["page:pages_below_agreement"] for u in units if u.pages == [1])
+
+
+def test_an_accepted_translation_of_a_flagged_unit_reaches_the_learner_with_a_note(artifacts, results):
+    inp = book_input(v2_source(artifacts))
+    acts = activities(artifacts, results)
+    prepared = prepare(acts, inp)
+    units = acts.units_cache.get(artifacts, ArtifactRef.model_validate(prepared.units_ref))
+    flagged = [u.unit_id for u in units if u.source_flags]
+    acts.translate_batch(batch(inp, prepared, [u.unit_id for u in units]))
+    stored = {r.unit_id: r.translation for r in results.fetch_run(translation_run_id(inp))}
+    for uid in flagged:
+        assert stored[uid].decision == "needs_review"
+        assert any(i.check_id == "source.unclear" for i in stored[uid].issues)
+    assert all(stored[u.unit_id].decision != "needs_review" for u in units if not u.source_flags
+               and stored[u.unit_id].decision != "dropped" and u.kind == "prose")
+
+
+def test_the_note_of_a_flagged_unit_says_the_source_was_unclear_and_offers_its_translation(artifacts, results):
+    from b2c_contracts import TranslatorNotesDocument
+    inp = book_input(v2_source(artifacts))
+    acts = activities(artifacts, results)
+    prepared = prepare(acts, inp)
+    units = acts.units_cache.get(artifacts, ArtifactRef.model_validate(prepared.units_ref))
+    acts.translate_batch(batch(inp, prepared, [u.unit_id for u in units]))
+    out = acts.translator_notes(AssembleTranslationInput(run_id=translation_run_id(inp), course_id="c1",
+                                                         units_ref=prepared.units_ref))
+    doc = TranslatorNotesDocument.model_validate_json(
+        artifacts.read(ArtifactRef.model_validate(out.artifact), "translator-notes.json"))
+    [note] = [n for n in doc.notes if n.unit_id in {u.unit_id for u in units if u.source_flags}]
+    assert note.reasons == ["source"] and "لم يُستخرج من الكتاب بثقة" in note.reason_ar
+    assert note.best_translation and note.best_translation_from == "final"

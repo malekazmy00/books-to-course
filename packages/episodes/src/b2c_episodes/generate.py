@@ -331,7 +331,8 @@ def deficit_note(deficits: Sequence[str]) -> str:
 
 
 def generate_lesson_episode(plan: EpisodePlan, *, generator: ModelRole, judge: ModelRole | None,
-                            clock: Callable[[], datetime], workers: int = 3) -> tuple[EpisodeScript, dict[str, Any]]:
+                            clock: Callable[[], datetime], workers: int = 3,
+                            debate: bool = False) -> tuple[EpisodeScript, dict[str, Any]]:
     if judge is not None and judge.family == generator.family:
         raise ValueError("the validator must be from a different model family than the generator")
     lesson_items, lesson_index = _labelled([plan.lesson], "B", chars=LESSON_TEXT_CHARS)
@@ -474,6 +475,12 @@ def generate_lesson_episode(plan: EpisodePlan, *, generator: ModelRole, judge: M
     others = _others_say(plan, ep)
     if others is not None:
         sections.append(others)
+    if debate:  # optional, chosen per episode (owner direction 2026-11-01)
+        used = {s.claim_id for sec in sections if sec.kind == "others_say" for x in sec.lines for s in x.sources}
+        debate_section = _debate(plan, ep, used)
+        report["debate"] = {"requested": True, "views": len(debate_section.lines) if debate_section else 0}
+        if debate_section is not None:
+            sections.append(debate_section)
     report.update(_report(plan, candidates, grounded, summary, key_terms, questions, recap))
     script = EpisodeScript(book_id=plan.book_id, language="en", episode=ep, kind="lesson", lesson_id=plan.lesson.lesson_id,
                            title=plan.lesson.title, book_title=plan.book_title, sections=sections,
@@ -503,6 +510,43 @@ def _others_say(plan: EpisodePlan, ep: int) -> EpisodeSection | None:
         return None
     n = B.take_within([x.text for x in lines], B.SECTION_WORDS["others_say"], B.OTHERS_MAX)
     return EpisodeSection(section_id=f"e{ep:03d}.others", kind="others_say", voice="external", lines=lines[:max(1, n)])
+
+
+DEBATE_MAX = 4
+
+
+def _debate(plan: EpisodePlan, ep: int, used: set[str | None]) -> EpisodeSection | None:
+    """Views on the lesson's concepts set side by side (D-032 §10 «مناظرة»), deterministic: published,
+    attributed viewpoints of the dossier, nothing generated. Opposing views the research grouped
+    (``conflict_group``) come first; at least two different people must hold the views shown."""
+    if plan.dossier is None:
+        return None
+    concepts = {t.term.casefold() for t in plan.terms}
+    views = [c for c in plan.dossier.published()
+             if c.kind == "viewpoint" and c.status == "attributed" and c.attributed_to
+             and (c.concept or "").casefold() in concepts and c.claim_id not in used]
+    if not views:
+        return None
+    groups: dict[str, list] = {}
+    for c in views:
+        groups.setdefault(c.conflict_group or "", []).append(c)
+    ordered = sorted(groups.items(), key=lambda kv: (kv[0] == "", -len(kv[1])))
+    picked, people = [], set()
+    for _, group in ordered:
+        for c in group:
+            who = spoken_attribution(c, plan.dossier)
+            if who in people or len(picked) >= DEBATE_MAX:
+                continue
+            people.add(who)
+            picked.append(c)
+    if len(people) < 2:
+        return None
+    lines = [_external_line(f"e{ep:03d}.d{i:02d}", c, plan.dossier) for i, c in enumerate(picked)]
+    lines = [x for x in lines if B.words(x.text) <= B.LINE_WORDS["text"] + 10]
+    if len({x.attributed_to for x in lines}) < 2:
+        return None
+    n = B.take_within([x.text for x in lines], B.SECTION_WORDS["debate"], DEBATE_MAX)
+    return EpisodeSection(section_id=f"e{ep:03d}.debate", kind="debate", voice="external", lines=lines[:max(2, n)])
 
 
 def coverage(plan: EpisodePlan, script: EpisodeScript) -> dict[str, Any]:

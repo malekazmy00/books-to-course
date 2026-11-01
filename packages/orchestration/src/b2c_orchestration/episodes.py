@@ -105,6 +105,7 @@ class EpisodeScriptENInput(EpisodeRefs):
     episode: int = Field(ge=0)
     require_accepted_inputs: bool = True
     cache_bust: str | None = None
+    debate: bool = False  # the optional debate section (D-032 §10), chosen per episode
 
 
 class EpisodeScriptARInput(EpisodeRefs):
@@ -119,6 +120,7 @@ class EpisodeScriptARInput(EpisodeRefs):
 
 class BuildEpisodeScriptsInput(EpisodeRefs):
     episodes: list[int] = Field(min_length=1)
+    debate_episodes: list[int] = []   # episodes that get the optional debate section (none by default)
     termbase_ref: dict[str, Any]
     engine_profile: str
     qe_profile: str | None = None
@@ -345,6 +347,7 @@ class EpisodeActivities:
         config = {"episodes_version": EPISODES_VERSION, "episode": inp.episode, "run_id": inp.translation_run_id,
                   "generator": self.generator.identity.model_id, "judge": self.judge.identity.model_id,
                   "dossier": dossier_ref is not None, "cache_bust": inp.cache_bust,
+                  **({"debate": True} if inp.debate else {}),  # without it the keys are unchanged
                   "prompts": [LESSON_PROMPT_VERSION, RECAP_PROMPT_VERSION, INTRO_PROMPT_VERSION, JUDGE_PROMPT_VERSION]}
         key = stage_key(EN_STAGE, EPISODES_VERSION, [r.sha256 for r in inputs], config)
         view, positions = self._view(inp)
@@ -374,7 +377,8 @@ class EpisodeActivities:
                                        translation_run_id=inp.translation_run_id,
                                        last_episode=max(view.episode_of.values()), dossier=dossier)
                     script, report = generate_lesson_episode(plan, generator=self.generator, judge=self.judge,
-                                                             clock=self.clock, workers=self.workers)
+                                                             clock=self.clock, workers=self.workers,
+                                                             debate=inp.debate)
                     cov = coverage(plan, script)
                     if figures is not None:
                         script, placed = insert_figure_sections(
@@ -547,7 +551,8 @@ class BuildEpisodeScriptsWorkflow:
             en: dict[str, Any] = await workflow.execute_activity(
                 EN_ACTIVITY, EpisodeScriptENInput(**refs, episode=episode,
                                                   require_accepted_inputs=inp.require_accepted_inputs,
-                                                  cache_bust=inp.cache_bust),
+                                                  cache_bust=inp.cache_bust,
+                                                  debate=episode in inp.debate_episodes and episode > 0),
                 result_type=dict, **EPISODE_OPTIONS)
             entry: dict[str, Any] = {"en": en}
             usable = en.get("has_script") and (en.get("stage_output_status") == "accepted"

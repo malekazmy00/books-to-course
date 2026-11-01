@@ -60,6 +60,9 @@ class CoursePipelineInput(BaseModel):
     figure_images: bool = False
     episodes: list[int] | None = None   # None: 00 (course introduction) and every lesson episode
     meta_override: dict[str, Any] | None = None
+    # the optional debate section (D-032 §10): off unless chosen, by episode list and/or every N lessons
+    debate_episodes: list[int] = []
+    debate_every: int | None = Field(default=None, ge=1)
     speech: bool = True                 # speech and MP3 per episode
     require_intelligibility: bool = True
     ingest_queue: str = LIGHT
@@ -211,7 +214,10 @@ class CoursePipelineWorkflow:
             "units_ref": units_ref, "concept_ref": concepts["ref"], "dossier_ref": research.get("ref"),
             "figures_ref": figures_en_ref, "translation_run_id": translated.get("run_id"), "episodes": episodes,
             "termbase_ref": termbase_ref, "engine_profile": inp.engine_profile, "qe_profile": inp.qe_profile,
-            "require_accepted_inputs": strict, "cache_bust": inp.cache_bust}, inp.companion_queue)
+            "require_accepted_inputs": strict, "cache_bust": inp.cache_bust,
+            "debate_episodes": sorted({e for e in episodes if e > 0 and (
+                e in inp.debate_episodes or (inp.debate_every is not None and e % inp.debate_every == 0))})},
+            inp.companion_queue)
         per_episode = (scripts or {}).get("episodes") or {}
         accepted = sorted(k for k, v in per_episode.items() if _accepted((v or {}).get("ar")))
         missing = sorted(f"{e:02d}" for e in episodes if f"{e:02d}" not in accepted)

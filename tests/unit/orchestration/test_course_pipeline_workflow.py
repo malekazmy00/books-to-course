@@ -253,3 +253,19 @@ def test_workflow_id_is_stable_per_course_and_source():
     a = course_pipeline_workflow_id(pipeline_input())
     assert a == course_pipeline_workflow_id(pipeline_input()) and a.startswith("b2c-course-pipeline-")
     assert a != course_pipeline_workflow_id(pipeline_input(course_id="c2"))
+
+
+
+async def test_the_debate_is_off_unless_chosen(env):
+    SCRIPT.clear()
+    await run(env, pipeline_input())
+    assert dict(CALLS)["episodes"]["debate_episodes"] == []
+
+
+async def test_the_debate_follows_the_chosen_episodes_or_every_n(env):
+    SCRIPT.clear()
+    await run(env, pipeline_input(debate_episodes=[2]))
+    assert dict(CALLS)["episodes"]["debate_episodes"] == [2]
+    SCRIPT.clear()
+    await run(env, pipeline_input(debate_every=2))
+    assert dict(CALLS)["episodes"]["debate_episodes"] == [2]          # lessons 1..3, every second one

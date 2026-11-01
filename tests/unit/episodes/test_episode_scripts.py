@@ -270,3 +270,39 @@ def test_each_answer_says_where_it_is_in_the_lesson():
     script, _ = lesson_script()
     answers = [x for x in script.sections[4].lines if x.role == "answer"]
     assert all(a.text.endswith(".") and "lesson" in a.text.split(". ")[-1] for a in answers)
+
+
+# ------------------------------------------------------------------ the debate (D-032 §10): optional, chosen per episode
+def debate_plan():
+    from tests.unit.episodes import fixtures as f
+    d = f.dossier()
+    extra = [f.claim(10, "concept_in_field", "Hegemony explains why the ruled consent to rule.", src=f.REVIEW_SRC,
+                     kind="viewpoint", status="attributed", attributed_to="Perry Anderson in New Left Review",
+                     concept="hegemony", conflict_group="g1"),
+             f.claim(11, "concept_in_field", "Hegemony overstates consent and understates coercion.", src=f.REVIEW_SRC,
+                     kind="viewpoint", status="attributed", attributed_to="Nicholas Abercrombie (critique)",
+                     concept="hegemony", conflict_group="g1")]
+    return plan().__class__(**{**plan().__dict__, "dossier": d.model_copy(update={"claims": [*d.claims, *extra]})})
+
+
+def test_no_debate_unless_asked():
+    gen, judge = roles()
+    script, _ = generate_lesson_episode(debate_plan(), generator=gen, judge=judge, clock=lambda: NOW)
+    assert "debate" not in kinds(script)
+
+
+def test_the_debate_puts_attributed_opposing_views_side_by_side():
+    gen, judge = roles()
+    script, report = generate_lesson_episode(debate_plan(), generator=gen, judge=judge, clock=lambda: NOW, debate=True)
+    assert kinds(script)[-1] == "debate"
+    lines = script.sections[-1].lines
+    assert [x.text for x in lines] == ["According to Perry Anderson: Hegemony explains why the ruled consent to rule.",
+                                       "According to Nicholas Abercrombie: Hegemony overstates consent and understates coercion."]
+    assert all(x.attributed_to and x.sources[0].kind == "dossier" for x in lines)
+    assert report["debate"] == {"requested": True, "views": 2}
+
+
+def test_a_debate_needs_two_people_holding_views():
+    gen, judge = roles()
+    script, report = generate_lesson_episode(plan(), generator=gen, judge=judge, clock=lambda: NOW, debate=True)
+    assert "debate" not in kinds(script) and report["debate"] == {"requested": True, "views": 0}

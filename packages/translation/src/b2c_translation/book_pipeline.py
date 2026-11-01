@@ -96,8 +96,10 @@ class UnitTranslator:
                  hints: Mapping[str, str] | None = None,
                  entity_variants: Mapping[str, Sequence[str]] | None = None,
                  reference_renderer: Callable[[TranslationUnit], str] | None = None,
-                 config: PipelineConfig = PipelineConfig(), clock: Callable[[], datetime] = _now) -> None:
+                 config: PipelineConfig = PipelineConfig(), clock: Callable[[], datetime] = _now,
+                 domain: str = "") -> None:
         self.engine = engine
+        self.domain = domain  # D-034: brief of the book and its field, background for the engine
         self.estimator = estimator
         self.memory = memory
         self.terms = dict(terms or {})
@@ -152,6 +154,7 @@ class UnitTranslator:
             terms=terms_in(unit.source_text, self.terms) if caps.supports_terms else {},
             hints=terms_in(unit.source_text, self.hints) if caps.supports_terms else {},
             entities=names_in(unit.source_text, self.entities) if caps.supports_terms else {},
+            domain=self.domain if caps.follows_instructions else "",
             context_before=context_before if caps.supports_context else None,
             context_after=context_after if caps.supports_context else None)
         drafts: list[Draft] = []
@@ -194,7 +197,7 @@ class UnitTranslator:
         terms = terms_in(sentence, self.terms) if self.engine.capabilities.supports_terms else {}
         hints = terms_in(sentence, self.hints) if self.engine.capabilities.supports_terms else {}
         entities = names_in(sentence, self.entities) if self.engine.capabilities.supports_terms else {}
-        return EngineRequest(unit=sub, source_language=request.source_language,
+        return EngineRequest(unit=sub, source_language=request.source_language, domain=request.domain,
                              target_language=request.target_language, terms=terms, hints=hints,
                              entities=entities,
                              context_before=request.context_before, context_after=request.context_after)

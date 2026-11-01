@@ -47,6 +47,7 @@ with workflow.unsafe.imports_passed_through():
                                TranslationUnit,
                                TranslatorNotesDocument, UnitTranslation, stage_key)
     from b2c_llm_gateway import InvalidLLMOutput, LLMOutputTruncated, LLMRequestRejected
+    from b2c_translation.domain import domain_brief
     from b2c_translation.book_pipeline import Draft, PipelineConfig, UnitResult, UnitTranslator, assemble_blocks
     from b2c_translation.glossary import ContextualGlossary
     from b2c_translation.notes import NOTES_BUILDER_VERSION, build_translator_notes
@@ -156,6 +157,8 @@ class TranslateUnitBatchInput(BaseModel):
     # frozen APPROVED termbase (stage "book-termbase-approved") and its digest; None/"" = no terms
     termbase_ref: dict[str, Any] | None = None
     termbase_digest: str = Field(default="", pattern=DIGEST_PATTERN)
+    # D-034: the knowledge dossier; its brief of the book and field is background for the engine
+    knowledge_ref: dict[str, Any] | None = None
 
 
 class BuildTermbaseInput(BaseModel):
@@ -358,6 +361,7 @@ class TranslateBookActivities:
         self.termbase_builder = termbase_builder
         self.promotion = promotion
         self._approved: OrderedDict[str, BookTermbase] = OrderedDict()
+        self._domains: dict[str, str] = {}
         self._approved_lock = threading.Lock()
 
     # .............................................................. prepare
@@ -514,13 +518,8 @@ class TranslateBookActivities:
             raise _fail(f"profile {inp.judge_profile!r} cannot vote on terms (an llm_judge QE profile is needed)",
                         "TermVoterNotConfigured")
         scope = TermbaseScope(inp.course_id, inp.book_id, inp.source_language, inp.target_language)
-        field_for = None
-        if inp.knowledge_ref is not None:
-            dref = ArtifactRef.model_validate(inp.knowledge_ref)
-            try:
-                field_for = field_statements(KnowledgeDossier.model_validate_json(self.artifact_store.read(dref, "dossier.json")))
-            except (OSError, ValueError, KeyError):  # research is knowledge, not a gate: the vote goes on without it
-                field_for = None
+        dossier = self._dossier(inp.knowledge_ref)
+        field_for = field_statements(dossier) if dossier is not None else None
         with activity_heartbeats("review_book_termbase"):
             report = review_by_models(store, scope, voter, min_frequency=inp.min_frequency, clock=self.clock,
                                       field_for=field_for)
@@ -582,8 +581,29 @@ class TranslateBookActivities:
         variants = termbase.entity_variants() if termbase is not None else None  # D-047: check only
         return UnitTranslator(engine, estimator=estimator, memory=self.memory, clock=self.clock,
                               terms=terms, entities=entities, forbidden=forbidden, hints=hints,
-                              entity_variants=variants, config=PipelineConfig(source_language=inp.source_language,
+                              entity_variants=variants, domain=self._domain(inp.knowledge_ref),
+                              config=PipelineConfig(source_language=inp.source_language,
                                                     target_language=inp.target_language))
+
+    def _dossier(self, raw: dict[str, Any] | None) -> KnowledgeDossier | None:
+        """The research dossier, or None: research is knowledge, not a gate (D-052)."""
+        if raw is None:
+            return None
+        try:
+            return KnowledgeDossier.model_validate_json(self.artifact_store.read(ArtifactRef.model_validate(raw),
+                                                                                 "dossier.json"))
+        except (OSError, ValueError, KeyError):
+            return None
+
+    def _domain(self, raw: dict[str, Any] | None) -> str:
+        key = (raw or {}).get("sha256", "")
+        with self._approved_lock:
+            if key in self._domains:
+                return self._domains[key]
+        brief = domain_brief(self._dossier(raw))
+        with self._approved_lock:
+            self._domains[key] = brief
+        return brief
 
     @activity.defn(name="translate_unit_batch")
     def translate_batch(self, inp: TranslateUnitBatchInput) -> BatchOutcome:
@@ -855,7 +875,8 @@ class TranslateBookWorkflow:
                                         engine_profile=inp.engine_profile, qe_profile=inp.qe_profile,
                                         profile_fingerprint=inp.profile_fingerprint,
                                         source_language=inp.source_language, target_language=inp.target_language,
-                                        termbase_ref=termbase_ref, termbase_digest=termbase_digest),
+                                        termbase_ref=termbase_ref, termbase_digest=termbase_digest,
+                                        knowledge_ref=inp.knowledge_ref),
                 result_type=BatchOutcome, **BATCH_OPTIONS)
             totals.update({"translated": outcome.translated, "skipped": outcome.skipped})
         assembled: AssemblyResult = await workflow.execute_activity(

@@ -323,6 +323,8 @@ async def test_the_knowledge_dossier_reaches_the_termbase_vote(env):  # D-034
     review = next(c for k, c in recorder.calls if k == "review_termbase")
     assert review.knowledge_ref == dossier
     assert translation_run_id(book_input(knowledge_ref=dossier)) == translation_run_id(book_input())
+    batches = [c for k, c in recorder.calls if k == "batch"]
+    assert batches and all(b.knowledge_ref == dossier for b in batches)        # the engine's field brief
 
 
 async def test_model_review_runs_once_then_falls_back_to_the_signal(env):

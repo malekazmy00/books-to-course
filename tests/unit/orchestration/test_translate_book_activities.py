@@ -436,3 +436,25 @@ def test_the_note_of_a_flagged_unit_says_the_source_was_unclear_and_offers_its_t
     [note] = [n for n in doc.notes if n.unit_id in {u.unit_id for u in units if u.source_flags}]
     assert note.reasons == ["source"] and "لم يُستخرج من الكتاب بثقة" in note.reason_ar
     assert note.best_translation and note.best_translation_from == "final"
+
+
+def test_the_research_brief_reaches_the_engine(artifacts, results):  # D-034 §11a
+    from tests.unit.translation.engines.test_engine_domain import dossier
+    d = dossier([("book_card", "The book is about soils and farming.", "fact")])
+    dref = artifacts.put("c1", "knowledge-research", "d" * 64, {"dossier.json": d.model_dump_json().encode()})
+    engine = FakeEngine()
+    inp = book_input(parsed_ref(artifacts))
+    acts = activities(artifacts, results, engine=engine)
+    prepared = prepare(acts, inp)
+    b = batch(inp, prepared, prepared.unit_ids[:2]).model_copy(update={"knowledge_ref": dref.model_dump(mode="json")})
+    acts.translate_batch(b)
+    assert engine.calls and all("soils and farming" in r.domain for r in engine.calls)
+
+
+def test_without_research_the_engine_gets_no_brief(artifacts, results):
+    engine = FakeEngine()
+    inp = book_input(parsed_ref(artifacts))
+    acts = activities(artifacts, results, engine=engine)
+    prepared = prepare(acts, inp)
+    acts.translate_batch(batch(inp, prepared, prepared.unit_ids[:2]))
+    assert engine.calls and all(r.domain == "" for r in engine.calls)

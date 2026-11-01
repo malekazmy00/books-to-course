@@ -44,6 +44,8 @@ class EngineRequest:
     hints: Mapping[str, str] = field(default_factory=dict)
     # approved names occurring in the unit (D-047): people, places, organisations, works
     entities: Mapping[str, str] = field(default_factory=dict)
+    # a brief of the book and its field from knowledge research (D-034); background only
+    domain: str = ""
 
 
 @dataclass(frozen=True)

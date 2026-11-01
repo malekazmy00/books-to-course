@@ -48,6 +48,7 @@ LOCKED_SHA256 = {
     "hy-mt2.context@v1": "44c7a85e902590d41e08ad75ef6da868f75f83317057c3eb28b3873dbc154972",
     "legacy.hy-server.instructions@v1": "4d7e897234d98c174c026c1312c3a5b120c60afc2668f8675bba9d0ff88ba8be",
     "legacy.hy-server.retry_feedback@v1": "c9f4e0c7ff917de9dedaa9327e2c1a7756d29b6dab134178dfd3fce483f068f7",
+    "chat.domain@v1": "3dcf4146583ff03d99f509d7e7846ccd122a9c163f93cd4580ef30fcbdddabf8",
 }
 
 

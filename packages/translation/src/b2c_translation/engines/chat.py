@@ -95,6 +95,11 @@ class ChatEngine:
                                  target_language=language_name(request.target_language),
                                  register_rules=register_t.render())]
 
+        if request.domain.strip():  # D-034: background on the book and its field (absent: prompt unchanged)
+            domain_t = get_template("chat.domain")
+            used.append(domain_t)
+            parts.append(domain_t.render(domain_text=request.domain.strip()))
+
         if caps.supports_terms:
             folded = source.casefold()
             present = [(s, t) for s, t in sorted(request.terms.items()) if s.casefold() in folded]

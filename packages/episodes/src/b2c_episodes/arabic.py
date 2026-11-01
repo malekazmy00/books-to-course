@@ -129,7 +129,7 @@ def assemble_arabic(script: EpisodeScript, units: list[ScriptUnit], translations
                 text = f"{labels[su.label.casefold()]} ({su.label}): {text}"
             lines.append(line.model_copy(update={"text": text, "unit_ids": [su.unit.unit_id],
                                                  "status": _status(t.decision)}))
-        if not lines and section.kind not in ("others_say", "debate", "acknowledgments"):
+        if not lines and section.kind not in ("others_say", "debate", "acknowledgments", "name_note"):
             missing.append(section.section_id)
         if lines:
             sections.append(section.model_copy(update={"lines": lines}))

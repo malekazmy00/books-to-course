@@ -82,3 +82,17 @@ def test_one_lookup_per_term_is_remembered():
 def test_disambiguation_parentheses_are_removed_and_non_arabic_titles_refused():
     assert clean_title("هيمنة (سياسة)") == "هيمنة"
     assert clean_title("Hegemony") is None and clean_title("  ") is None
+
+
+def test_the_description_comes_from_the_entity_of_the_approved_spelling():
+    from b2c_translation.termbase import Proposal, TermRecord
+    from b2c_translation.termbase.known import known_description
+    proposals = WikidataKnownEquivalents(FakeAPI()).propose(cand())
+    rec = TermRecord(source="hegemony", kind="term", candidate=cand(), proposals=proposals, status="approved",
+                     target="هيمنة", approved_by="ai-vote-x")
+    assert known_description(rec) == ("political, economic or military predominance of one state over other states",
+                                      "https://www.wikidata.org/wiki/Q182034")
+    other = rec.model_copy(update={"target": "سيادة"})
+    assert known_description(other) is None        # another spelling: not the entity we looked up
+    no = rec.model_copy(update={"proposals": [Proposal(target="هيمنة", provenance="gateway_proposer")]})
+    assert known_description(no) is None

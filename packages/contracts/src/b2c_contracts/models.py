@@ -16,7 +16,7 @@ from typing import Any, Literal
 from pydantic import (BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, field_validator, model_serializer,
                       model_validator)
 
-SCHEMA_VERSION = "1.24.0"
+SCHEMA_VERSION = "1.25.0"
 
 
 class Contract(BaseModel):
@@ -1837,6 +1837,8 @@ EpisodeSectionKind = Literal[
     "others_say", "debate",
     # 1.20.0 (D-044): a figure or table of the lesson read by its generated description (course voice)
     "figure_reading",
+    # 1.25.0 (learning-companion §10): a line on a person, place, work or event at its first mention
+    "name_note",
     # episode 00, the course introduction (D-037)
     "about_book", "about_author", "book_method", "course_guide", "acknowledgments",
 ]
@@ -1848,6 +1850,7 @@ SECTION_VOICES: dict[str, frozenset[str]] = {
     "about_book": frozenset({"course", "external"}), "about_author": frozenset({"course", "external"}),
     "book_method": frozenset({"course"}), "course_guide": frozenset({"course"}),
     "acknowledgments": frozenset({"course"}), "figure_reading": frozenset({"course"}),
+    "name_note": frozenset({"external"}),
 }
 BOOK_TEXT_KINDS = frozenset({"book_text", "figure_description"})
 ScriptLineRole = Literal["text", "question", "answer", "term"]
@@ -1857,14 +1860,14 @@ _LINE_ID = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$"
 # optional "others say"/debate; course introduction: book, author, method, guide, optional external
 # sections, brief acknowledgments last.
 # 1.23.0 (D-052): summary, key terms and questions may be missing when declared in ``deficits``
-_LESSON_ORDER = re.compile(r"^I(?:B|F|R)*B(?:B|F|R)*S?K?Q?(?:O|D)*$")
+_LESSON_ORDER = re.compile(r"^I(?:B|F|R|N)*B(?:B|F|R|N)*S?K?Q?(?:O|D)*$")
 COMPANION_PARTS: dict[str, str] = {"lesson_summary": "summary", "key_terms": "key_terms", "questions": "questions"}
 EpisodeDeficit = Literal["summary", "key_terms", "questions"]
 _INTRO_ORDER = re.compile(r"^AUMG(?:O|D)*C?$")
 _ORDER_CODE = {"episode_intro": "I", "book_text": "B", "figure_description": "F", "lesson_summary": "S",
                "key_terms": "K", "questions": "Q", "others_say": "O", "debate": "D", "about_book": "A",
                "about_author": "U", "book_method": "M", "course_guide": "G", "acknowledgments": "C",
-               "figure_reading": "R"}
+               "figure_reading": "R", "name_note": "N"}
 
 
 class ScriptSource(Contract):
@@ -1872,8 +1875,9 @@ class ScriptSource(Contract):
 
     ``book``: a verbatim ``quote`` of block ``block_id`` (of lesson ``lesson_id``); ``dossier``: a
     published KnowledgeDossier claim and its URL; ``concept``: a ConceptLayer entry; ``outline``: the
-    episode list (titles, numbers); ``course``: a fixed course-voice line and the decision it states."""
-    kind: Literal["book", "dossier", "concept", "outline", "course"]
+    episode list (titles, numbers); ``course``: a fixed course-voice line and the decision it states;
+    ``reference``: an open reference entry by URL (1.25.0: Wikidata, for a name's line)."""
+    kind: Literal["book", "dossier", "concept", "outline", "course", "reference"]
     lesson_id: str | None = None
     block_id: str | None = None
     quote: str | None = Field(default=None, max_length=1200)
@@ -1888,7 +1892,8 @@ class ScriptSource(Contract):
         ok = {"book": bool(self.block_id and (self.quote or "").strip()),
               "dossier": bool(self.claim_id and (self.url or "").startswith("https://")),
               "concept": bool(self.concept_id), "outline": self.episode is not None,
-              "course": bool((self.note or "").strip())}[self.kind]
+              "course": bool((self.note or "").strip()),
+              "reference": (self.url or "").startswith("https://")}[self.kind]
         if not ok:
             raise ValueError(f"a {self.kind} source is missing its locator")
         return self
@@ -1954,8 +1959,9 @@ class EpisodeSection(Contract):
             for line in self.lines:
                 if not (line.attributed_to or "").strip():
                     raise ValueError("an external-voice line is attributed to its source")
-                if not any(s.kind == "dossier" for s in line.sources):
-                    raise ValueError("an external-voice line rests on a published dossier claim")
+                wanted = "reference" if self.kind == "name_note" else "dossier"
+                if not any(s.kind == wanted for s in line.sources):
+                    raise ValueError(f"an external-voice line rests on a {'reference' if wanted == 'reference' else 'published dossier claim'}")
         if self.kind == "key_terms":
             for line in self.lines:
                 if line.role != "term" or not (line.original or "").strip():

@@ -37,7 +37,7 @@ COVERAGE_DEFINITION: dict[str, Any] = {"min_coverage": 0.7,
                                        "target": "lesson first-mention concepts named in summary or key terms"}
 EXTERNAL_LINE_EXTRA_WORDS = 12  # "According to <source>: " prefix of attributed lines
 # figure readings (D-044) passed their own gate (figure-descriptions: grounding, length) before insertion
-OWN_GATE_KINDS = frozenset({"figure_reading"})
+OWN_GATE_KINDS = frozenset({"figure_reading", "name_note"})  # a name line is a reference entry, not generated
 
 
 @dataclass(frozen=True)

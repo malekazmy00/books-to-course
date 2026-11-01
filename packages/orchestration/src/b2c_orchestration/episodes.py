@@ -47,6 +47,7 @@ with workflow.unsafe.imports_passed_through():
                                KnowledgeDossier, ParsedBookV2, ProducerIdentity, TranslationUnit, UnitTranslation,
                                stage_key)
     from b2c_episodes.figures import insert_figure_sections
+    from b2c_episodes.names import KnownName, first_mentions, insert_name_notes
     from b2c_episodes import (EPISODES_VERSION, BookLine, BookTextRef, CourseIntroPlan, EpisodeGenerationFailed,
                               EpisodePlan, LessonSource, ModelRole, SourceBlock, TermInfo, assemble_arabic,
                               check_grounding, coverage, evaluate_en_script, generate_course_intro,
@@ -59,6 +60,8 @@ with workflow.unsafe.imports_passed_through():
     from b2c_translation.qa import CheckContext
     from b2c_translation.qa.checks import run_checks
     from b2c_translation.termbase import BookTermbase
+    from b2c_translation.termbase.known import known_description
+    from b2c_translation.termbase.model import ENTITY_KINDS
 
     from .heartbeat import LONG_ACTIVITY_HEARTBEAT_TIMEOUT, activity_heartbeats
     from .knowledge import attach_gates, load_book_index, load_parsed
@@ -106,6 +109,7 @@ class EpisodeScriptENInput(EpisodeRefs):
     require_accepted_inputs: bool = True
     cache_bust: str | None = None
     debate: bool = False  # the optional debate section (D-032 §10), chosen per episode
+    termbase_ref: dict[str, Any] | None = None  # approved termbase: names with a Wikidata line (§10)
 
 
 class EpisodeScriptARInput(EpisodeRefs):
@@ -169,11 +173,38 @@ class BookView:
                        if self.index.lesson_of.get(b.idx) is lesson)
         return LessonSource(lesson.lesson_id, self.episode_of[lesson.lesson_id], audio_title(lesson.title), blocks)
 
+    def spoken_units(self, positions: Any) -> list[tuple[str, str]]:
+        """(unit id, source text) of what the listener hears from the book, in episode order: the first
+        mention of a name is counted here, not in a table of contents, index or reference list."""
+        by_id = {u.unit_id: u for u in self.units}
+        out = []
+        for lesson in sorted(self.lessons, key=lambda x: self.episode_of[x.lesson_id]):
+            for uid in self.book_text(lesson, positions).unit_ids:
+                u = by_id.get(uid)
+                if u is not None and u.kind not in NOT_SPOKEN_KINDS:
+                    out.append((uid, u.source_text))
+        return out
+
     def book_text(self, lesson, positions: Mapping[str, int]) -> BookTextRef:
         units = [u for u in self.units if u.kind not in NOT_SPOKEN_KINDS and u.block_ids[0] in positions
                  and lesson.start <= positions[u.block_ids[0]] <= lesson.end]
         blocks = list(dict.fromkeys(b for u in units for b in u.block_ids))
         return BookTextRef(block_ids=tuple(blocks), unit_ids=tuple(u.unit_id for u in units))
+
+
+EVENT_WORDS = re.compile(r"\b(war|wars|revolution|uprising|battle|treaty|massacre|protests?|coup|election|crisis|"
+                         r"conference|strike|rebellion|revolt|invasion|occupation)\b", re.I)
+
+
+def known_names(termbase: BookTermbase) -> list[KnownName]:
+    """Names that get a line at their first mention (§10): people, places, organisations, works, and
+    events (a term Wikidata describes as one). Concepts are defined by the author, not here."""
+    out = []
+    for r in termbase.entries:
+        found = known_description(r) if r.status == "approved" else None
+        if found and (r.kind in ENTITY_KINDS or EVENT_WORDS.search(found[0])):
+            out.append(KnownName(r.source, found[0], found[1], r.candidate.frequency))
+    return out
 
 
 def arabic_titles(script: Any, translator: Any) -> tuple[str, str, str]:
@@ -343,7 +374,8 @@ class EpisodeActivities:
                 raise ValueError("the figure descriptions are not an accepted output")
             figures = FigureDescriptionsDocument.model_validate_json(self.store.read(figures_ref, "figures.json"))
         inputs = [self._ref(inp.parsed_ref), self._ref(inp.outline_ref), self._ref(inp.units_ref), concept_ref] + (
-            [dossier_ref] if dossier_ref else []) + ([figures_ref] if figures_ref else [])
+            [dossier_ref] if dossier_ref else []) + ([figures_ref] if figures_ref else []) + (
+            [self._ref(inp.termbase_ref)] if inp.termbase_ref else [])
         config = {"episodes_version": EPISODES_VERSION, "episode": inp.episode, "run_id": inp.translation_run_id,
                   "generator": self.generator.identity.model_id, "judge": self.judge.identity.model_id,
                   "dossier": dossier_ref is not None, "cache_bust": inp.cache_bust,
@@ -352,6 +384,9 @@ class EpisodeActivities:
         key = stage_key(EN_STAGE, EPISODES_VERSION, [r.sha256 for r in inputs], config)
         view, positions = self._view(inp)
         layer = ConceptLayer.model_validate_json(self.store.read(concept_ref, "concept-layer.json"))
+        names: list[KnownName] = []
+        if inp.termbase_ref:
+            names = known_names(BookTermbase.from_json(self.store.read(self._ref(inp.termbase_ref), "termbase.json")))
         block_text = {b.block_id: b.text for b in view.index.blocks}
         lesson_of = view.block_lesson
         title = (dossier.title if dossier else None) or view.title
@@ -384,6 +419,11 @@ class EpisodeActivities:
                         script, placed = insert_figure_sections(
                             script, figures, unit_blocks={u.unit_id: u.block_ids for u in view.units})
                         report = {**report, "figures_placed": sorted(placed)}
+                    if names:
+                        script, named = insert_name_notes(
+                            script, first_mentions(view.spoken_units(positions), names),
+                            unit_blocks={u.unit_id: u.block_ids for u in view.units})
+                        report = {**report, "name_notes": named}
                     allowed = None
             except EpisodeGenerationFailed as exc:
                 outcomes = [GateOutcome(g, "deterministic", False, {"error": str(exc)})
@@ -552,7 +592,8 @@ class BuildEpisodeScriptsWorkflow:
                 EN_ACTIVITY, EpisodeScriptENInput(**refs, episode=episode,
                                                   require_accepted_inputs=inp.require_accepted_inputs,
                                                   cache_bust=inp.cache_bust,
-                                                  debate=episode in inp.debate_episodes and episode > 0),
+                                                  debate=episode in inp.debate_episodes and episode > 0,
+                                                  termbase_ref=inp.termbase_ref),
                 result_type=dict, **EPISODE_OPTIONS)
             entry: dict[str, Any] = {"en": en}
             usable = en.get("has_script") and (en.get("stage_output_status") == "accepted"

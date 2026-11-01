@@ -269,3 +269,31 @@ def test_the_course_introduction_declares_no_deficits():
 
 def test_scripts_without_deficits_keep_their_bytes():
     assert "deficits" not in script().model_dump_json()
+
+
+# ------------------------------------------------------------------ 1.25.0: a name's line at its first mention (§10)
+def name_note(sid="n1"):
+    src = c.ScriptSource(kind="reference", url="https://www.wikidata.org/wiki/Q123", note="Wikidata description")
+    return c.EpisodeSection(section_id=sid, kind="name_note", voice="external", lines=[
+        line(50, "According to Wikidata, Antonio Gramsci: Italian Marxist philosopher.", [src], attributed_to="Wikidata")])
+
+
+def test_schema_version_bumped_for_name_notes():
+    assert tuple(int(x) for x in c.SCHEMA_VERSION.split(".")) >= (1, 25, 0)
+
+
+def test_a_name_note_sits_inside_the_book_text_in_the_external_voice():
+    second = book_text().model_copy(update={"section_id": "s02b", "unit_ids": ["bk:u00002"]})
+    s = script(sections=[intro(), book_text(), name_note(), second, summary(), key_terms(), questions()])
+    assert [x.kind for x in s.sections][1:4] == ["book_text", "name_note", "book_text"]
+
+
+def test_a_name_note_is_attributed_and_rests_on_a_reference_with_a_url():
+    src = c.ScriptSource(kind="reference", url="https://www.wikidata.org/wiki/Q123")
+    with pytest.raises(ValidationError, match="attributed"):
+        c.EpisodeSection(section_id="n", kind="name_note", voice="external", lines=[line(1, "X.", [src])])
+    with pytest.raises(ValidationError, match="locator"):
+        c.ScriptSource(kind="reference", url="not a url")
+    with pytest.raises(ValidationError, match="dossier"):      # others say still needs a dossier claim
+        c.EpisodeSection(section_id="o", kind="others_say", voice="external",
+                         lines=[line(1, "X.", [src], attributed_to="Wikidata")])

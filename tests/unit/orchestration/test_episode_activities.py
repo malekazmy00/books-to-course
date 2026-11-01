@@ -312,3 +312,55 @@ def test_arabic_titles_fall_back_without_ever_staying_english():
     assert (title, book, source) == ("عنوان مترجم", "عنوان مترجم", "translated")
     title, book, source = arabic_titles(en(3, "Hegemony"), Stub("needs_review"))
     assert (title, source) == ("الحلقة 3", "fallback") and book == "Power"
+
+
+# ------------------------------------------------------------------ a name's line at its first mention (§10)
+def test_known_names_are_entities_and_events_with_the_approved_wikidata_entity():
+    from b2c_translation.termbase import BookTermbase, Proposal, TermCandidate
+    from b2c_translation.termbase.known import KNOWN_VERSION
+
+    from b2c_orchestration.episodes import known_names
+    tb = BookTermbase.new("bk", source_language="en", target_language="ar")
+    rows = [("Antonio Gramsci", "person", "أنطونيو غرامشي", "Italian Marxist philosopher"),
+            ("Arab Spring", "term", "الربيع العربي", "series of anti-government protests in the Arab world"),
+            ("hegemony", "term", "هيمنة", "predominance of one state over others")]
+    for source, kind, target, desc in rows:
+        tb.add_candidate(TermCandidate(source=source, kind=kind, frequency=4),
+                         [Proposal(target=target, provenance="wikidata", reference="https://www.wikidata.org/wiki/Q1",
+                                   note=f"{KNOWN_VERSION}: arwiki title; {desc}")])
+        tb.approve(source, target, "ai-vote-x")
+    names = {n.name: n for n in known_names(tb)}
+    assert set(names) == {"Antonio Gramsci", "Arab Spring"}       # a concept is defined by the author, not here
+    assert names["Antonio Gramsci"].description == "Italian Marxist philosopher"
+
+
+def test_a_name_gets_its_line_in_the_english_and_arabic_scripts(store):
+    from b2c_translation.termbase import Proposal, TermCandidate
+    from b2c_translation.termbase.known import KNOWN_VERSION
+    db = FakeRegistryDB()
+    refs, units, results = setup(store)
+    a = acts(store, db, results)
+    word = "Passive"  # first spoken in episode 2 ("Passive revolution ...")
+    tb = termbase()
+    tb.add_candidate(TermCandidate(source=word, kind="person", frequency=4),
+                     [Proposal(target="اسم معتمد", provenance="wikidata", reference="https://www.wikidata.org/wiki/Q1",
+                               note=f"{KNOWN_VERSION}: arwiki title; a thinker of the period")])
+    tb.approve(word, "اسم معتمد", "ai-vote-x")
+    tb_ref = put(store, "book-termbase-approved", {"termbase.json": tb.to_json().encode()})
+    env = ActivityEnvironment()
+    for episode in (1, 2):
+        en = env.run(a.build_en, EpisodeScriptENInput(**common(refs), episode=episode, require_accepted_inputs=False,
+                                                      termbase_ref=tb_ref.model_dump(mode="json")))
+        if not en.get("has_script"):
+            continue
+        script = c.EpisodeScript.model_validate_json(store.read(c.ArtifactRef.model_validate(en["ref"]), "script.json"))
+        notes = [s for s in script.sections if s.kind == "name_note"]
+        if notes:
+            assert notes[0].lines[0].text == f"According to Wikidata, {word}: a thinker of the period."
+            ar = env.run(a.translate, EpisodeScriptARInput(**common(refs), episode=episode, en_ref=en["ref"],
+                                                           termbase_ref=tb_ref.model_dump(mode="json"),
+                                                           engine_profile="fake", qe_profile="qe"))
+            script_ar = c.EpisodeScript.model_validate_json(store.read(c.ArtifactRef.model_validate(ar["ref"]), "script.json"))
+            assert any(s.kind == "name_note" and s.lines for s in script_ar.sections)
+            return
+    raise AssertionError("no episode placed the name note")

@@ -22,7 +22,7 @@ import re
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from .model import Proposal, TermCandidate
+from .model import Proposal, TermCandidate, TermRecord, target_key
 
 KNOWN_VERSION = "wikidata-known-ar-v1"
 ENTITY_URL = "https://www.wikidata.org/wiki/{qid}"
@@ -98,8 +98,22 @@ class WikidataKnownEquivalents:
         for target, origin in ((arwiki, "arwiki title"), (label, "label")):
             if target and target not in {p.target for p in out}:
                 out.append(Proposal(target=target, provenance="wikidata", reference=ENTITY_URL.format(qid=qid),
-                                    note=f"{KNOWN_VERSION}: {origin}; {desc[:120]}"))
+                                    note=f"{KNOWN_VERSION}: {origin}; {desc[:200]}"))
         return out
 
 
-__all__ = ["KNOWN_VERSION", "WikidataKnownEquivalents", "clean_title"]
+def known_description(record: TermRecord) -> tuple[str, str] | None:
+    """(English description, Wikidata URL) of an approved entry, only when the entity we looked up gave
+    the approved spelling: the description of another entity must not be read for this name."""
+    if not record.target:
+        return None
+    for p in record.proposals:
+        if p.provenance == "wikidata" and (p.note or "").startswith(KNOWN_VERSION) and p.reference \
+                and target_key(p.target) == target_key(record.target):
+            description = (p.note or "").split("; ", 1)[-1].strip() if "; " in (p.note or "") else ""
+            if description:
+                return description, p.reference
+    return None
+
+
+__all__ = ["KNOWN_VERSION", "WikidataKnownEquivalents", "clean_title", "known_description"]

@@ -17,7 +17,9 @@ Gate (D-043): ``ingest-quality.json`` compares the parse page by page with two i
 extractions of the text layer (pypdf, pdfium) plus the audit 01 §5.4 checks. With a promotion
 service the parse is registered as a candidate and decided by the ``ingest-v2.quality``
 GateResult (accepted / rejected). When ``IngestQualityReport.accepted`` is False the workflow
-stops with ``status="needs_review"`` and does not build an outline; nothing is passed on silently.
+continues (D-033, ``status="accepted_with_findings"``) and returns the failed checks as ``findings``;
+the parse stays ``rejected`` in the registry and its page findings become notes downstream.
+``continue_on_findings=False`` (and histories started before the patch) stop with ``needs_review``.
 
 Production switch: ``B2C_INGEST_V2_ENABLED=true`` on the API makes an English PDF upload start
 ``IngestPDFV2Workflow``; it is off by default (D-043), and the readiness list in
@@ -56,7 +58,8 @@ with workflow.unsafe.imports_passed_through():
 
 TEXT_STAGE, TEXT_STAGE_VERSION = "ingest-text-layer", "2"  # 2: + pdfium text and image boxes (D-043)
 LAYOUT_STAGE, LAYOUT_STAGE_VERSION = "ingest-layout-batch", "1"
-PARSE_STAGE, PARSE_STAGE_VERSION = "ingest-parse-v2", "2"  # 2: cross-parser gate, glued words (D-043)
+PARSE_STAGE, PARSE_STAGE_VERSION = "ingest-parse-v2", "2"
+CONTINUE_PATCH = "ingest-v2-continue-on-findings-v1"  # 2: cross-parser gate, glued words (D-043)
 
 
 @dataclass
@@ -67,6 +70,9 @@ class IngestV2Input:
     supplementary_book_ids: list[str] = field(default_factory=list)
     cache_bust: str | None = None
     page_batch: int = DEFAULT_PAGE_BATCH
+    # D-033: a parse the quality gate refused still feeds the book; its findings travel on and
+    # become notes. False keeps the pre-D-033 stop ("needs_review").
+    continue_on_findings: bool = True
 
 
 @dataclass
@@ -265,10 +271,14 @@ class IngestPDFV2Workflow:
             self, "ingest_v2_normalize",
             NormalizeV2Input(inp.course_id, inp.upload, text["ref"], batch_refs, inp.cache_bust),
             start_to_close_timeout=timedelta(hours=2), **heavy)
+        findings: list[str] = []
         if not parsed["accepted"]:
-            return {"parsed_book": parsed, "outline": None, "status": "needs_review"}
+            if not (inp.continue_on_findings and workflow.patched(CONTINUE_PATCH)):
+                return {"parsed_book": parsed, "outline": None, "status": "needs_review"}
+            findings = list(parsed.get("failed_checks") or [])
+        status = "accepted_with_findings" if findings else "accepted"
         if inp.upload.get("role") != "spine":
-            return {"parsed_book": parsed, "outline": None, "status": "accepted"}
+            return {"parsed_book": parsed, "outline": None, "status": status, "findings": findings}
         if workflow.patched(OUTLINE_V2_PATCH):
             # R4: the outline is built from ParsedBook v2 and promoted automatically by its structure
             # gate + independent cross-check (outline_v2.py). Histories started before keep the v1 call.
@@ -281,4 +291,4 @@ class IngestPDFV2Workflow:
                 self, "outline_from_parsed_book",
                 BuildOutlineInput(inp.course_id, parsed["ref"], inp.supplementary_book_ids, inp.cache_bust),
                 start_to_close_timeout=timedelta(hours=12), **heavy)
-        return {"parsed_book": parsed, "outline": outline, "status": "accepted"}
+        return {"parsed_book": parsed, "outline": outline, "status": status, "findings": findings}

@@ -109,10 +109,13 @@ def evaluate_en_script(script: EpisodeScript, *, grounding: dict[str, Any], cove
                     >= GROUNDING_DEFINITION["min_grounding_rate"], metrics=grounding, definition=dict(GROUNDING_DEFINITION))
     m = script.metrics
     rate = float(m.get("validator_pass_rate") or 0.0)
+    # D-052: only validated lines are kept; a part the validator did not support is a declared gap,
+    # so with declared deficits the pass rate is reported, not required.
     v = GateOutcome(VALIDATION_GATE_ID, "semantic", passed=script.validator is not None
                     and script.validator_family != script.generator_family
-                    and rate >= VALIDATION_DEFINITION["min_validator_pass_rate"],
-                    metrics={"validator_pass_rate": rate, "grounding_rate": m.get("grounding_rate"),
+                    and (rate >= VALIDATION_DEFINITION["min_validator_pass_rate"] or bool(script.deficits)),
+                    metrics={"validator_pass_rate": rate, "deficits": list(script.deficits),
+                             "grounding_rate": m.get("grounding_rate"),
                              "proposed": m.get("proposed"), "grounded": m.get("grounded"), "validated": m.get("validated"),
                              "validator": script.validator.model_id if script.validator else None,
                              "generator": script.generator.model_id if script.generator else None},
@@ -122,8 +125,10 @@ def evaluate_en_script(script: EpisodeScript, *, grounding: dict[str, Any], cove
                      definition=B.definition())
     out = [g, v, ln]
     if coverage is not None:
+        # without a summary, first mentions the key terms do not name are part of the declared gap
         out.append(GateOutcome(COVERAGE_GATE_ID, "deterministic", passed=coverage["coverage"]
-                               >= COVERAGE_DEFINITION["min_coverage"], metrics=coverage,
+                               >= COVERAGE_DEFINITION["min_coverage"] or "summary" in script.deficits,
+                               metrics={**coverage, "deficits": list(script.deficits)},
                                definition=dict(COVERAGE_DEFINITION)))
     return out
 

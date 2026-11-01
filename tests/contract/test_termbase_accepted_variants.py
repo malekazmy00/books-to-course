@@ -7,7 +7,7 @@ import b2c_contracts as c
 
 
 def test_schema_version_is_1_22_0():
-    assert c.SCHEMA_VERSION == "1.22.0"
+    assert tuple(int(x) for x in c.SCHEMA_VERSION.split(".")) >= (1, 22, 0)
 
 
 def test_pre_1_22_payloads_have_no_accepted_variants():

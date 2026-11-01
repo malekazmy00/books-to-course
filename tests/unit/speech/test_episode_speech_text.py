@@ -52,9 +52,62 @@ def test_episode_script_to_speech_text():
     assert "hegemony" not in book.spoken_text and "الهيمنة" in book.spoken_text
     assert "latin_gloss_unvoiced" in book.rules_applied  # rule renamed by the speech readability merge
     questions = [s for s in doc.segments if s.structure == "question"]
-    assert len(questions) == 5 and all(s.pause_after_ms == 4000 for s in questions)
+    # the thinking pause (D-038) is the longest pause the reading plan allows: a section boundary, 1.2 s
+    assert len(questions) == 5 and all(s.pause_after_ms == 1200 and s.boundary_after == "section" for s in questions)
 
 
-def test_only_accepted_lines_are_spoken():
+def test_a_book_line_that_is_not_accepted_and_has_no_note_is_never_silently_spoken():
     with pytest.raises(NotSpeechReady):
         build_episode_speech_text(script(status="needs_review"), source=REF)
+
+
+# ------------------------------------------------------------------ D-041 / D-052: failure becomes knowledge
+NOTES_REF = c.ArtifactRef(stage="translator-notes", key="n", uri="s3://artifacts/c/translator-notes/n/",
+                          sha256="c" * 64, created_at=NOW)
+
+
+def note(best=True):
+    return c.TranslatorNote(note_id="note-bk-u00001", unit_id="bk:u00001", book_id="bk", block_ids=["bk:2:1"],
+                            pages=[2], unit_kind="prose", unit_decision="needs_review",
+                            source_text="Hegemony is force plus consent.", reasons=["meaning"],
+                            reason_ar="قد لا تنقل الترجمة معنى الأصل بدقة.",
+                            best_translation="الهيمنة مزيج من القوة والرضا." if best else None,
+                            best_translation_label_ar="ترجمة تقريبية" if best else None,
+                            best_translation_from="final" if best else None,
+                            announcement_ar="ملاحظة من الكورس: هذا الموضع لم نطمئن إلى ترجمته.")
+
+
+def with_note_line(s):
+    book = s.sections[1]
+    noted = book.lines[0].model_copy(update={"status": "needs_review", "note_id": "note-bk-u00001",
+                                             "inserted_originals": []})
+    return s.model_copy(update={"sections": [s.sections[0], book.model_copy(update={"lines": [noted]}),
+                                             *s.sections[2:]]})
+
+
+def test_a_book_line_with_a_translator_note_is_spoken_in_the_course_voice():
+    doc = build_episode_speech_text(with_note_line(script()), source=REF, notes={"note-bk-u00001": note()},
+                                    notes_ref=NOTES_REF)
+    spoken = [s for s in doc.segments if s.note_id]
+    assert [s.note_part for s in spoken] == ["announcement", "approximate_translation"]
+    assert all(s.voice == "course" for s in spoken) and doc.notes_ref == NOTES_REF
+    assert spoken[0].spoken_text.startswith("ملاحظة من الكورس")
+
+
+def test_a_note_line_needs_its_note():
+    with pytest.raises(NotSpeechReady, match="note"):
+        build_episode_speech_text(with_note_line(script()), source=REF)
+
+
+def test_a_companion_line_not_accepted_is_left_out_and_announced():
+    s = script()
+    summary = s.sections[2]
+    bad = summary.model_copy(update={"lines": [summary.lines[0].model_copy(update={"status": "needs_review"})]})
+    s = s.model_copy(update={"sections": [*s.sections[:2], bad, *s.sections[3:]]})
+    doc = build_episode_speech_text(s, source=REF)
+    spoken = " ".join(x.spoken_text for x in doc.segments)
+    assert "ملخص الدرس" not in spoken and "الهيمنة قوة ورضا" not in spoken      # the section went with its line
+    assert any(x.reason.startswith("companion_translation_not_accepted") for x in doc.excluded)
+    assert "حُذف من هذه الحلقة" in spoken
+    passed, metrics = evaluate_speech_text(doc)
+    assert passed, metrics

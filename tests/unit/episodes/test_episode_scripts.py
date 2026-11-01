@@ -6,7 +6,7 @@ from __future__ import annotations
 import pytest
 
 import b2c_contracts as c
-from b2c_episodes import (BookLine, EpisodeGenerationFailed, assemble_arabic, check_grounding, coverage,
+from b2c_episodes import (BookLine, assemble_arabic, check_grounding, coverage,
                           evaluate_en_script, generate_course_intro, generate_lesson_episode, is_script_unit,
                           script_units, with_texts)
 from b2c_episodes.budgets import recap_budget
@@ -97,13 +97,57 @@ def test_same_family_validator_is_refused():
         generate_lesson_episode(plan(), generator=gen, judge=gen, clock=lambda: NOW)
 
 
-def test_failure_without_enough_validated_questions():
+def test_without_five_validated_questions_the_gap_is_declared_not_the_episode_lost():
+    """D-033/D-052: the questions are missing, so the episode declares it; the book text stays."""
     from tests.unit.episodes import fixtures as f
     gen, judge = roles()
     gen.llm.script = lambda pv, msg: {**f.lesson_reply(), "questions": []} if pv == "ep-lesson-v2" else f.recap_reply()
-    with pytest.raises(EpisodeGenerationFailed) as err:
-        generate_lesson_episode(plan(), generator=gen, judge=judge, clock=lambda: NOW)
-    assert err.value.report["used"]["questions"] == 0
+    script, report = generate_lesson_episode(plan(), generator=gen, judge=judge, clock=lambda: NOW)
+    assert report["used"]["questions"] == 0 and script.deficits == ["questions"]
+    assert kinds(script) == ["episode_intro", "book_text", "lesson_summary", "key_terms", "others_say"]
+    note = script.sections[0].lines[-1]
+    assert note.text.startswith("A note from the course:") and "questions" in note.text
+    assert "author's text" in note.text
+
+
+def test_a_failed_generation_still_gives_the_book_text_episode():
+    gen, judge = roles()
+
+    def broken(pv, msg):
+        raise RuntimeError("provider down")
+    gen.llm.script = broken
+    script, report = generate_lesson_episode(plan(), generator=gen, judge=judge, clock=lambda: NOW)
+    # the key terms survive: they are the author's own definitions from the concept layer, no model
+    assert kinds(script) == ["episode_intro", "book_text", "key_terms", "others_say"]
+    assert script.deficits == ["summary", "questions"]
+    assert any(e.startswith("lesson:") for e in report["errors"])
+    assert "no summary and questions" in script.sections[0].lines[-1].text
+
+
+def test_a_declared_gap_passes_the_english_gates():
+    from tests.unit.episodes import fixtures as f
+    gen, judge = roles()
+    gen.llm.script = lambda pv, msg: {**f.lesson_reply(), "questions": []} if pv == "ep-lesson-v2" else f.recap_reply()
+    p = plan()
+    script, _ = generate_lesson_episode(p, generator=gen, judge=judge, clock=lambda: NOW)
+    g = check_grounding(script, block_text=BLOCK_TEXT, lesson_of=LESSON_OF, episode_of_lesson=EPISODE_OF,
+                        dossier=p.dossier)
+    outcomes = {o.gate_id: o for o in evaluate_en_script(script, grounding=g, coverage=coverage(p, script))}
+    assert all(o.passed for o in outcomes.values()), {k: o.metrics for k, o in outcomes.items() if not o.passed}
+    assert outcomes["episodes.validation"].metrics["deficits"] == ["questions"]
+    assert outcomes["episodes.coverage"].metrics["deficits"] == ["questions"]
+
+
+def test_an_episode_without_a_model_passes_the_english_gates():
+    """Without a summary, uncovered first mentions are part of the declared gap, not a failure."""
+    gen, judge = roles()
+    gen.llm.script = lambda pv, msg: (_ for _ in ()).throw(RuntimeError("down"))
+    p = plan()
+    script, _ = generate_lesson_episode(p, generator=gen, judge=judge, clock=lambda: NOW)
+    g = check_grounding(script, block_text=BLOCK_TEXT, lesson_of=LESSON_OF, episode_of_lesson=EPISODE_OF,
+                        dossier=p.dossier)
+    outcomes = {o.gate_id: o for o in evaluate_en_script(script, grounding=g, coverage=coverage(p, script))}
+    assert all(o.passed for o in outcomes.values()), {k: o.metrics for k, o in outcomes.items() if not o.passed}
 
 
 def test_course_introduction_episode_00():

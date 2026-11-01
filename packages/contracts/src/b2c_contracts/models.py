@@ -13,9 +13,10 @@ import re
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (BaseModel, ConfigDict, Field, SerializerFunctionWrapHandler, field_validator, model_serializer,
+                      model_validator)
 
-SCHEMA_VERSION = "1.22.0"
+SCHEMA_VERSION = "1.23.0"
 
 
 class Contract(BaseModel):
@@ -1843,7 +1844,10 @@ _LINE_ID = r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$"
 # lesson episode: intro, book text (with figure descriptions), summary, key terms, questions, then
 # optional "others say"/debate; course introduction: book, author, method, guide, optional external
 # sections, brief acknowledgments last.
-_LESSON_ORDER = re.compile(r"^I(?:B|F|R)*B(?:B|F|R)*SKQ(?:O|D)*$")
+# 1.23.0 (D-052): summary, key terms and questions may be missing when declared in ``deficits``
+_LESSON_ORDER = re.compile(r"^I(?:B|F|R)*B(?:B|F|R)*S?K?Q?(?:O|D)*$")
+COMPANION_PARTS: dict[str, str] = {"lesson_summary": "summary", "key_terms": "key_terms", "questions": "questions"}
+EpisodeDeficit = Literal["summary", "key_terms", "questions"]
 _INTRO_ORDER = re.compile(r"^AUMG(?:O|D)*C?$")
 _ORDER_CODE = {"episode_intro": "I", "book_text": "B", "figure_description": "F", "lesson_summary": "S",
                "key_terms": "K", "questions": "Q", "others_say": "O", "debate": "D", "about_book": "A",
@@ -1978,6 +1982,16 @@ class EpisodeScript(Contract):
     validator_family: str | None = None
     created_at: datetime
     metrics: dict[str, Any] = {}
+    # 1.23.0 (D-033, D-052): companion parts that could not be prepared reliably. The episode is then
+    # the book text with the gap declared (announced in its intro), never withheld.
+    deficits: list[EpisodeDeficit] = []
+
+    @model_serializer(mode="wrap")
+    def _serialise(self, handler: SerializerFunctionWrapHandler) -> dict:
+        data = handler(self)
+        if not data.get("deficits"):
+            data.pop("deficits", None)  # scripts without deficits keep their bytes
+        return data
 
     @field_validator("title")
     @classmethod
@@ -2006,6 +2020,17 @@ class EpisodeScript(Contract):
         pattern = _INTRO_ORDER if self.kind == "course_intro" else _LESSON_ORDER
         if not pattern.match(code):
             raise ValueError(f"section order {code} breaks the episode order (D-038)")
+        if len(set(self.deficits)) != len(self.deficits):
+            raise ValueError("a deficit is declared once")
+        if self.kind == "course_intro":
+            if self.deficits:
+                raise ValueError("the course introduction declares no deficits")
+        else:
+            present = {COMPANION_PARTS[s.kind] for s in self.sections if s.kind in COMPANION_PARTS}
+            missing = set(COMPANION_PARTS.values()) - present
+            if missing != set(self.deficits):
+                raise ValueError(f"missing companion parts {sorted(missing)} must equal the declared deficits "
+                                 f"{sorted(self.deficits)}")
         ids = [s.section_id for s in self.sections]
         line_ids = [line.line_id for line in self.all_lines()]
         if len(set(ids)) != len(ids) or len(set(line_ids)) != len(line_ids):

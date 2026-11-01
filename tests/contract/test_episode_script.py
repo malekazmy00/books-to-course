@@ -224,3 +224,48 @@ def test_ids_unique_and_judge_from_another_family():
                validator_family="deepseek")
     assert script(generator=ident("deepseek/a"), validator=ident("google/b"), generator_family="deepseek",
                   validator_family="google").validator_family == "google"
+
+
+# ------------------------------------------------------------------ 1.23.0: declared deficits (D-033, D-052)
+def deficit_intro():
+    return c.EpisodeSection(section_id="s01", kind="episode_intro", voice="course", lines=[
+        line(1, "Structured Analytic Techniques. Episode 3: Hegemony.", [OUTLINE]),
+        line(2, "A note from the course: this episode has no summary, key terms or questions.", [OUTLINE])])
+
+
+def test_schema_version_bumped_for_declared_deficits():
+    assert tuple(int(x) for x in c.SCHEMA_VERSION.split(".")) >= (1, 23, 0)
+
+
+def test_a_lesson_episode_may_declare_missing_companion_parts():
+    """The faithful core is never withheld: when the summary, key terms or questions could not be
+    prepared reliably, the episode is the book text with the gap declared (D-033, D-032)."""
+    s = script(sections=[deficit_intro(), book_text()], deficits=["summary", "key_terms", "questions"])
+    assert [x.kind for x in s.sections] == ["episode_intro", "book_text"]
+    s = script(sections=[intro(), book_text(), summary(), key_terms()], deficits=["questions"])
+    assert s.deficits == ["questions"]
+
+
+def test_missing_parts_must_be_declared_and_declared_parts_missing():
+    with pytest.raises(ValidationError, match="deficit"):
+        script(sections=[intro(), book_text(), summary(), key_terms()])          # questions missing, undeclared
+    with pytest.raises(ValidationError, match="deficit"):
+        script(deficits=["questions"])                                          # declared, but present
+    with pytest.raises(ValidationError, match="order"):
+        script(sections=[intro(), book_text(), key_terms(), summary()], deficits=["questions"])
+    with pytest.raises(ValidationError, match="order"):
+        script(sections=[intro(), summary()], deficits=["key_terms", "questions"])  # still no book text
+
+
+def test_the_course_introduction_declares_no_deficits():
+    with pytest.raises(ValidationError, match="deficit"):
+        c.EpisodeScript(book_id="bk", language="en", episode=0, kind="course_intro", title="Course introduction",
+                        book_title="SAT", created_at=NOW, deficits=["summary"], sections=[
+                            c.EpisodeSection(section_id="a1", kind="about_book", voice="course", lines=[line(1)]),
+                            c.EpisodeSection(section_id="a2", kind="about_author", voice="course", lines=[line(2)]),
+                            c.EpisodeSection(section_id="a3", kind="book_method", voice="course", lines=[line(3)]),
+                            c.EpisodeSection(section_id="a4", kind="course_guide", voice="course", lines=[line(4)])])
+
+
+def test_scripts_without_deficits_keep_their_bytes():
+    assert "deficits" not in script().model_dump_json()

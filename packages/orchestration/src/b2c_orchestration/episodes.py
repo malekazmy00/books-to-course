@@ -483,8 +483,12 @@ class EpisodeActivities:
             status = attach_gates(self.promotion, inp.course_id, ref, outcomes, inputs=inputs,
                                   config={k: v for k, v in config.items() if k != "cache_bust"},
                                   identities=identities).status
+        heading = {}
+        if "script.json" in set(self.store.list_files(ref)):  # the episode heading, for the MP3 tags (D-042)
+            ar_script = EpisodeScript.model_validate_json(self.store.read(ref, "script.json"))
+            heading = {"title": ar_script.title, "book_title": ar_script.book_title}
         return {"episode": inp.episode, "ref": ref.model_dump(mode="json"), "cache_hit": hit,
-                "stage_output_status": status, "gates": {g: v["passed"] for g, v in gates.items()}}
+                "stage_output_status": status, "gates": {g: v["passed"] for g, v in gates.items()}, **heading}
 
 
 def _count(values) -> dict[str, int]:

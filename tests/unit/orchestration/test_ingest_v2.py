@@ -233,7 +233,7 @@ def fakes(accepted: bool, calls: list):
 
 
 @pytest.mark.parametrize("accepted", [True, False])
-async def test_workflow_batches_pages_and_stops_on_a_failed_gate(env, accepted):
+async def test_workflow_batches_pages_and_continues_past_a_failed_gate(env, accepted):
     from concurrent.futures import ThreadPoolExecutor
     from b2c_orchestration.queues import HEAVY
     calls: list = []
@@ -251,4 +251,20 @@ async def test_workflow_batches_pages_and_stops_on_a_failed_gate(env, accepted):
         assert result["status"] == "accepted" and calls[-1] == "outline" and "outline-v1" not in calls
         assert result["outline"]["format"] == "course-outline/2"
     else:
-        assert result["status"] == "needs_review" and result["outline"] is None and "outline" not in calls
+        # D-033: a refused parse does not stop the book; its findings travel on (become notes)
+        assert result["status"] == "accepted_with_findings" and calls[-1] == "outline"
+        assert result["findings"] == ["x"] and result["outline"]["format"] == "course-outline/2"
+
+
+async def test_workflow_can_still_stop_on_a_failed_gate_when_asked(env):
+    from concurrent.futures import ThreadPoolExecutor
+    from b2c_orchestration.queues import HEAVY
+    calls: list = []
+    upload = {"book_id": "bk", "role": "spine", "file_sha256": "0" * 64, "mime": "application/pdf",
+              "title": "T", "rights_status": "internal_test_only", "ocr_language": "en"}
+    async with Worker(env.client, task_queue=HEAVY, workflows=[IngestPDFV2Workflow],
+                      activities=fakes(False, calls), activity_executor=ThreadPoolExecutor(4)):
+        result = await env.client.execute_workflow(
+            IngestPDFV2Workflow.run, IngestV2Input("c1", upload, REF, [], page_batch=2, continue_on_findings=False),
+            id=f"wf-{uuid.uuid4()}", task_queue=HEAVY)
+    assert result["status"] == "needs_review" and result["outline"] is None and "outline" not in calls

@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from temporalio import workflow
+from temporalio import activity, workflow
 from temporalio.contrib.pydantic import pydantic_data_converter
 from temporalio.worker import Worker
 
@@ -73,11 +73,36 @@ class FakeFigures:
 class FakeEpisodes:
     @workflow.run
     async def run(self, inp: dict) -> dict:
-        return _record("episodes", inp) or {"episodes": {f"{e:02d}": {"ar": {"stage_output_status": "accepted"}}
-                                                         for e in inp["episodes"]}}
+        return _record("episodes", inp) or {"episodes": {
+            f"{e:02d}": {"ar": {"stage_output_status": "accepted", "title": f"Episode {e}", "book_title": "SAT",
+                                "ref": {"stage": "episode-script-ar", "key": f"{e:02d}"}}}
+            for e in inp["episodes"]}}
 
 
-FAKES = [FakeIngest, FakeTranslate, FakeKnowledge, FakeFigures, FakeEpisodes]
+@workflow.defn(name="GenerateSpeechV2Workflow", sandboxed=False)
+class FakeSpeech:
+    @workflow.run
+    async def run(self, inp: dict) -> dict:
+        key = inp["episode_ref"]["key"]
+        return _record(f"speech-{key}", inp) or {"status": "completed", "tracks": [
+            {"track_id": f"t{key}", "artifact": {"stage": "speech-track", "key": key}, "status": "accepted"}]}
+
+
+@workflow.defn(name="EncodeEpisodeMp3Workflow", sandboxed=False)
+class FakeEncode:
+    @workflow.run
+    async def run(self, inp: dict) -> dict:
+        return _record("mp3", inp) or {"episodes": [{"episode": e["episode"], "status": "accepted"}
+                                                    for e in inp["episodes"]], "accepted": len(inp["episodes"])}
+
+
+FAKES = [FakeIngest, FakeTranslate, FakeKnowledge, FakeFigures, FakeEpisodes, FakeSpeech, FakeEncode]
+
+
+@activity.defn(name="prepare_translation_units")
+async def fake_prepare(inp: dict) -> dict:
+    CALLS.append(("prepare", dict(inp)))
+    return {"units_ref": UNITS, "unit_ids": ["bk:u00000"], "book_id": "bk", "cache_hit": False}
 
 
 def pipeline_input(**kw) -> CoursePipelineInput:
@@ -104,9 +129,10 @@ async def env():
 async def run(env, inp):
     CALLS.clear()
     queue = f"cp-{uuid.uuid4().hex}"
-    queues = dict(ingest_queue=queue, translate_queue=queue, companion_queue=queue)
+    queues = dict(ingest_queue=queue, translate_queue=queue, companion_queue=queue, audio_queue=queue)
     inp = inp.model_copy(update=queues)
-    async with Worker(env.client, task_queue=queue, workflows=[CoursePipelineWorkflow, *FAKES]):
+    async with Worker(env.client, task_queue=queue, workflows=[CoursePipelineWorkflow, *FAKES],
+                      activities=[fake_prepare]):
         handle = await env.client.start_workflow(CoursePipelineWorkflow.run, inp, id=f"wf-{uuid.uuid4().hex}",
                                                  task_queue=queue)
         result = await handle.result()
@@ -114,51 +140,104 @@ async def run(env, inp):
     return result, state
 
 
-async def test_stages_run_in_order_and_pass_their_outputs_on(env):
+async def test_stages_run_in_the_decided_order_and_pass_their_outputs_on(env):
+    """D-034: knowledge research (EN) runs BEFORE translation, on the prepared units."""
     SCRIPT.clear()
     result, state = await run(env, pipeline_input())
-    assert [n for n, _ in CALLS] == ["ingest", "translate", "knowledge", "figures", "episodes"]
+    assert [n for n, _ in CALLS] == ["ingest", "prepare", "knowledge", "translate", "figures", "episodes",
+                                     "speech-00", "speech-01", "speech-02", "speech-03", "mp3"]
     calls = dict(CALLS)
+    assert calls["prepare"]["inp"]["source_artifact_ref"] == PARSED
+    assert calls["knowledge"]["units_ref"] == UNITS and calls["knowledge"]["outline_ref"] == OUTLINE
+    assert calls["knowledge"].get("termbase_ref") is None          # research comes before the termbase
     assert calls["translate"]["source_artifact_ref"] == PARSED
     assert calls["translate"]["qe_profile"] == "ladder-mqm" and calls["translate"]["termbase_review"] == "models"
-    assert calls["knowledge"]["outline_ref"] == OUTLINE and calls["knowledge"]["termbase_ref"] == APPROVED
     assert calls["figures"]["units_ref"] == UNITS and calls["figures"]["termbase_ref"] == APPROVED
     assert calls["episodes"]["episodes"] == [0, 1, 2, 3] and calls["episodes"]["translation_run_id"] == "a" * 64
     assert calls["episodes"]["figures_ref"] == {"stage": "figure-descriptions"}
-    assert result["status"] == "scripts_ready" and result["stopped_at"] is None
+    assert calls["episodes"]["require_accepted_inputs"] is True
+    assert result["status"] == "audio_ready" and result["findings"] == []
     assert state["phase"] == "done" and state["stages"]["episodes"]["accepted"] == 4
 
 
-async def test_a_refused_ingest_stops_the_line_and_says_why(env):
+async def test_the_audio_comes_out_episode_by_episode(env):
+    """D-036..D-038/D-042: one speech run per episode script, then one MP3 per episode, 00..n."""
     SCRIPT.clear()
-    SCRIPT["ingest"] = {"status": "needs_review", "parsed_book": {"ref": PARSED, "accepted": False}, "outline": None}
     result, _ = await run(env, pipeline_input())
-    assert [n for n, _ in CALLS] == ["ingest"]
-    assert result["status"] == "stopped" and result["stopped_at"] == "ingest"
+    calls = dict(CALLS)
+    speech = calls["speech-02"]
+    assert speech["episode_ref"]["key"] == "02" and speech.get("assembly_ref") is None
+    assert speech["termbase_ref"] == APPROVED and speech["notes_ref"] == {"stage": "translator-notes"}
+    episodes = calls["mp3"]["episodes"]
+    assert [e["episode"] for e in episodes] == [0, 1, 2, 3] and {e["last_episode"] for e in episodes} == {3}
+    assert episodes[2]["track_refs"] == [{"stage": "speech-track", "key": "02"}] and episodes[2]["title"] == "Episode 2"
+    assert episodes[2]["book_title"] == "SAT"
+    assert result["mp3"]["accepted"] == 4
 
 
-async def test_an_outline_its_gates_did_not_accept_stops_before_translation(env):
+async def test_a_track_its_gates_did_not_accept_is_still_encoded_and_recorded(env):
+    SCRIPT.clear()
+    SCRIPT["speech-01"] = {"status": "completed", "tracks": [
+        {"track_id": "t01", "artifact": {"stage": "speech-track", "key": "01"}, "status": "rejected"}]}
+    result, _ = await run(env, pipeline_input())
+    mp3 = dict(CALLS)["mp3"]["episodes"]
+    assert [e["episode"] for e in mp3] == [0, 1, 2, 3] and all(e["require_accepted_tracks"] is False for e in mp3)
+    assert {"stage": "speech", "finding": "episode_01_track_t01_rejected"} in result["findings"]
+
+
+async def test_speech_can_be_left_for_later(env):
+    SCRIPT.clear()
+    result, _ = await run(env, pipeline_input(speech=False))
+    assert [n for n, _ in CALLS][-1] == "episodes" and result["status"] == "scripts_ready"
+
+
+async def test_a_refused_parse_does_not_stop_the_book(env):
+    """D-033/D-052: the ingest gate's findings travel on; the line continues."""
+    SCRIPT.clear()
+    SCRIPT["ingest"] = {"status": "accepted_with_findings", "findings": ["glued_token_rate"],
+                        "parsed_book": {"ref": PARSED, "accepted": False},
+                        "outline": {"ref": OUTLINE, "stage_output_status": "accepted", "lesson_count": 3}}
+    result, _ = await run(env, pipeline_input())
+    assert [n for n, _ in CALLS][-1] == "mp3" and result["status"] == "audio_ready"
+    assert {"stage": "ingest", "finding": "glued_token_rate"} in result["findings"]
+
+
+async def test_an_outline_its_gates_did_not_accept_is_used_and_recorded(env):
     SCRIPT.clear()
     SCRIPT["ingest"] = {"status": "accepted", "parsed_book": {"ref": PARSED, "accepted": True},
                         "outline": {"ref": OUTLINE, "stage_output_status": "rejected", "lesson_count": 3}}
     result, _ = await run(env, pipeline_input())
-    assert [n for n, _ in CALLS] == ["ingest"] and result["stopped_at"] == "outline"
+    assert [n for n, _ in CALLS][-1] == "mp3"
+    assert {"stage": "outline", "finding": "outline_not_accepted"} in result["findings"]
+    assert dict(CALLS)["episodes"]["require_accepted_inputs"] is False
 
 
 async def test_figures_can_be_skipped_and_episodes_limited(env):
     SCRIPT.clear()
     result, _ = await run(env, pipeline_input(figures=False, episodes=[0, 1]))
-    assert [n for n, _ in CALLS] == ["ingest", "translate", "knowledge", "episodes"]
+    assert [n for n, _ in CALLS] == ["ingest", "prepare", "knowledge", "translate", "episodes", "speech-00",
+                                     "speech-01", "mp3"]
     episodes = dict(CALLS)["episodes"]
     assert episodes["episodes"] == [0, 1] and episodes.get("figures_ref") is None
 
 
-async def test_concepts_not_accepted_stop_before_episodes(env):
+async def test_concepts_not_accepted_do_not_withhold_the_episodes(env):
     SCRIPT.clear()
     SCRIPT["knowledge"] = {"research": {"ref": {"stage": "knowledge-research"}, "stage_output_status": "accepted"},
                            "concepts": {"ref": {"stage": "concept-layer"}, "stage_output_status": "rejected"}}
     result, _ = await run(env, pipeline_input())
-    assert [n for n, _ in CALLS] == ["ingest", "translate", "knowledge"] and result["stopped_at"] == "knowledge"
+    assert [n for n, _ in CALLS][-1] == "mp3" and result["status"] == "audio_ready"
+    assert dict(CALLS)["episodes"]["require_accepted_inputs"] is False
+    assert {"stage": "knowledge", "finding": "concepts_not_accepted"} in result["findings"]
+
+
+async def test_translator_notes_not_accepted_are_recorded_and_the_line_goes_on(env):
+    SCRIPT.clear()
+    SCRIPT["translate"] = {"run_id": "a" * 64, "units_ref": UNITS, "termbase": {"approved_ref": APPROVED},
+                           "translator_notes": {"artifact": {"stage": "translator-notes"}, "status": "rejected"}}
+    result, _ = await run(env, pipeline_input())
+    assert [n for n, _ in CALLS][-1] == "mp3"
+    assert {"stage": "translate", "finding": "translator_notes_not_accepted"} in result["findings"]
 
 
 def test_workflow_id_is_stable_per_course_and_source():

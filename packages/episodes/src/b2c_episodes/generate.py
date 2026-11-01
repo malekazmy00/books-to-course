@@ -302,6 +302,17 @@ def _external_line(line_id: str, claim: DossierClaim, dossier: KnowledgeDossier 
                       sources=[ScriptSource(kind="dossier", claim_id=claim.claim_id, url=claim.evidence[0].url)])
 
 
+DEFICIT_NAMES = {"summary": "summary", "key_terms": "key terms", "questions": "questions"}
+
+
+def deficit_note(deficits: Sequence[str]) -> str:
+    """The course-voice line that declares the missing companion parts (D-033, D-052)."""
+    names = [DEFICIT_NAMES[d] for d in deficits]
+    joined = names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+    return (f"A note from the course: this episode has no {joined}, because they could not be prepared and "
+            "checked reliably. The author's text follows in full.")
+
+
 def generate_lesson_episode(plan: EpisodePlan, *, generator: ModelRole, judge: ModelRole | None,
                             clock: Callable[[], datetime], workers: int = 3) -> tuple[EpisodeScript, dict[str, Any]]:
     if judge is not None and judge.family == generator.family:
@@ -407,22 +418,33 @@ def generate_lesson_episode(plan: EpisodePlan, *, generator: ModelRole, judge: M
         intro_lines.append(ScriptLine(
             line_id=lid("n", 0), text="New terms in this episode: " + ", ".join(t.term for t, _, _ in key_terms) + ".",
             sources=[ScriptSource(kind="concept", concept_id=t.concept_id) for t, _, _ in key_terms]))
-    sections = [EpisodeSection(section_id=f"e{ep:03d}.intro", kind="episode_intro", voice="course", lines=intro_lines),
-                EpisodeSection(section_id=f"e{ep:03d}.book", kind="book_text", voice="author",
-                               block_ids=list(plan.book_text.block_ids), unit_ids=list(plan.book_text.unit_ids))]
-    report: dict[str, Any] = {"errors": errors}
-    try:
-        sections.append(EpisodeSection(section_id=f"e{ep:03d}.summary", kind="lesson_summary", voice="course", lines=[
-            ScriptLine(line_id=lid("s", i), text=c.text, sources=c.sources) for i, c in enumerate(summary)]))
-        sections.append(EpisodeSection(section_id=f"e{ep:03d}.terms", kind="key_terms", voice="course", lines=[
-            ScriptLine(line_id=lid("k", i), role="term", text=f"{t.term}: {d}", original=t.term, sources=src)
-            for i, (t, d, src) in enumerate(key_terms)]))
-        qlines: list[ScriptLine] = []
+    # D-033/D-052: a companion part that could not be prepared reliably is left out and declared;
+    # the book text (the faithful core) is never withheld.
+    summary_lines = [ScriptLine(line_id=lid("s", i), text=c.text, sources=c.sources) for i, c in enumerate(summary)]
+    term_lines = [ScriptLine(line_id=lid("k", i), role="term", text=f"{t.term}: {d}", original=t.term, sources=src)
+                  for i, (t, d, src) in enumerate(key_terms)]
+    qlines: list[ScriptLine] = []
+    if len(questions) == 5:
         for i, c in enumerate(questions):
             qlines.append(ScriptLine(line_id=lid("q", i), role="question", text=c.text, sources=c.sources,
                                      pause_after_ms=QUESTION_PAUSE_MS))
             qlines.append(ScriptLine(line_id=lid("a", i), role="answer", text=c.answer or "", sources=c.sources))
-        sections.append(EpisodeSection(section_id=f"e{ep:03d}.questions", kind="questions", voice="course", lines=qlines))
+    parts = [("summary", "lesson_summary", summary_lines), ("key_terms", "key_terms", term_lines),
+             ("questions", "questions", qlines)]
+    deficits = [name for name, _, lines in parts if not lines]
+    if deficits:
+        intro_lines.append(ScriptLine(line_id=lid("d", 0), text=deficit_note(deficits),
+                                      sources=[ScriptSource(kind="outline", episode=ep)]))
+    sections = [EpisodeSection(section_id=f"e{ep:03d}.intro", kind="episode_intro", voice="course", lines=intro_lines),
+                EpisodeSection(section_id=f"e{ep:03d}.book", kind="book_text", voice="author",
+                               block_ids=list(plan.book_text.block_ids), unit_ids=list(plan.book_text.unit_ids))]
+    report: dict[str, Any] = {"errors": errors, "deficits": deficits}
+    codes = {"summary": "summary", "key_terms": "terms", "questions": "questions"}
+    try:
+        for name, kind, lines in parts:
+            if lines:
+                sections.append(EpisodeSection(section_id=f"e{ep:03d}.{codes[name]}", kind=kind, voice="course",
+                                               lines=lines))
     except ValueError as exc:
         report.update(_report(plan, candidates, grounded, summary, key_terms, questions, recap))
         raise EpisodeGenerationFailed(f"episode {ep}: {str(exc).splitlines()[0][:200]}", report) from exc
@@ -434,7 +456,8 @@ def generate_lesson_episode(plan: EpisodePlan, *, generator: ModelRole, judge: M
                            title=plan.lesson.title, book_title=plan.book_title, sections=sections,
                            translation_run_id=plan.translation_run_id, generator=generator.identity,
                            validator=judge.identity if judge else None, generator_family=generator.family,
-                           validator_family=judge.family if judge else None, created_at=clock(), metrics=report)
+                           validator_family=judge.family if judge else None, created_at=clock(), metrics=report,
+                           deficits=deficits)
     return script, report
 
 

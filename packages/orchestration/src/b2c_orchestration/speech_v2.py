@@ -39,14 +39,14 @@ from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from typing import Any, Literal, Protocol
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from temporalio import activity, workflow
 from temporalio.common import RetryPolicy
 from temporalio.exceptions import ApplicationError
 
 with workflow.unsafe.imports_passed_through():
-    from b2c_contracts import (ArtifactRef, FigureDescriptionsDocument, GateResult, ProducerIdentity,
-                               SpeechTextDocument, TranslatorNotesDocument, stage_key)
+    from b2c_contracts import (EPISODE_SCRIPT_AR_STAGE, ArtifactRef, EpisodeScript, FigureDescriptionsDocument,
+                               GateResult, ProducerIdentity, SpeechTextDocument, TranslatorNotesDocument, stage_key)
     from b2c_speech.plan import PlanLimits, SpeechPlan, TrackPlan, VoiceConfig, plan_tracks, segment_audio_key
     from b2c_speech.plan import SEGMENT_AUDIO_STAGE
 
@@ -76,7 +76,10 @@ def _fail(message: str, error_type: str) -> ApplicationError:
 # ------------------------------------------------------------------ messages
 class GenerateSpeechV2Input(BaseModel):
     course_id: str = Field(min_length=1, max_length=80)
-    assembly_ref: dict[str, Any]  # accepted translate-book assembly (or the assembly of accepted notes_ref)
+    # the speech source: the whole book (accepted translate-book assembly, or the assembly of accepted
+    # notes_ref) or ONE episode (an Arabic episode script, D-036..D-038: the audio comes out lesson by lesson)
+    assembly_ref: dict[str, Any] | None = None
+    episode_ref: dict[str, Any] | None = None
     notes_ref: dict[str, Any] | None = None  # D-041: accepted translator-notes artifact (alternative acceptance)
     figures_ref: dict[str, Any] | None = None  # D-044: accepted Arabic figure-descriptions artifact (read in place)
     termbase_ref: dict[str, Any] | None = None  # book-termbase-approved snapshot (pronunciation lexicon)
@@ -91,6 +94,12 @@ class GenerateSpeechV2Input(BaseModel):
     limits: PlanLimits = PlanLimits()
     track_ids: list[str] | None = None  # render only these tracks of the plan
     activity_task_queue: str = "audio"
+
+    @model_validator(mode="after")
+    def _one_source(self) -> "GenerateSpeechV2Input":
+        if (self.assembly_ref is None) == (self.episode_ref is None):
+            raise ValueError("give exactly one speech source: assembly_ref (the book) or episode_ref (one episode)")
+        return self
 
 
 class SpeechPrepared(BaseModel):
@@ -310,6 +319,8 @@ class SpeechV2Activities:
             engine_profile(inp.engine_profile)
         except ValueError as exc:
             raise _fail(str(exc), "UnknownEngineProfile") from exc
+        if inp.episode_ref is not None:
+            return self._prepare_episode(inp)
         assembly = _scoped(inp.assembly_ref, bucket=self.store.bucket, course_id=inp.course_id,
                            stage=ASSEMBLY_STAGE, label="assembly_ref")
         if self.promotion is None:
@@ -402,6 +413,68 @@ class SpeechV2Activities:
             metrics = {**metrics, "reading_quality": reading}
         return SpeechPrepared(speech_text_ref=ref.model_dump(mode="json"), status=record.status, gate_passed=passed,
                               gate_metrics=metrics, plan=plan, cache_hit=hit)
+
+    def _prepare_episode(self, inp: GenerateSpeechV2Input) -> SpeechPrepared:
+        """One Arabic episode script -> its speech text and plan (D-036..D-038). The episode need not be
+        accepted: its accepted lines are spoken, its book-text notes through the book's translator notes
+        (D-041), and companion lines that were not accepted are left out and announced (D-052)."""
+        from b2c_speech.text import engine_profile, evaluate_reading_quality, evaluate_speech_text
+        from b2c_speech.text.episode import EPISODE_FRONTEND_VERSION, build_episode_speech_text
+        from b2c_speech.text.frontend import NotSpeechReady
+
+        if self.promotion is None:
+            raise _fail("no stage-output registry is configured: acceptance cannot be checked",
+                        "NotAcceptedTranslation")
+        episode = _scoped(inp.episode_ref, bucket=self.store.bucket, course_id=inp.course_id,
+                          stage=EPISODE_SCRIPT_AR_STAGE, label="episode_ref")
+        with activity_heartbeats("speech_v2_prepare"):
+            script = EpisodeScript.model_validate_json(self.store.read(episode, "script.json"))
+            notes, notes_ref = None, None
+            if inp.notes_ref is not None:
+                notes_ref = _scoped(inp.notes_ref, bucket=self.store.bucket, course_id=inp.course_id,
+                                    stage=NOTES_STAGE, label="notes_ref")
+                doc_notes = TranslatorNotesDocument.model_validate_json(
+                    self.store.read(notes_ref, "translator-notes.json"))
+                if doc_notes.run_id != script.translation_run_id:
+                    raise _fail("the translator notes belong to another translation run", "InvalidSpeechInput")
+                notes = {n.note_id: n for n in doc_notes.notes}
+            lexicon, termbase_ref = self._lexicon(inp, script.book_id)
+            config = {"frontend": EPISODE_FRONTEND_VERSION, "speech_source": "episode", "episode": script.episode,
+                      "lexicon_digest": lexicon.digest, "limits": inp.limits.model_dump(mode="json"),
+                      "language": inp.language, "engine_profile": engine_profile(inp.engine_profile).definition()}
+            inputs = [episode] + ([termbase_ref] if termbase_ref else []) + ([notes_ref] if notes_ref else [])
+            key = stage_key(SPEECH_TEXT_STAGE, EPISODE_FRONTEND_VERSION, [r.sha256 for r in inputs], config)
+
+            def compute() -> dict[str, bytes]:
+                try:
+                    doc = build_episode_speech_text(script, source=episode, lexicon=lexicon, notes=notes,
+                                                    notes_ref=notes_ref)
+                except NotSpeechReady as exc:
+                    raise _fail(str(exc), "NotSpeechReady") from exc
+                plan = plan_tracks(doc, inp.limits)
+                return {"speech-text.json": doc.model_dump_json(indent=1).encode("utf-8"),
+                        "speech-plan.json": plan.model_dump_json(indent=1).encode("utf-8")}
+
+            ref, hit = self.store.get_or_compute(inp.course_id, SPEECH_TEXT_STAGE, key, compute)
+            doc = self._doc(ref)
+            plan = SpeechPlan.model_validate_json(self.store.read(ref, "speech-plan.json"))
+            text_passed, metrics = evaluate_speech_text(doc)
+            reading_passed, reading = evaluate_reading_quality(doc, inp.engine_profile)
+            policy, reading_gate = text_policy(), reading_policy(inp.engine_profile)
+            record = self.promotion.record_candidate(inp.course_id, ref,
+                                                     required_gates=[policy.gate_id, reading_gate.gate_id],
+                                                     inputs=inputs, config=config,
+                                                     identities=[ProducerIdentity(role="tool", model_id="b2c-speech-tn",
+                                                                                  revision=EPISODE_FRONTEND_VERSION)])
+            if record.status == "candidate":
+                self._gate(inp.course_id, ref, policy, text_passed, metrics, "speech-text.json")
+                self._gate(inp.course_id, ref, reading_gate, reading_passed, reading, "speech-text.json")
+                record = self.promotion.settle(inp.course_id, ref)
+            metrics = {**metrics, "reading_quality": reading, "episode": script.episode,
+                       "excluded_companion_lines": sum(1 for e in doc.excluded
+                                                       if e.reason.startswith("companion_translation_not_accepted"))}
+        return SpeechPrepared(speech_text_ref=ref.model_dump(mode="json"), status=record.status,
+                              gate_passed=text_passed and reading_passed, gate_metrics=metrics, plan=plan, cache_hit=hit)
 
     # .............................................................. synthesize
     @activity.defn(name="speech_v2_synthesize_segments")

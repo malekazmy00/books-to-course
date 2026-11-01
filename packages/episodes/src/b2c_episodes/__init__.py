@@ -17,7 +17,7 @@ from .generate import (EpisodeGenerationFailed, ModelRole, coverage, generate_co
                        generate_lesson_episode)
 from .sources import BookTextRef, CourseIntroPlan, EpisodePlan, LessonSource, SourceBlock, TermInfo
 
-EPISODES_VERSION = "episode-scripts-2026-10-25.2"
+EPISODES_VERSION = "episode-scripts-2026-11-01.3"  # .3: declared deficits, book text never withheld (D-052)
 
 __all__ = ["BookLine", "BookTextRef", "COVERAGE_GATE_ID", "CourseIntroPlan", "EPISODES_VERSION", "EpisodeGenerationFailed",
            "EpisodePlan", "GROUNDING_GATE_ID", "LENGTH_GATE_ID", "LessonSource", "ModelRole", "ScriptUnit", "SourceBlock",

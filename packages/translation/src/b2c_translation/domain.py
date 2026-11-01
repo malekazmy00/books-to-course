@@ -16,7 +16,7 @@ BRIEF_SECTIONS = ("book_card", "context")
 def domain_brief(dossier: KnowledgeDossier | None, *, max_chars: int = 500) -> str:
     if dossier is None:
         return ""
-    head = f"Book: {dossier.title}" + (f", by {', '.join(dossier.authors)}" if dossier.authors else "") + "."
+    head = (f"Book: {dossier.title}" + (f", by {', '.join(dossier.authors)}" if dossier.authors else "")).rstrip(".") + "."
     out = head[:max_chars]
     for section in BRIEF_SECTIONS:
         for claim in dossier.published():

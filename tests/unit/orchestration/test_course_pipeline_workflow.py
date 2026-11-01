@@ -163,6 +163,7 @@ async def test_stages_run_in_the_decided_order_and_pass_their_outputs_on(env):
     assert calls["figures"]["units_ref"] == UNITS and calls["figures"]["termbase_ref"] == APPROVED
     assert calls["episodes"]["episodes"] == [0, 1, 2, 3] and calls["episodes"]["translation_run_id"] == "a" * 64
     assert calls["episodes"]["figures_ref"] == {"stage": "figure-descriptions"}
+    assert calls["episodes"]["language_ref"] == {"stage": "language-research"}
     assert calls["episodes"]["require_accepted_inputs"] is True
     assert result["status"] == "audio_ready" and result["findings"] == []
     assert result["language_research_ref"] == {"stage": "language-research"}

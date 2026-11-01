@@ -215,6 +215,7 @@ class CoursePipelineWorkflow:
             "figures_ref": figures_en_ref, "translation_run_id": translated.get("run_id"), "episodes": episodes,
             "termbase_ref": termbase_ref, "engine_profile": inp.engine_profile, "qe_profile": inp.qe_profile,
             "require_accepted_inputs": strict, "cache_bust": inp.cache_bust,
+            "language_ref": out.get("language_research_ref"),
             "debate_episodes": sorted({e for e in episodes if e > 0 and (
                 e in inp.debate_episodes or (inp.debate_every is not None and e % inp.debate_every == 0))})},
             inp.companion_queue)

@@ -306,3 +306,52 @@ def test_a_debate_needs_two_people_holding_views():
     gen, judge = roles()
     script, report = generate_lesson_episode(plan(), generator=gen, judge=judge, clock=lambda: NOW, debate=True)
     assert "debate" not in kinds(script) and report["debate"] == {"requested": True, "views": 0}
+
+
+# ------------------------------------------------------------------ language research reaches the listener (D-034 §11b)
+def arabic_script(episode=3):
+    src = c.ScriptSource(kind="outline", episode=episode)
+    concept = c.ScriptSource(kind="concept", concept_id="cpt_000000000001")
+    def line(i, text, role="text", **kw):
+        return c.ScriptLine(line_id=f"l{i}", text=text, role=role, sources=[src], unit_ids=[f"bk:ep:u{i}"],
+                            status="accepted", **kw)
+    if episode == 0:
+        names = [("about_book", "a"), ("about_author", "u"), ("book_method", "m"), ("course_guide", "g")]
+        sections = [c.EpisodeSection(section_id=f"s{code}", kind=kind, voice="course", lines=[line(i, "نص.")])
+                    for i, (kind, code) in enumerate(names)]
+        return c.EpisodeScript(book_id="bk", language="ar", episode=0, kind="course_intro", title="مقدمة الكورس",
+                               book_title="كتاب", sections=sections, source_script_sha256="b" * 64, created_at=NOW)
+    term = line(2, "التمفصل (articulation): ربط الجماعات.", "term", original="articulation").model_copy(
+        update={"sources": [concept, src]})
+    other = line(3, "الهيمنة (hegemony): قوة ورضا.", "term", original="hegemony").model_copy(
+        update={"sources": [concept, src]})
+    sections = [c.EpisodeSection(section_id="s1", kind="episode_intro", voice="course", lines=[line(1, "الحلقة.")]),
+                c.EpisodeSection(section_id="s2", kind="book_text", voice="author", block_ids=["b"], unit_ids=["bk:u1"]),
+                c.EpisodeSection(section_id="s3", kind="key_terms", voice="course", lines=[term, other])]
+    return c.EpisodeScript(book_id="bk", language="ar", episode=3, kind="lesson", lesson_id="l1", title="عنوان",
+                           book_title="كتاب", sections=sections, translation_run_id="r" * 64,
+                           source_script_sha256="b" * 64, created_at=NOW, deficits=["summary", "questions"])
+
+
+RESEARCH = {"terms": [{"source": "articulation", "target": "تمفصل", "status": "not_established"},
+                      {"source": "hegemony", "target": "هيمنة", "status": "established"}],
+            "read_in_arabic": [{"title": "هيمنة", "url": "https://ar.wikipedia.org/wiki/هيمنة", "terms": ["hegemony"]},
+                               {"title": "مجتمع مدني", "url": "https://ar.wikipedia.org/wiki/مجتمع_مدني", "terms": ["x"]}]}
+
+
+def test_a_key_term_without_a_settled_equivalent_says_so():
+    from b2c_episodes.arabic import apply_language_research
+    out = apply_language_research(arabic_script(), RESEARCH)
+    lines = {x.original: x.text for s in out.sections if s.kind == "key_terms" for x in s.lines}
+    assert "لا نعرف مقابلًا عربيًا مستقرًا" in lines["articulation"] and "لا نعرف" not in lines["hegemony"]
+
+
+def test_the_course_introduction_names_what_to_read_in_arabic():
+    from b2c_episodes.arabic import apply_language_research
+    out = apply_language_research(arabic_script(0), RESEARCH)
+    guide = next(s for s in out.sections if s.kind == "course_guide")
+    last = guide.lines[-1]
+    assert "ويكيبيديا العربية" in last.text and "هيمنة" in last.text and "مجتمع مدني" in last.text
+    assert last.status == "accepted" and last.unit_ids and last.sources[0].kind == "reference"
+    assert apply_language_research(arabic_script(0), {"terms": [], "read_in_arabic": []}).model_dump() \
+        == arabic_script(0).model_dump()

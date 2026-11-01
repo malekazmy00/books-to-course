@@ -19,6 +19,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any
 
 from b2c_contracts import (BOOK_TEXT_KINDS, EpisodeScript, EpisodeSection, ScriptLine, ScriptSource, TranslationUnit,
                            TranslatorNote, UnitTranslation)
@@ -156,5 +157,34 @@ def _status(decision: str) -> str:
     return decision if decision in ("accepted", "needs_review", "rejected") else "rejected"
 
 
-__all__ = ["BookLine", "SCRIPT_MARKER", "note_text", "ScriptUnit", "assemble_arabic", "is_script_unit", "script_unit_id",
+__all__ = ["BookLine", "READ_IN_ARABIC_MAX", "SCRIPT_MARKER", "UNSETTLED_NOTE_AR", "apply_language_research", "note_text", "ScriptUnit", "assemble_arabic", "is_script_unit", "script_unit_id",
            "script_units", "with_texts"]
+
+
+UNSETTLED_NOTE_AR = "لا نعرف مقابلًا عربيًا مستقرًا لهذا المصطلح."
+READ_IN_ARABIC_MAX = 8
+
+
+def apply_language_research(script: EpisodeScript, research: Mapping[str, Any]) -> EpisodeScript:
+    """What language research found reaches the listener (D-034, learning-companion §11b): a key term with
+    no settled Arabic equivalent says so in its line, and the course introduction names the Arabic
+    Wikipedia articles to read. Fixed Arabic sentences, not translated text, added after translation."""
+    unsettled = {t["source"].casefold() for t in research.get("terms") or [] if t.get("status") == "not_established"}
+    reading = list(research.get("read_in_arabic") or [])[:READ_IN_ARABIC_MAX]
+    data = script.model_dump()
+    changed = False
+    for section in data["sections"]:
+        if section["kind"] == "key_terms":
+            for line in section["lines"]:
+                if (line.get("original") or "").casefold() in unsettled:
+                    line["text"] = f"{line['text'].rstrip()} {UNSETTLED_NOTE_AR}"
+                    changed = True
+        if section["kind"] == "course_guide" and reading:
+            titles = "، و".join(r["title"] for r in reading)
+            section["lines"].append({
+                "line_id": f"e{script.episode:03d}.readar", "role": "text", "status": "accepted",
+                "text": f"وللقراءة بالعربية، تجد في ويكيبيديا العربية مقالات عن: {titles}.",
+                "unit_ids": [f"{script.book_id}:ep{script.episode:03d}:read-in-arabic"],
+                "sources": [{"kind": "reference", "url": reading[0]["url"], "note": "language research"}]})
+            changed = True
+    return EpisodeScript.model_validate(data) if changed else script

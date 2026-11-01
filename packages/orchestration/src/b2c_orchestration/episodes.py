@@ -46,6 +46,7 @@ with workflow.unsafe.imports_passed_through():
     from b2c_contracts import (ArtifactRef, ConceptLayer, CourseOutlineV2, EpisodeScript, FigureDescriptionsDocument,
                                KnowledgeDossier, ParsedBookV2, ProducerIdentity, TranslationUnit, UnitTranslation,
                                stage_key)
+    from b2c_episodes.arabic import apply_language_research
     from b2c_episodes.figures import insert_figure_sections
     from b2c_episodes.names import KnownName, first_mentions, insert_name_notes
     from b2c_episodes import (EPISODES_VERSION, BookLine, BookTextRef, CourseIntroPlan, EpisodeGenerationFailed,
@@ -114,6 +115,7 @@ class EpisodeScriptENInput(EpisodeRefs):
 
 class EpisodeScriptARInput(EpisodeRefs):
     episode: int = Field(ge=0)
+    language_ref: dict[str, Any] | None = None  # D-034 §11b: language-research artifact
     en_ref: dict[str, Any]
     termbase_ref: dict[str, Any]       # approved termbase (stage book-termbase-approved)
     engine_profile: str
@@ -125,6 +127,7 @@ class EpisodeScriptARInput(EpisodeRefs):
 class BuildEpisodeScriptsInput(EpisodeRefs):
     episodes: list[int] = Field(min_length=1)
     debate_episodes: list[int] = []   # episodes that get the optional debate section (none by default)
+    language_ref: dict[str, Any] | None = None  # D-034 §11b: language-research artifact
     termbase_ref: dict[str, Any]
     engine_profile: str
     qe_profile: str | None = None
@@ -470,7 +473,8 @@ class EpisodeActivities:
             raise ValueError("the English episode script is not an accepted output")
         termbase = approved_snapshot(BookTermbase.from_json(self.store.read(tb_ref, "termbase.json")))
         fingerprint = self.runtime.fingerprint(inp.engine_profile, inp.qe_profile) if self.runtime else ""
-        inputs = [en_ref, tb_ref, concept_ref, self._ref(inp.units_ref)]
+        inputs = [en_ref, tb_ref, concept_ref, self._ref(inp.units_ref)] + (
+            [self._ref(inp.language_ref)] if inp.language_ref else [])
         config = {"ar_version": AR_VERSION, "notes_builder": NOTES_BUILDER_VERSION, "episode": inp.episode,
                   "run_id": inp.translation_run_id,
                   "engine_profile": inp.engine_profile, "qe_profile": inp.qe_profile, "profiles": fingerprint,
@@ -533,6 +537,9 @@ class EpisodeActivities:
             all_units = {su.unit.unit_id: su.unit for su in units} | book_units
             outcomes = evaluate_ar_script(ar, units=all_units, book_decisions={u: b.decision for u, b in book_lines.items()},
                                           terms=terms, pre_insertion=pre)
+            if inp.language_ref:  # after the gates: fixed sentences, not translated text
+                ar = apply_language_research(ar, json.loads(self.store.read(self._ref(inp.language_ref),
+                                                                            "language-research.json")))
             return {"script.json": ar.model_dump_json(indent=1).encode("utf-8"),
                     "translations.json": _dump([{"unit": su.unit.model_dump(mode="json"), "line_id": su.line_id,
                                                  "translation": results[su.unit.unit_id].model_dump(mode="json"),
@@ -602,7 +609,7 @@ class BuildEpisodeScriptsWorkflow:
                 entry["ar"] = await workflow.execute_activity(
                     AR_ACTIVITY, EpisodeScriptARInput(**refs, episode=episode, en_ref=en["ref"],
                                                       termbase_ref=inp.termbase_ref, engine_profile=inp.engine_profile,
-                                                      qe_profile=inp.qe_profile,
+                                                      qe_profile=inp.qe_profile, language_ref=inp.language_ref,
                                                       require_accepted_en=inp.require_accepted_inputs,
                                                       cache_bust=inp.cache_bust),
                     result_type=dict, **EPISODE_OPTIONS)

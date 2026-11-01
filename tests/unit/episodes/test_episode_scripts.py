@@ -254,3 +254,19 @@ def test_a_book_line_not_accepted_and_without_a_note_is_kept_as_before():
     ar = assemble_arabic(script, units, translations, book_lines=book_lines, key_term_labels={},
                          source_sha256="a" * 64, clock=lambda: NOW)
     assert all(x.note_id is None and x.status == "needs_review" for x in ar.sections[1].lines)
+
+
+# ------------------------------------------------------------------ D-038 (2): the answer says where it is
+def test_each_answer_says_where_it_is_in_the_lesson():
+    from b2c_episodes.generate import answer_location
+    from tests.unit.episodes.fixtures import blk
+    assert answer_location(LESSON, "bk:3:1") == "This is early in the lesson."
+    assert answer_location(LESSON, "bk:3:3") == "This is near the end of the lesson."
+    with_parts = c_lesson = LESSON.__class__(LESSON.lesson_id, 3, "Hegemony", (
+        blk(3, 0, "Hegemony", "heading"), blk(3, 1, "Text one about force."),
+        blk(3, 2, "The war of position", "heading"), blk(3, 3, "A long struggle inside civil society.")))
+    assert answer_location(with_parts, "bk:3:3") == "This is in the part of the lesson on The war of position."
+    assert c_lesson is with_parts
+    script, _ = lesson_script()
+    answers = [x for x in script.sections[4].lines if x.role == "answer"]
+    assert all(a.text.endswith(".") and "lesson" in a.text.split(". ")[-1] for a in answers)

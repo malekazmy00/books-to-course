@@ -40,8 +40,9 @@ FILLER = ("نص عربي واضح يشرح الفكرة كما وردت عند �
 
 def arabic_for(source: str) -> str:
     out = []
-    for sentence in [s for s in re.split(r"(?<=[.?!])\s+", source.strip()) if s]:
-        words = [FILLER[i % len(FILLER)] for i in range(max(3, len(sentence.split())))]
+    for n, sentence in enumerate([s for s in re.split(r"(?<=[.?!])\s+", source.strip()) if s]):
+        # each sentence starts elsewhere in the filler, so sentences never repeat each other
+        words = [FILLER[(i + 7 * n) % len(FILLER)] for i in range(max(3, len(sentence.split())))]
         for en, ar in TERMS_AR.items():
             if re.search(rf"\b{en}\b", sentence, re.I):
                 words.insert(1, ar)
@@ -163,6 +164,10 @@ def test_en_then_ar_episode_with_promotion_and_first_mentions(store):
     assert aref.stage == ep.AR_STAGE
     script_ar = c.EpisodeScript.model_validate_json(store.read(aref, "script.json"))
     assert script_ar.language == "ar" and script_ar.source_script_sha256 == ref.sha256
+    # D-038: file names and tags are Arabic — the episode and book titles are translated like headings
+    assert re.search(r"[\u0600-\u06FF]", script_ar.title) and not re.search(r"[A-Za-z]", script_ar.title)
+    assert re.search(r"[\u0600-\u06FF]", script_ar.book_title)
+    assert script_ar.metrics["title_source"] == "translated"
     gates = json.loads(store.read(aref, "gates.json"))
     assert gates["episodes.first-mention"]["passed"], gates["episodes.first-mention"]["metrics"]
     texts = " ".join(x.text for x in script_ar.all_lines())
@@ -286,3 +291,24 @@ def test_audio_title_drops_section_numbers():
     assert ep.audio_title("1.1 Our Vision") == "Our Vision"
     assert ep.audio_title("Chapter 2 Two Types\nof Thinking") == "Two Types of Thinking"
     assert ep.audio_title("Preface") == "Preface"
+
+
+
+def test_arabic_titles_fall_back_without_ever_staying_english():
+    from b2c_orchestration.episodes import arabic_titles
+
+    class Stub:
+        def __init__(self, decision):
+            self.decision = decision
+
+        def translate(self, unit, **kw):
+            t = c.UnitTranslation(unit_id=unit.unit_id, target_text="عنوان مترجم", origin="rule",
+                                  decision=self.decision, decided_by="policy", decided_at=NOW)
+            return type("R", (), {"translation": t})()
+
+    en = lambda n, title: type("S", (), {"episode": n, "title": title, "book_title": "Power", "book_id": "bk"})()
+    assert arabic_titles(en(0, "Course introduction"), Stub("accepted"))[0] == "مقدمة الكورس"
+    title, book, source = arabic_titles(en(3, "Hegemony"), Stub("accepted"))
+    assert (title, book, source) == ("عنوان مترجم", "عنوان مترجم", "translated")
+    title, book, source = arabic_titles(en(3, "Hegemony"), Stub("needs_review"))
+    assert (title, source) == ("الحلقة 3", "fallback") and book == "Power"

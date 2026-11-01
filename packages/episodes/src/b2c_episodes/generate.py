@@ -302,6 +302,23 @@ def _external_line(line_id: str, claim: DossierClaim, dossier: KnowledgeDossier 
                       sources=[ScriptSource(kind="dossier", claim_id=claim.claim_id, url=claim.evidence[0].url)])
 
 
+def answer_location(lesson: LessonSource, block_id: str | None) -> str:
+    """Where an answer is in the lesson, spoken after it (D-038 (2)): the lesson part (the nearest
+    heading inside the lesson) when there is one, else the beginning, middle or end of the lesson."""
+    blocks = list(lesson.blocks)
+    ids = [b.block_id for b in blocks]
+    if block_id not in ids:
+        return "This is in the lesson."
+    i = ids.index(block_id)
+    heading = next((b for b in reversed(blocks[1:i]) if b.type == "heading"), None)
+    if heading is not None:
+        return f"This is in the part of the lesson on {heading.text.strip().rstrip('.')}."
+    body = [k for k, b in enumerate(blocks) if b.type != "heading"]
+    share = (body.index(i) + 0.5) / len(body) if i in body else 0.5
+    return ("This is early in the lesson." if share < 1 / 3 else
+            "This is in the middle of the lesson." if share < 2 / 3 else "This is near the end of the lesson.")
+
+
 DEFICIT_NAMES = {"summary": "summary", "key_terms": "key terms", "questions": "questions"}
 
 
@@ -404,8 +421,14 @@ def generate_lesson_episode(plan: EpisodePlan, *, generator: ModelRole, judge: M
         if found is not None and B.words(found[0]) <= B.LINE_WORDS["term"]:
             key_terms.append((t, found[0], found[1]))
     key_terms = key_terms[:B.KEY_TERMS_MAX]
+    def located(c: Candidate) -> str:
+        where = next((s.block_id for s in c.sources if s.kind == "book" and s.block_id), None)
+        answer = (c.answer or "").rstrip()
+        answer = answer if answer[-1:] in ".?!" else answer + "."
+        return f"{answer} {answer_location(plan.lesson, where)}"
+
     questions = [c for c in ok("question") if B.words(c.text) <= B.LINE_WORDS["question"]
-                 and B.words(c.answer or "") <= B.LINE_WORDS["answer"]][:5]
+                 and B.words(located(c)) <= B.LINE_WORDS["answer"]][:5]
 
     intro_lines = [ScriptLine(line_id=lid("i", 0), text=f"{plan.book_title}. Episode {ep}: {plan.lesson.title}.",
                               sources=[ScriptSource(kind="outline", episode=ep)])]
@@ -428,7 +451,7 @@ def generate_lesson_episode(plan: EpisodePlan, *, generator: ModelRole, judge: M
         for i, c in enumerate(questions):
             qlines.append(ScriptLine(line_id=lid("q", i), role="question", text=c.text, sources=c.sources,
                                      pause_after_ms=QUESTION_PAUSE_MS))
-            qlines.append(ScriptLine(line_id=lid("a", i), role="answer", text=c.answer or "", sources=c.sources))
+            qlines.append(ScriptLine(line_id=lid("a", i), role="answer", text=located(c), sources=c.sources))
     parts = [("summary", "lesson_summary", summary_lines), ("key_terms", "key_terms", term_lines),
              ("questions", "questions", qlines)]
     deficits = [name for name, _, lines in parts if not lines]

@@ -74,7 +74,8 @@ AR_STAGE = "episode-script-ar"
 EN_ACTIVITY = "build_episode_script_en"
 AR_ACTIVITY = "translate_episode_script"
 WORKFLOW_NAME = "BuildEpisodeScriptsWorkflow"
-AR_VERSION = "episode-scripts-ar-2026-10-25.4"  # .4: book units not accepted -> translator notes (D-041)
+AR_VERSION = "episode-scripts-ar-2026-11-01.5"  # .5: Arabic titles for files and tags (D-038); .4: notes (D-041)
+COURSE_INTRO_TITLE_AR = "مقدمة الكورس"  # D-038: «00 - مقدمة الكورس.mp3»
 TRANSLATION_GATE_ID = "episodes.translation"
 FIRST_MENTION_GATE_ID = "episodes.first-mention"
 TRANSLATION_DEFINITION: dict[str, Any] = {"script_lines": "every line accepted (qa.policy)",
@@ -171,6 +172,26 @@ class BookView:
                  and lesson.start <= positions[u.block_ids[0]] <= lesson.end]
         blocks = list(dict.fromkeys(b for u in units for b in u.block_ids))
         return BookTextRef(block_ids=tuple(blocks), unit_ids=tuple(u.unit_id for u in units))
+
+
+def arabic_titles(script: Any, translator: Any) -> tuple[str, str, str]:
+    """(episode title, book title, source) in Arabic for file names and ID3 tags (D-038, D-042).
+
+    Episode 00 is «مقدمة الكورس». A lesson title and the book title are translated like headings by the
+    book's engine and termbase; a title whose translation is not accepted falls back to «الحلقة N»
+    (a file name never stays in the source language), the book title to its original."""
+    def translated(uid: str, text: str) -> str | None:
+        unit = TranslationUnit(unit_id=f"{script.book_id}:ep{script.episode:03d}:{uid}", book_id=script.book_id,
+                               block_ids=[f"{script.book_id}:title"], kind="heading", source_text=text, pages=[1],
+                               section_path=[])
+        t = translator.translate(unit).translation
+        return t.target_text.strip() if t.decision == "accepted" and t.target_text.strip() else None
+
+    book = translated("booktitle", script.book_title) or script.book_title
+    if script.episode == 0:
+        return COURSE_INTRO_TITLE_AR, book, "fixed"
+    title = translated("title", script.title)
+    return (title, book, "translated") if title else (f"الحلقة {script.episode}", book, "fallback")
 
 
 def audio_title(title: str) -> str:
@@ -460,8 +481,10 @@ class EpisodeActivities:
             inserted = insert_first_mentions([x.text for x in ar_lines], terms)
             ar = with_texts(ar, {x.line_id: (text, ins) for x, text, ins in zip(ar_lines, inserted.texts, inserted.inserted)
                                  if ins})
-            ar = EpisodeScript.model_validate({**ar.model_dump(), "metrics": {
-                **ar.metrics, "first_mention_terms": len(terms), "first_mention_inserted": sum(map(len, inserted.inserted)),
+            title_ar, book_title_ar, title_source = arabic_titles(script, translator)
+            ar = EpisodeScript.model_validate({**ar.model_dump(), "title": title_ar, "book_title": book_title_ar,
+                                               "metrics": {
+                **ar.metrics, "title_source": title_source, "first_mention_terms": len(terms), "first_mention_inserted": sum(map(len, inserted.inserted)),
                 "first_mention_missing": inserted.missing, "unit_decisions": _count(t.decision for t in results.values())}})
             all_units = {su.unit.unit_id: su.unit for su in units} | book_units
             outcomes = evaluate_ar_script(ar, units=all_units, book_decisions={u: b.decision for u, b in book_lines.items()},

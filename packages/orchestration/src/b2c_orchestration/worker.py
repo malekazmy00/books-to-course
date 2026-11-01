@@ -76,6 +76,27 @@ class _UnavailableProfiles:
     engine = estimator = term_proposer = termhood_classifier = term_voter = fingerprint
 
 
+WIKIDATA_API = "https://www.wikidata.org/w/api.php"
+
+
+def known_equivalent_sources(env=None):
+    """D-034: the established Arabic equivalents of the book's terms reach the termbase BEFORE
+    translation (Wikidata / Arabic Wikipedia, b2c_translation.termbase.known). On unless
+    ``B2C_TERMBASE_KNOWN_EQUIVALENTS`` is not ``wikidata``; one source per termbase build."""
+    env = os.environ if env is None else env
+    if env.get("B2C_TERMBASE_KNOWN_EQUIVALENTS", "wikidata").strip().lower() != "wikidata":
+        return None
+    from b2c_research.http import FileFetchCache, HttpxFetcher
+    from b2c_translation.termbase.known import WikidataKnownEquivalents
+    cache_dir = env.get("B2C_KNOWN_EQUIVALENTS_CACHE")
+    fetcher = HttpxFetcher(cache=FileFetchCache(cache_dir) if cache_dir else None)
+
+    def fetch(params):
+        return fetcher.get(WIKIDATA_API, params=params).json()
+
+    return lambda book_id: [WikidataKnownEquivalents(fetch)]
+
+
 def translate_book_worker(client, s, *, store, cache, executor) -> Worker:
     """Rebuilt book translation (D-028 part D) on its own queue, beside the old workflows."""
     from b2c_translation.memory import TranslationMemory
@@ -89,6 +110,7 @@ def translate_book_worker(client, s, *, store, cache, executor) -> Worker:
     acts = TranslateBookActivities(artifact_store=store, result_store=TranslationResultStore(s.pg_dsn),
                                    runtime=runtime, memory=TranslationMemory(s.pg_dsn),
                                    termbase_store=TermbaseStore(s.pg_dsn),
+                                   concept_sources=known_equivalent_sources(),
                                    promotion=PromotionService(StageOutputRegistry(s.pg_dsn), code_revision=code_revision()))
     return Worker(client, task_queue=TRANSLATE_BOOK,
                   workflows=[TranslateBookWorkflow, AssembleBookTranslationWorkflow],

@@ -164,3 +164,30 @@ def test_course_pipeline_is_registered_on_the_light_queue():
     src = inspect.getsource(worker_mod.run_worker)
     light = next(line for line in src.splitlines() if "task_queue=LIGHT" in line)
     assert "CoursePipelineWorkflow" in light
+
+
+def test_known_arabic_equivalents_reach_the_termbase_by_default():  # D-034
+    from b2c_translation.termbase.known import WikidataKnownEquivalents
+
+    sources = worker_mod.known_equivalent_sources({})
+    made = sources("bk")
+    assert len(made) == 1 and isinstance(made[0], WikidataKnownEquivalents)
+    assert sources("bk")[0] is not made[0]          # one source (and its memory) per termbase build
+    assert worker_mod.known_equivalent_sources({"B2C_TERMBASE_KNOWN_EQUIVALENTS": "off"}) is None
+
+
+def test_the_translate_book_worker_passes_the_known_equivalents(monkeypatch):
+    captured = {}
+
+    class FakeWorker:
+        def __init__(self, client, **kwargs):
+            captured.update(kwargs)
+
+    monkeypatch.setattr(worker_mod, "Worker", FakeWorker)
+    monkeypatch.delenv("B2C_TRANSLATION_PROFILES_FILE", raising=False)
+    monkeypatch.delenv("B2C_TERMBASE_KNOWN_EQUIVALENTS", raising=False)
+    settings = SimpleNamespace(pg_dsn="postgresql://x", llm_base_url="http://llm:8080/v1", llm_model_id="m",
+                               llm_allow_remote=False, llm_api_key_file="", llm_reasoning_effort=None)
+    worker_mod.translate_book_worker(object(), settings, store=SimpleNamespace(bucket="artifacts"), cache=None,
+                                     executor=object())
+    assert captured["activities"][0].__self__.concept_sources is not None

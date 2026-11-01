@@ -160,7 +160,8 @@ class CoursePipelineWorkflow:
                 self._finding("knowledge", "concepts_not_accepted")
         out.update(concept_ref=concepts.get("ref"), dossier_ref=research.get("ref"))
 
-        # 4. translation: termbase by model vote, judged by the ladder, translator notes
+        # 4. translation: termbase by model vote (informed by the research, D-034), judged by the ladder, notes
+        book = book.model_copy(update={"knowledge_ref": research.get("ref")})
         translated = await self._child("translate", "TranslateBookWorkflow", book.model_dump(mode="json"),
                                        inp.translate_queue)
         if translated is None:

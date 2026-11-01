@@ -197,7 +197,8 @@ def _apply(store: TermbaseStore, scope: TermbaseScope, entry: StoredTermEntry, d
 
 
 def review_by_models(store: TermbaseStore, scope: TermbaseScope, voter: Any, *, min_frequency: int,
-                     clock: Callable[[], datetime] = _now) -> dict[str, Any]:
+                     clock: Callable[[], datetime] = _now,
+                     field_for: Callable[[str], list[str]] | None = None) -> dict[str, Any]:
     """Decide every blocking pending entry by model vote (``b2c_translation.termbase.vote``).
 
     Entries already decided (by a person or an earlier vote) are left alone. A judge failure
@@ -209,7 +210,9 @@ def review_by_models(store: TermbaseStore, scope: TermbaseScope, voter: Any, *, 
             continue
         record = entry.record()
         try:
-            verdict = voter.review(record)
+            field = field_for(entry.source) if field_for is not None else []
+            # D-034: what published sources say about the concept in its field informs the vote
+            verdict = voter.review(record, field=field) if field else voter.review(record)
         except Exception as exc:  # unavailable or invalid vote: decided without it, never left pending
             verdict, error = None, f"{type(exc).__name__}: {exc}"[:300]
         else:

@@ -159,6 +159,7 @@ async def test_stages_run_in_the_decided_order_and_pass_their_outputs_on(env):
     assert calls["knowledge"].get("termbase_ref") is None          # research comes before the termbase
     assert calls["translate"]["source_artifact_ref"] == PARSED
     assert calls["translate"]["qe_profile"] == "ladder-mqm" and calls["translate"]["termbase_review"] == "models"
+    assert calls["translate"]["knowledge_ref"] == {"stage": "knowledge-research"}   # D-034: research informs the termbase
     assert calls["figures"]["units_ref"] == UNITS and calls["figures"]["termbase_ref"] == APPROVED
     assert calls["episodes"]["episodes"] == [0, 1, 2, 3] and calls["episodes"]["translation_run_id"] == "a" * 64
     assert calls["episodes"]["figures_ref"] == {"stage": "figure-descriptions"}

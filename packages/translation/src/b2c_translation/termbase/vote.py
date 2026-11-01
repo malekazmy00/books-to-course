@@ -58,6 +58,15 @@ VOTE_TEMPLATE = PromptTemplate("termbase.vote.system", 1, (
     "<number>|null, \"target\": \"<Arabic>\"|null, \"reason\": \"<at most 15 words>\"}."
 ), role="system", source="b2c")   # literal text, sent as is (never rendered)
 
+# D-034 (learning-companion §11a): the concept's use in its field, from knowledge research before
+# translation, informs the choice of its Arabic equivalent. A separate version: votes without field
+# usage keep the v1 prompt and its cached answers.
+VOTE_TEMPLATE_FIELD = PromptTemplate("termbase.vote.system", 2, VOTE_TEMPLATE.text.replace(
+    "equivalents with where each came from.",
+    "equivalents with where each came from, and possibly \"in_its_field\": what published sources say "
+    "about the concept in its field (to tell the author's term from a homonym and to find the field's "
+    "established Arabic term).", 1), role="system", source="b2c")
+
 _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$")
 _SAFE = re.compile(r"[^a-z0-9._-]+")
 
@@ -134,21 +143,26 @@ class TermVoter:
         self._gateway = gateway
         self.max_tokens = max_tokens
 
-    def messages(self, record: TermRecord) -> list[dict[str, str]]:
+    def messages(self, record: TermRecord, field: list[str] | None = None) -> list[dict[str, str]]:
         c = record.candidate
         data = {"term": record.source, "kind": record.kind, "frequency": c.frequency,
                 "definition": (c.definition_context or "")[:MAX_CONTEXT_CHARS],
                 "expansion": c.expansion, "is_name": record.kind in ENTITY_KINDS,
                 "proposals": [{"id": i, "arabic": p.target, "source": p.provenance}
                               for i, p in enumerate(record.proposals, start=1)]}
-        return [{"role": "system", "content": VOTE_TEMPLATE.text},
+        template = VOTE_TEMPLATE
+        if field:
+            data["in_its_field"] = [f[:MAX_CONTEXT_CHARS] for f in field[:3]]
+            template = VOTE_TEMPLATE_FIELD
+        return [{"role": "system", "content": template.text},
                 {"role": "user", "content": json.dumps(data, ensure_ascii=False)}]
 
-    def review(self, record: TermRecord) -> TermVerdict:
-        completion = self._gateway.complete_text(self.messages(record), prompt_version=VOTE_TEMPLATE.version_id,
+    def review(self, record: TermRecord, field: list[str] | None = None) -> TermVerdict:
+        version = (VOTE_TEMPLATE_FIELD if field else VOTE_TEMPLATE).version_id
+        completion = self._gateway.complete_text(self.messages(record, field), prompt_version=version,
                                                  max_tokens=self.max_tokens, temperature=0.0)
         return parse_verdict(completion.text, record, model=completion.model)
 
 
 __all__ = ["INDEPENDENT_PROVENANCE", "REVIEWER_PREFIX", "TermDecision", "TermVerdict", "TermVoter",
-           "VOTE_TEMPLATE", "decide", "parse_verdict", "reviewer_id"]
+           "VOTE_TEMPLATE", "VOTE_TEMPLATE_FIELD", "decide", "parse_verdict", "reviewer_id"]

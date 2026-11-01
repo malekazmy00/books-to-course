@@ -105,3 +105,21 @@ def test_reviewer_id_names_the_judge_and_is_a_valid_reviewer():
     rid = reviewer_id("deepseek/deepseek-v4-flash-0731")
     assert rid == "ai-vote-deepseek-deepseek-v4-flash-0731"
     assert not rid.startswith("g3-policy-")
+
+
+# ------------------------------------------------------------------ D-034: the concept in its field informs the vote
+def test_the_field_usage_from_knowledge_research_reaches_the_judge():
+    from b2c_translation.termbase.vote import VOTE_TEMPLATE_FIELD
+    gw = Scripted({"tier": "locked", "choice": 1, "target": None, "reason": "r"})
+    TermVoter(gw).review(record(), field=["In political theory, hegemony is leadership by consent (Wikipedia)."])
+    [call] = gw.calls
+    assert call["prompt_version"] == VOTE_TEMPLATE_FIELD.version_id == "termbase.vote.system@v2"
+    data = json.loads(call["messages"][-1]["content"])
+    assert data["in_its_field"] == ["In political theory, hegemony is leadership by consent (Wikipedia)."]
+
+
+def test_without_field_usage_the_v1_prompt_is_unchanged():
+    gw = Scripted({"tier": "locked", "choice": 1, "target": None, "reason": "r"})
+    TermVoter(gw).review(record())
+    assert gw.calls[0]["prompt_version"] == "termbase.vote.system@v1"
+    assert "in_its_field" not in json.loads(gw.calls[0]["messages"][-1]["content"])

@@ -153,3 +153,41 @@ def test_activity_without_a_voting_profile_fails_non_retryable(store):
     with pytest.raises(ApplicationError) as err:
         acts.review_termbase(review_input())
     assert err.value.non_retryable and err.value.type == "TermVoterNotConfigured"
+
+
+def test_field_usage_reaches_the_vote_per_term(store):  # D-034
+    seen = {}
+
+    class FieldVoter(ScriptedVoter):
+        def review(self, record, field=None):
+            seen[record.source] = field
+            return super().review(record)
+
+    review_by_models(store, SCOPE, FieldVoter(VERDICTS), min_frequency=2,
+                     field_for=lambda term: ["Hegemony in political theory."] if term == "hegemony" else [])
+    assert seen["hegemony"] == ["Hegemony in political theory."] and not seen["probability"]
+
+
+def test_dossier_claims_become_field_statements_per_concept():
+    from datetime import datetime, timezone
+
+    import b2c_contracts as c
+
+    from b2c_orchestration.translate_book import field_statements
+    now = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    src = c.ResearchSource(source_id="src_" + "1" * 16, url="https://en.wikipedia.org/wiki/Hegemony",
+                           provider="wikipedia", title="Hegemony", tier=1, fetched_at=now,
+                           content_sha256="a" * 64, text_chars=100)
+    ev = c.Evidence(source_id=src.source_id, url=src.url, tier=1, fetched_at=now, quote="leadership by consent",
+                    quote_found=True, supports=True, judged_by="m")
+    claim = c.DossierClaim(claim_id="clm_" + "1" * 12, section="concept_in_field", concept="Hegemony",
+                           statement="In political theory, hegemony is leadership by consent.", kind="fact",
+                           evidence=[ev], status="verified")
+    other = claim.model_copy(update={"claim_id": "clm_" + "2" * 12, "section": "author", "concept": None})
+    dossier = c.KnowledgeDossier(book_id="bk", title="T", created_at=now, sources=[src], claims=[claim, other],
+                                 extractor=c.ProducerIdentity(role="x", model_id="a"),
+                                 judge=c.ProducerIdentity(role="y", model_id="b"),
+                                 extractor_family="deepseek", judge_family="inception")
+    field = field_statements(dossier)
+    assert field("hegemony") == ["In political theory, hegemony is leadership by consent. (Hegemony)"]
+    assert field("civil society") == []

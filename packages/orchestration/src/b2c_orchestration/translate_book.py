@@ -43,7 +43,7 @@ from temporalio.common import RetryPolicy
 from temporalio.exceptions import ApplicationError
 
 with workflow.unsafe.imports_passed_through():
-    from b2c_contracts import (ArtifactRef, IngestQualityReport, ParsedBook, ParsedBookV2, ProducerIdentity, QAIssue,
+    from b2c_contracts import (ArtifactRef, IngestQualityReport, KnowledgeDossier, ParsedBook, ParsedBookV2, ProducerIdentity, QAIssue,
                                TranslationUnit,
                                TranslatorNotesDocument, UnitTranslation, stage_key)
     from b2c_llm_gateway import InvalidLLMOutput, LLMOutputTruncated, LLMRequestRejected
@@ -120,6 +120,9 @@ class TranslateBookInput(BaseModel):
     # D-033: no person in the line. "models": pending entries are decided by the QE judge's vote;
     # "signal": wait for a reviewer's signal (the pre-D-033 behaviour). Not part of the run id.
     termbase_review: Literal["models", "signal"] = "models"
+    # D-034: the knowledge dossier (stage knowledge-research), researched BEFORE translation; its
+    # concept-in-field claims inform the termbase vote. Not part of the run id.
+    knowledge_ref: dict[str, Any] | None = None
 
     @model_validator(mode="after")
     def _languages_differ(self) -> "TranslateBookInput":
@@ -193,6 +196,7 @@ class ReviewTermbaseInput(BaseModel):
     target_language: Literal["en", "ar"]
     min_frequency: int = Field(default=1, ge=1, le=1000)
     judge_profile: str = Field(pattern=PROFILE_ID_PATTERN)
+    knowledge_ref: dict[str, Any] | None = None  # D-034: dossier whose concept-in-field claims inform the vote
 
 
 class TermbaseReview(BaseModel):
@@ -510,8 +514,16 @@ class TranslateBookActivities:
             raise _fail(f"profile {inp.judge_profile!r} cannot vote on terms (an llm_judge QE profile is needed)",
                         "TermVoterNotConfigured")
         scope = TermbaseScope(inp.course_id, inp.book_id, inp.source_language, inp.target_language)
+        field_for = None
+        if inp.knowledge_ref is not None:
+            dref = ArtifactRef.model_validate(inp.knowledge_ref)
+            try:
+                field_for = field_statements(KnowledgeDossier.model_validate_json(self.artifact_store.read(dref, "dossier.json")))
+            except (OSError, ValueError, KeyError):  # research is knowledge, not a gate: the vote goes on without it
+                field_for = None
         with activity_heartbeats("review_book_termbase"):
-            report = review_by_models(store, scope, voter, min_frequency=inp.min_frequency, clock=self.clock)
+            report = review_by_models(store, scope, voter, min_frequency=inp.min_frequency, clock=self.clock,
+                                      field_for=field_for)
         if not report["decisions"]:
             return TermbaseReview(counts=report["counts"], judge_profile=inp.judge_profile)
         document = json.dumps({"run_id": inp.run_id, "book_id": inp.book_id, "judge_profile": inp.judge_profile,
@@ -742,6 +754,20 @@ class TermbaseApproval(BaseModel):
     reviewer_id: str = Field(pattern=r"^[A-Za-z0-9._@-]{1,120}$")
 
 
+def field_statements(dossier: KnowledgeDossier) -> Callable[[str], list[str]]:
+    """term -> what published sources say about it in its field (D-034): the dossier's published
+    concept_in_field claims, with the source title, at most three per concept."""
+    titles = {s.source_id: s.title for s in dossier.sources}
+    by_concept: dict[str, list[str]] = {}
+    for claim in dossier.published():
+        if claim.section != "concept_in_field" or not claim.concept:
+            continue
+        source = titles.get(claim.evidence[0].source_id) if claim.evidence else None
+        text = f"{claim.statement} ({source})" if source else claim.statement
+        by_concept.setdefault(claim.concept.casefold(), []).append(text)
+    return lambda term: by_concept.get(term.casefold(), [])[:3]
+
+
 async def _translator_notes(inp: AssembleTranslationInput) -> TranslatorNotesResult | None:
     """The notes step (D-040). Patched: histories recorded before it replay without it."""
     if not workflow.patched(NOTES_PATCH):
@@ -800,7 +826,8 @@ class TranslateBookWorkflow:
                     "review_book_termbase",
                     ReviewTermbaseInput(run_id=run_id, course_id=inp.course_id, book_id=built.book_id,
                                         source_language=inp.source_language, target_language=inp.target_language,
-                                        min_frequency=inp.termbase_min_frequency, judge_profile=inp.qe_profile),
+                                        min_frequency=inp.termbase_min_frequency, judge_profile=inp.qe_profile,
+                                        knowledge_ref=inp.knowledge_ref),
                     result_type=TermbaseReview, **TERMBASE_OPTIONS)
                 self._termbase.update(model_review=review.counts, votes_ref=review.artifact)
                 continue

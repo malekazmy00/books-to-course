@@ -316,6 +316,15 @@ async def test_with_a_judge_the_termbase_is_reviewed_by_models_and_translation_s
     assert result["termbase"]["digest"] == DIGEST
 
 
+async def test_the_knowledge_dossier_reaches_the_termbase_vote(env):  # D-034
+    recorder = Recorder(gates=[3, 0])
+    dossier = {"stage": "knowledge-research", "key": "k"}
+    await run_workflow(env, recorder, book_input(qe_profile="deepseek-mqm", knowledge_ref=dossier))
+    review = next(c for k, c in recorder.calls if k == "review_termbase")
+    assert review.knowledge_ref == dossier
+    assert translation_run_id(book_input(knowledge_ref=dossier)) == translation_run_id(book_input())
+
+
 async def test_model_review_runs_once_then_falls_back_to_the_signal(env):
     recorder = Recorder(gates=[3, 1, 0])
     queue = f"tb-{uuid.uuid4().hex}"

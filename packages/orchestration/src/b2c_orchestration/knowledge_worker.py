@@ -3,6 +3,7 @@
     BookKnowledgeWorkflow             knowledge research + concept layer (EN, D-034/D-035)
     BuildFigureDescriptionsWorkflow   figure/table descriptions for listening (D-044)
     BuildEpisodeScriptsWorkflow       episode scripts, EN then AR (D-036..D-038)
+    language_research (activity)      Arabic language research after translation (D-034, §11b)
 
 The generator of figures and episodes is the extractor role; the episode validator is the judge
 role (another model family). Their Arabic translation uses the translation profiles of the worker
@@ -45,6 +46,7 @@ from temporalio.worker import Worker
 from .episodes import BuildEpisodeScriptsWorkflow, EpisodeActivities
 from .figures import BuildFigureDescriptionsWorkflow, FigureActivities, figure_activities
 from .knowledge import BookKnowledgeWorkflow, KnowledgeActivities
+from .language_research import LanguageResearchActivities, wiki_lookups
 from .promotion import PromotionService
 from .queues import KNOWLEDGE, max_concurrent_activities
 from .telemetry import setup_tracing
@@ -125,9 +127,13 @@ def build_companion(*, store: Any, cache: Any, promotion: PromotionService | Non
 
     episodes = EpisodeActivities(artifact_store=store, generator=generator, judge=judge, runtime=runtime,
                                  memory=memory, book_results=results, book_drafts=drafts, promotion=promotion)
+    cache_dir = env.get(PREFIX + "FETCH_CACHE")
+    page, english = wiki_lookups(HttpxFetcher(cache=FileFetchCache(cache_dir) if cache_dir else None,
+                                              transport=transport))
+    language = LanguageResearchActivities(artifact_store=store, page=page, english=english)
     workflows = [BookKnowledgeWorkflow, BuildFigureDescriptionsWorkflow, BuildEpisodeScriptsWorkflow]
     activities = [knowledge.research, knowledge.concepts, *figure_activities(figures), episodes.build_en,
-                  episodes.translate]
+                  episodes.translate, language.research]
     return workflows, activities
 
 

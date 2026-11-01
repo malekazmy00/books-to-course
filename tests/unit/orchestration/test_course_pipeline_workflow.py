@@ -99,6 +99,12 @@ class FakeEncode:
 FAKES = [FakeIngest, FakeTranslate, FakeKnowledge, FakeFigures, FakeEpisodes, FakeSpeech, FakeEncode]
 
 
+@activity.defn(name="language_research")
+async def fake_language(inp: dict) -> dict:
+    CALLS.append(("language", dict(inp)))
+    return SCRIPT.get("language") or {"ref": {"stage": "language-research"}, "metrics": {"not_established": 2}}
+
+
 @activity.defn(name="prepare_translation_units")
 async def fake_prepare(inp: dict) -> dict:
     CALLS.append(("prepare", dict(inp)))
@@ -132,7 +138,7 @@ async def run(env, inp):
     queues = dict(ingest_queue=queue, translate_queue=queue, companion_queue=queue, audio_queue=queue)
     inp = inp.model_copy(update=queues)
     async with Worker(env.client, task_queue=queue, workflows=[CoursePipelineWorkflow, *FAKES],
-                      activities=[fake_prepare]):
+                      activities=[fake_prepare, fake_language]):
         handle = await env.client.start_workflow(CoursePipelineWorkflow.run, inp, id=f"wf-{uuid.uuid4().hex}",
                                                  task_queue=queue)
         result = await handle.result()
@@ -144,8 +150,9 @@ async def test_stages_run_in_the_decided_order_and_pass_their_outputs_on(env):
     """D-034: knowledge research (EN) runs BEFORE translation, on the prepared units."""
     SCRIPT.clear()
     result, state = await run(env, pipeline_input())
-    assert [n for n, _ in CALLS] == ["ingest", "prepare", "knowledge", "translate", "figures", "episodes",
+    assert [n for n, _ in CALLS] == ["ingest", "prepare", "knowledge", "translate", "language", "figures", "episodes",
                                      "speech-00", "speech-01", "speech-02", "speech-03", "mp3"]
+    assert dict(CALLS)["language"]["termbase_ref"] == APPROVED              # D-034: Arabic research after translation
     calls = dict(CALLS)
     assert calls["prepare"]["inp"]["source_artifact_ref"] == PARSED
     assert calls["knowledge"]["units_ref"] == UNITS and calls["knowledge"]["outline_ref"] == OUTLINE
@@ -157,6 +164,7 @@ async def test_stages_run_in_the_decided_order_and_pass_their_outputs_on(env):
     assert calls["episodes"]["figures_ref"] == {"stage": "figure-descriptions"}
     assert calls["episodes"]["require_accepted_inputs"] is True
     assert result["status"] == "audio_ready" and result["findings"] == []
+    assert result["language_research_ref"] == {"stage": "language-research"}
     assert state["phase"] == "done" and state["stages"]["episodes"]["accepted"] == 4
 
 
@@ -215,8 +223,8 @@ async def test_an_outline_its_gates_did_not_accept_is_used_and_recorded(env):
 async def test_figures_can_be_skipped_and_episodes_limited(env):
     SCRIPT.clear()
     result, _ = await run(env, pipeline_input(figures=False, episodes=[0, 1]))
-    assert [n for n, _ in CALLS] == ["ingest", "prepare", "knowledge", "translate", "episodes", "speech-00",
-                                     "speech-01", "mp3"]
+    assert [n for n, _ in CALLS] == ["ingest", "prepare", "knowledge", "translate", "language", "episodes",
+                                     "speech-00", "speech-01", "mp3"]
     episodes = dict(CALLS)["episodes"]
     assert episodes["episodes"] == [0, 1] and episodes.get("figures_ref") is None
 

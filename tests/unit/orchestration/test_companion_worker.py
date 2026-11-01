@@ -37,7 +37,7 @@ def test_companion_registers_the_three_stages(env):
     assert [w.__temporal_workflow_definition.name for w in workflows] == [
         "BookKnowledgeWorkflow", "BuildFigureDescriptionsWorkflow", "BuildEpisodeScriptsWorkflow"]
     names = sorted(a.__temporal_activity_definition.name for a in activities)
-    assert len(names) == 6 and len(set(names)) == 6
+    assert len(names) == 7 and len(set(names)) == 7 and "language_research" in names   # D-034 after translation
 
 
 def test_episode_inputs_read_the_book_run_from_the_result_store(env):

@@ -8,8 +8,10 @@ where they are; this workflow orders them as the decisions do and passes each st
     prepare_translation_units      the book's translation units (activity of the translate-book queue)
     BookKnowledgeWorkflow          knowledge research + concept layer in the book's language, BEFORE
                                    translation (D-034, D-035), from the units (no termbase yet)
-    TranslateBookWorkflow          termbase by model vote (D-033/D-050), translation judged by the
-                                   ladder (D-051), translator notes for what was not accepted (D-040)
+    TranslateBookWorkflow          termbase by model vote with known Arabic equivalents (D-033/D-034/
+                                   D-050), translation judged by the ladder (D-051), translator notes (D-040)
+    language_research              Arabic language research AFTER translation (D-034, §11b): an honest
+                                   status per term and a "read in Arabic" list
     BuildFigureDescriptionsWorkflow  figure/table descriptions for listening (D-044), optional
     BuildEpisodeScriptsWorkflow    episode scripts 00..n, EN then AR (D-036..D-038); missing companion
                                    parts are declared, the book text is never withheld (D-052)
@@ -21,7 +23,6 @@ No step waits on a person, and a refused gate never stops the book (D-033, D-052
 with what is available and records each refusal in ``findings`` (stage + finding) so it becomes
 knowledge (notes, declared deficits) rather than a silent loss. Only a stage that produced nothing at
 all (no parse, no translation run) ends the run, with ``status="failed"`` and the reason.
-Language research (Arabic, after translation) is the next increment.
 """
 from __future__ import annotations
 
@@ -32,9 +33,11 @@ from typing import Any
 from pydantic import BaseModel, Field
 from temporalio import workflow
 from temporalio.common import RetryPolicy
-from temporalio.exceptions import ChildWorkflowError
+from temporalio.exceptions import ActivityError, ChildWorkflowError
 
 with workflow.unsafe.imports_passed_through():
+    from .language_research import ACTIVITY as LANGUAGE_ACTIVITY
+    from .language_research import LANGUAGE_OPTIONS, LanguageResearchInput
     from .queues import AUDIO, KNOWLEDGE, LIGHT, TRANSLATE_BOOK
     from .translate_book import PREPARE_OPTIONS, PrepareUnitsInput, TranslateBookInput, translation_run_id
 
@@ -169,7 +172,21 @@ class CoursePipelineWorkflow:
         if notes.get("status") != "accepted":
             self._finding("translate", "translator_notes_not_accepted")
 
-        # 5. figure descriptions for listening (optional)
+        # 5. language research in Arabic, after translation (D-034, learning-companion §11b)
+        if termbase_ref:
+            self._state["phase"] = "language"
+            try:
+                language: dict[str, Any] = await workflow.execute_activity(
+                    LANGUAGE_ACTIVITY, LanguageResearchInput(course_id=inp.course_id, termbase_ref=termbase_ref),
+                    task_queue=inp.companion_queue, result_type=dict, **LANGUAGE_OPTIONS)
+                out["language_research_ref"] = language.get("ref")
+                self._state["stages"]["language"] = {"status": "done", "metrics": language.get("metrics")}
+            except ActivityError as exc:
+                self._finding("language", f"language_research_failed:{exc.cause.__class__.__name__}")
+        else:
+            self._finding("language", "no_approved_termbase")
+
+        # 6. figure descriptions for listening (optional)
         figures_en_ref = None
         if inp.figures:
             figures = await self._child("figures", "BuildFigureDescriptionsWorkflow", {
@@ -183,7 +200,7 @@ class CoursePipelineWorkflow:
             if figures is not None and not _accepted(en):
                 self._finding("figures", "figure_descriptions_not_accepted")
 
-        # 6. episode scripts 00..n — every input that exists is used; what is missing is declared
+        # 7. episode scripts 00..n — every input that exists is used; what is missing is declared
         if not (outline.get("ref") and concepts.get("ref")):
             return self._end(out, "translated", "no outline or concept layer: episodes cannot be built")
         strict = _accepted(outline) and _accepted(concepts)
@@ -205,7 +222,7 @@ class CoursePipelineWorkflow:
         if not inp.speech:
             return self._end(out, "scripts_ready")
 
-        # 7. speech, episode by episode, then one MP3 per episode (D-036..D-038, D-042)
+        # 8. speech, episode by episode, then one MP3 per episode (D-036..D-038, D-042)
         last_episode = max(episodes) if episodes else 0
         encode: list[dict[str, Any]] = []
         for label in sorted(per_episode):
